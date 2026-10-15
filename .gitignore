@@ -1,0 +1,37 @@
+# Entorno y secretos
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.id_rsa
+*.id_ed25519
+
+# Dependencias y compilación
+node_modules/
+dist/
+build/
+.npm/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Temporales y runtime
+tmp/
+temp/
+coverage/
+.turbo/
+
+# Backups y dumps
+*.sql
+*.sql.gz
+backups/
+
+# IDE y sistema operativo
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo

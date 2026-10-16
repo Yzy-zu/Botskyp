@@ -52,3 +52,26 @@ it('SIGKILL during a real HTTP burst recovers inbox and uncertain delivery exact
     expect((await db.query("SELECT * FROM inbox WHERE status<>'done'")).rowCount).toBe(0);
   } finally {if(child){const exited=once(child,'exit');child.kill('SIGTERM');await exited;}await db.end();}
 },35000);
+it('a reminder survives SIGKILL before its deadline and is delivered once within 30 seconds',async()=>{
+  if(!new URL(url).pathname.startsWith('/botsky_test_'))throw new Error('Unsafe test database');
+  const db=createDb(url);let child:ChildProcess|undefined;
+  try{
+    await migrate(db);
+    await db.query('TRUNCATE inbox,seen_events,outbox,chats,group_memberships,system_flags,reminders,sessions CASCADE');
+    await db.query('CREATE TABLE IF NOT EXISTS mock_deliveries(id text PRIMARY KEY,count int NOT NULL)');
+    await db.query('CREATE TABLE IF NOT EXISTS mock_control(pause boolean)');
+    await db.query('TRUNCATE mock_deliveries,mock_control');await db.query('INSERT INTO mock_control VALUES(false)');
+    await db.query("INSERT INTO chats(id,is_group,enabled) VALUES('300@g.us',true,true)");
+    const due=new Date(Date.now()+4_000);
+    await db.query("INSERT INTO reminders(chat_id,owner_id,body,due_at,timezone) VALUES('300@g.us','100@s.whatsapp.net','reinicio real de proceso',$1,'America/Mexico_City')",[due]);
+    writeFileSync('.local/runtime-test.json',JSON.stringify({DATABASE_URL:url,EVOLUTION_URL:'http://mock',EVOLUTION_APIKEY:'test',INSTANCE:'test',WEBHOOK_SECRET:'x'.repeat(32),OWNER_JIDS:'100@s.whatsapp.net',BOT_JIDS:'200@s.whatsapp.net',LAB_CHAT_ID:'300@g.us',TRANSPORT:'mock'}),{mode:0o600});
+    child=(await start()).child;
+    const exited=once(child,'exit');child.kill('SIGKILL');await exited;child=undefined;
+    await delay(Math.max(0,due.getTime()-Date.now()+200));
+    child=(await start()).child;
+    await until(async()=>(await db.query("SELECT * FROM reminders WHERE status='sent'")).rowCount===1,15_000);
+    const rows=await db.query<{sent_at:Date}>("SELECT sent_at FROM outbox WHERE dedupe_key LIKE 'reminder:%'");
+    expect(rows.rowCount).toBe(1);expect(Math.abs(rows.rows[0]!.sent_at.getTime()-due.getTime())).toBeLessThanOrEqual(30_000);
+    expect((await db.query('SELECT * FROM mock_deliveries WHERE count<>1')).rowCount).toBe(0);
+  }finally{if(child){const exited=once(child,'exit');child.kill('SIGTERM');await exited;}await db.end();}
+},30_000);

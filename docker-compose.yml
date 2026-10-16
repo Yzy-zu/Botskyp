@@ -13,6 +13,11 @@ x-runtime: &runtime
     driver: json-file
     options: {max-size: 5m, max-file: '3'}
   environment: &environment
+    GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash-lite}
+    GEMINI_FREE_TIER_CONFIRMED: ${GEMINI_FREE_TIER_CONFIRMED:-false}
+    WEB_SEARCH_PROVIDER: ${WEB_SEARCH_PROVIDER:-searxng}
+    SEARXNG_URL: http://searxng:8080
     DATABASE_URL: ${DATABASE_URL:?required}
     EVOLUTION_URL: ${EVOLUTION_URL:?required}
     EVOLUTION_APIKEY: ${EVOLUTION_APIKEY:?required}
@@ -28,6 +33,26 @@ x-runtime: &runtime
   depends_on:
     postgres: {condition: service_healthy}
 services:
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?required}
+      FORCE_OWNERSHIP: 'false'
+      SEARXNG_LIMITER: 'false'
+    volumes:
+      - ./config/searxng.yml:/etc/searxng/settings.yml:ro
+    networks: [internal, search-egress]
+    mem_limit: 256m
+    cpus: '0.20'
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: '3'}
+    healthcheck:
+      test: [CMD, python, -c, 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8080/healthz",timeout=3)']
+      interval: 10s
+      timeout: 4s
+      retries: 6
   capture:
     profiles: [capture]
     image: node:20-bookworm
@@ -107,6 +132,7 @@ services:
 volumes:
   botsky_pgdata:
 networks:
+  search-egress:
   internal:
     internal: true
   evolution:

@@ -3,7 +3,7 @@ import type { Msg } from './types.js';
 const identity=z.string().regex(/^\d+@(s\.whatsapp\.net|lid)$/);
 const jid=z.string().regex(/^\d+@(s\.whatsapp\.net|lid|g\.us)$/);
 const textMessage=z.object({text:z.string().optional()});
-const quotedMessage=z.object({conversation:z.string().optional(),extendedTextMessage:textMessage.optional()});
+const quotedMessage=z.object({conversation:z.string().optional(),extendedTextMessage:textMessage.optional(),imageMessage:z.object({mimetype:z.string().optional(),caption:z.string().optional()}).optional()});
 const contextSchema=z.object({
   stanzaId:z.string().optional(),participant:identity.optional(),mentionedJid:z.array(identity).default([]),quotedMessage:quotedMessage.optional(),
 });
@@ -48,6 +48,7 @@ export function normalizeData(input:unknown):NormalizedEvent|null {
   const quoted=context?.stanzaId?{
     id:context.stanzaId,fromBot:false,
     ...(context.participant?{senderId:context.participant}:{}),
+    ...(context.quotedMessage?.imageMessage?{attachments:[{kind:'image' as const,ref:`${context.stanzaId}:image`,...(context.quotedMessage.imageMessage.mimetype?{mime:context.quotedMessage.imageMessage.mimetype}:{})}]}:{}),
     ...(context.quotedMessage?{text:context.quotedMessage.conversation ?? context.quotedMessage.extendedTextMessage?.text ?? ''}:{}),
   }:undefined;
   return {kind:'message',message:{

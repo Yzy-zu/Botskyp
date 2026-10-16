@@ -1,0 +1,29 @@
+{
+  "key": {
+    "id": "manual-color-question",
+    "remoteJid": "300@g.us",
+    "fromMe": false,
+    "participant": "111@lid"
+  },
+  "messageTimestamp": 1792120449,
+  "message": {
+    "conversation": "oye botsky de que color es lo que sale aqui?"
+  },
+  "contextInfo": {
+    "stanzaId": "manual-image-origin",
+    "quotedMessage": {
+      "imageMessage": {
+        "mimetype": "image/jpeg",
+        "width": 663,
+        "height": 461,
+        "fileLength": {
+          "low": 39625,
+          "high": 0,
+          "unsigned": true
+        },
+        "caption": "oye botsky que hay en esta foto"
+      }
+    },
+    "participant": "111@lid"
+  }
+}

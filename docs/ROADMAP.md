@@ -126,11 +126,22 @@ En lugar de atar rígidamente herramientas específicas (como Antigravity o Code
 
 ---
 
-## 6. Siguiente Paso Inmediato
+## 6. Estado y siguiente paso inmediato
 
-El repositorio, la infraestructura y los prerrequisitos se encuentran completamente listos:
-1. Instancia `botsky` de Evolution conectada a WhatsApp (`open`).
-2. Grupo de pruebas `Botsky Lab` verificado con el bot como administrador.
-3. Entorno, decisiones y roadmap documentados en `main`.
+La **Fase 0 fue aprobada, fusionada a `main` y cerrada** por instrucción del dueño.
+La Fase 1 está implementada y desplegada únicamente desde `phase-1-nucleo`; su
+última corrección de código es `38163f2` (DEC-027/028). Typecheck, lint, build y 153
+tests pasan; health HTTP 200 tras el despliegue a las 10:20 UTC del 16-10-2026.
+Las rondas manuales, fallos corregidos y evidencia de validación están en
+`docs/fases/FASE-1-PRUEBAS.md`.
 
-El proyecto está **listo para iniciar la Fase 0 — Esqueleto** cuando el dueño envíe la instrucción correspondiente.
+**Fase 1 lista para cierre; siguiente paso: revisión final del arquitecto.** Por
+DEC-030 el dueño considera suficientes las validaciones automáticas y de integración
+existentes y omite voluntariamente todas las pruebas físicas adicionales pendientes,
+incluido el recordatorio con reinicio. Ninguna prueba manual adicional condiciona
+el cierre. Se conservan cobertura, evaluaciones y evidencia histórica, sin afirmar
+ejecuciones físicas que no ocurrieron.
+No se ha fusionado la rama a `main`, no se inicia Fase 2 y no se activan módulos en
+grupos reales. El constructor no espera más acciones físicas del dueño y se detiene
+para el arquitecto. Las reglas de dependencias, concurrencia y revisión crítica
+anteriores siguen vigentes.

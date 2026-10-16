@@ -27,7 +27,7 @@ Salen del cuestionario contestado (`docs/owner-answers.md`) y de las confirmacio
 | Comunidad | 2 grupos (amigos y escuela), sin menores, todos en hora de Ciudad de México. Sin opción de salirse de XP, juegos o lore. Solo el `owner` es rol global especial; los administradores de WhatsApp tienen permisos del grupo donde son admin. |
 | Privados | El `owner` y los miembros actuales de cualquiera de los grupos habilitados quedan autoaprobados para conversar y recibir entregas por privado. Extraños ajenos a esos grupos se ignoran salvo autorización expresa. |
 | Escuela | Cualquier miembro del grupo escolar puede registrar tareas. Solo `owner` y administradores del grupo pueden borrar/editar tareas sensibles, materias, horarios y configuración. El horario inicial puede importarse desde una foto con vista previa y confirmación. |
-| Tono | Grosero, burlón, directo, sarcástico y humillador. Groserías sin restricción de tono, jerga del grupo, pocos emojis, longitud según el tema. Lleva la contraria y, si lo insultan, responde y humilla. Sin personaje de «lore» propio. |
+| Tono | Grosero, burlón, directo, sarcástico y humillador. Groserías sin restricción de tono, jerga del grupo, pocos emojis, longitud según el tema. Primero responde la sustancia o explica la incertidumbre; después puede añadir la burla. La personalidad nunca sustituye la respuesta útil. En visión no afirma una raza con seguridad sin poder identificarla. Lleva la contraria y, si lo insultan, responde y humilla. Sin personaje de «lore» propio. |
 | Errores y negativas | Si falla, explica brevemente el error. Si le piden algo que no puede o no debe, solo dice que no. Si Gemini bloquea una respuesta, no se insiste ni se gasta más cuota: respuesta corta de negativa. |
 | Memoria personal | Opcional por persona (§9.14). Nunca guarda contraseñas, tokens ni datos sensibles. |
 | Retención de archivos | Originales 7 días, generados 2 días. |
@@ -42,6 +42,7 @@ Salen del cuestionario contestado (`docs/owner-answers.md`) y de las confirmacio
 | Control del dueño | Apagado de emergencia, modo mantenimiento y módulos por chat (§10.5). |
 | Fuera de alcance | Proactividad, televisión y terminal libre. |
 | Prioridad | Primero: IA y conversación, recordatorios, juegos, escuela y Minecraft. Al final: encuestas, lore/afinidad/doxeo, moderación completa y reacciones. |
+| Cierre de Fase 1 | Por decisión expresa del dueño del 16-10-2026 (DEC-030), las validaciones automáticas y de integración existentes son suficientes para cerrar esta fase. Las pruebas físicas adicionales pendientes en WhatsApp se omiten voluntariamente y no son condición de cierre, incluido el recordatorio con reinicio físico. Se conserva toda la cobertura automática y de integración. No autoriza merge a `main`, Fase 2 ni nuevas activaciones. |
 
 **Sobre «sin restricciones»:** el tono del bot no tiene límites. Lo que no es tono sigue vigente porque protege al bot y a sus datos: permisos, confirmaciones de operaciones masivas, secretos fuera de logs y memoria, y que el estilo nunca cambie los datos.
 

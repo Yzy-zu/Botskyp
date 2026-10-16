@@ -5,6 +5,7 @@ import type { Config } from '../config.js';
 import type { Transport } from '../wa/types.js';
 import { processNext } from './inbox.js';
 import { recoverSending, sendNext } from '../wa/outbox.js';
+import { tickCore } from '../modules/reminders/tick.js';
 import { product } from '../../config/product.js';
 export async function startRuntime(db:Db, transport:Transport, config:Config, log:FastifyBaseLogger):Promise<()=>Promise<void>> {
   const lock=await db.connect();
@@ -15,16 +16,23 @@ export async function startRuntime(db:Db, transport:Transport, config:Config, lo
   lock.on('error',()=>process.exit(1));
   await recoverSending(db);
   const task=(async()=>{
-    while (!stopped) {
-      try {
-        const processed=await processNext(db,config);
-        const sent=await sendNext(db,transport,config);
-        if (!processed && !sent) await delay(product.pollMs);
-      } catch {
-        log.error({where:'runtime'},'Falló el ciclo de procesamiento');
-        await delay(product.tickMs);
-      }
+    while(!stopped){
+      try{if(!await processNext(db,config))await delay(product.pollMs);}
+      catch{log.error({where:'inbox'},'Falló el procesamiento');await delay(product.tickMs);}
     }
   })();
-  return async()=>{stopped=true;await task;await lock.query("SELECT pg_advisory_unlock(hashtext('botsky-app'))");lock.release();};
+  const sending=(async()=>{
+    while(!stopped){
+      try{if(!await sendNext(db,transport,config))await delay(product.pollMs);}
+      catch{log.error({where:'outbox'},'Falló el envío');await delay(product.tickMs);}
+    }
+  })();
+  const ticking=(async()=>{
+    while(!stopped){
+      try{await tickCore(db,config);}
+      catch{log.error({where:'tick'},'Falló el ciclo de tiempo');}
+      for(let elapsed=0;elapsed<product.tickMs && !stopped;elapsed+=product.pollMs)await delay(product.pollMs);
+    }
+  })();
+  return async()=>{stopped=true;await Promise.all([task,sending,ticking]);await lock.query("SELECT pg_advisory_unlock(hashtext('botsky-app'))");lock.release();};
 }

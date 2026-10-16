@@ -3,7 +3,7 @@ export const msgSchema = z.object({
   id:z.string().min(1), chatId:z.string().regex(/^\d+@(g\.us|s\.whatsapp\.net|lid)$/),
   senderId:z.string().regex(/^\d+@(s\.whatsapp\.net|lid)$/), isGroup:z.boolean(),
   ts:z.coerce.date(), text:z.string(), fromMe:z.boolean(), mentions:z.array(z.string()),
-  quoted:z.object({id:z.string(), text:z.string().optional(), senderId:z.string().optional(), fromBot:z.boolean()}).optional(),
+  quoted:z.object({id:z.string(), text:z.string().optional(), senderId:z.string().optional(), fromBot:z.boolean(),attachments:z.array(z.object({kind:z.literal('image'),ref:z.string(),mime:z.string().optional()})).optional()}).optional(),
   attachments:z.array(z.object({kind:z.string(),ref:z.string(),mime:z.string().optional()})),
 });
 export type Msg = z.infer<typeof msgSchema>;

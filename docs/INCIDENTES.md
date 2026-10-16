@@ -71,3 +71,86 @@ Historial operativo de fallos, causas, impacto y soluciones aplicadas en producc
   resultado final se verificó después de completar el reinicio explícito.
 - **Decisión:** Mantener `unless-stopped`; el apagado de emergencia debe permanecer
   detenido. Se documenta el driver como SIGKILL + inicio, sin atribuirle autoarranque.
+
+### [INC-20261016-05] Reserva fija de tokens rechaza una consulta de las pruebas manuales
+
+- **Fecha/Hora:** 15/10/2026 21:14:10 CDMX (16/10 03:14:10 UTC), Fase 1.
+- **Síntoma:** Tras búsqueda y visión correctas, una pregunta de color recibió cuota
+  agotada. No existe solicitud nueva en `llm_usage` ni respuesta 429 del proveedor.
+- **Causa verificada:** Cada llamada reservaba 32768 tokens; con dos en un minuto,
+  la tercera superaba el tope local de 65536 aunque las dos entradas conocidas sumaban
+  4046 tokens. Se confundía además este rechazo local con cuota de Google.
+- **Corrección:** Migración aditiva para reserva por solicitud, contabilización de
+  `promptTokenCount` confirmado, reservas conservadas cuando el consumo se desconoce,
+  y mensajes distintos para límite local, cuota remota y timeout. Se mantienen los
+  topes de cinco llamadas/minuto, veinte/día y ocho por usuario/minuto.
+- **Otros hallazgos de la ronda:** La primera imagen terminó con `network_error`
+  a unos veinte segundos; la misma foto funcionó al reenviarse. El timeout es una
+  explicación compatible con el plazo, no una causa externa demostrada por los datos
+  anteriores. Se incorpora clasificación precisa y plazo de visión de 40 s sin
+  reintento automático. Un recordatorio sin contenido había recibido un título
+  inventado; ahora se solicita el contenido antes de crearlo. La pregunta de color
+  citaba una foto: además de corregir cuota, se conserva su referencia y solo se
+  recuperan imágenes recibidas en el mismo chat. No se permite tomar imágenes de
+  otro chat por un ID citado o propuesto por el modelo.
+- **Validación:** Regresiones con PostgreSQL y HTTP simulados; los éxitos y límites
+  de la evidencia física se detallan en `docs/fases/FASE-1-PRUEBAS.md`. No se modifican
+  recordatorios existentes ni se reenvían mensajes del historial para probar.
+
+
+### [INC-20261016-06] Búsqueda posterior a una imagen pierde tema e intención
+
+- **Fecha/Hora:** 15/10/2026 21:36 CDMX (16/10 03:36 UTC), solo Botsky Lab.
+- **Síntoma:** Después de identificar un personaje en una foto, preguntar por la
+  nueva temporada devolvió series ajenas. Corregir «de la de la foto» devolvió
+  productos/disfraces del personaje en vez de información del estreno.
+- **Causa:** El atajo buscaba literalmente una consulta sin sujeto e incluía
+  «botsky». La ruta LLM posterior tenía historial, pero no una indicación explícita
+  de conservar la intención de la búsqueda anterior al resolver el referente.
+- **Corrección:** DEC-026: separar consultas completas de contextuales, limpiar
+  solo la invocación de búsqueda, incluir intención anterior y limitar esa
+  interpretación a la tool web permitida. Pedir tema cuando falta antecedente.
+- **Validación:** Regresiones de consultas exactas, contexto por actor/chat y edad,
+  módulo deshabilitado, rechazo de escrituras propuestas y resultados canónicos.
+  Integración real de Gemini en base aislada sin envíos a WhatsApp; detalles y
+  límites en `docs/fases/FASE-1-PRUEBAS.md`. Las dos búsquedas históricas fallidas
+  no se convierten en éxitos ni se reenvían. Repetición física pendiente.
+
+### [INC-20261016-07] Pregunta sobre raza recibe burla sin respuesta útil
+
+- **Fecha/Hora:** 16/10/2026 09:58:26 UTC, solo Botsky Lab.
+- **Síntoma:** Tras recibir un meme de un perro, `que raza será bot?` obtiene una
+  negativa burlona sin identificación tentativa ni explicación de incertidumbre.
+- **Diagnóstico:** Gemini devolvió texto normalmente (`ok`, 1553/27 tokens), con
+  entrega única confirmada por ID/texto en Evolution. No fue un fallo de cuota,
+  timeout o transporte. La imagen revisada muestra un perro tipo pug con dientes
+  humanos editados. El prompt permite tono agresivo; la causa exacta de la decisión
+  semántica del modelo no se puede demostrar con esta telemetría. No se atribuye
+  el fallo a una indisponibilidad técnica de visión.
+- **Corrección posterior autorizada por el dueño:** DEC-027 incorpora utilidad e
+  incertidumbre antes de la burla y recupera la última imagen propia del mismo
+  chat durante diez minutos para la pregunta de raza sin cita. Gemini real respondió
+  con identificación tentativa, rasgos y límite de imagen editada, seguido del
+  tono configurado. Regresiones de ámbito/retención en verde. Detalles en
+  `docs/fases/FASE-1-PRUEBAS.md`; repetición física omitida posteriormente por el
+  dueño y evidencia automática/integración aceptada para cierre (DEC-030).
+  Fase 1 lista para cierre, con revisión del arquitecto previa al merge vigente.
+
+### [INC-20261016-08] Un resultado web filtrado elimina también la intención anterior
+
+- **Detección:** Evaluación con Gemini/SearXNG reales en base aislada, 16/10/2026
+  10:13 UTC. Primera búsqueda pertinente; la corrección siguiente pidió tema sin
+  consultar SearXNG, aunque el historial conservaba la identificación de la serie.
+- **Causa:** Una ruta larga en las fuentes activa el detector conservador de posibles
+  secretos. `rememberContext` descartaba ambas partes del turno y no solo el
+  resultado: el siguiente mensaje no recibía la petición de estreno anterior.
+  Las pruebas previas insertaban esa petición directamente y ocultaban el fallo.
+- **Corrección:** DEC-028: guardar la petición segura por separado y conservar
+  intacto el filtro de respuestas y de peticiones sensibles. Agrupar turnos de
+  igual rol al construir el payload; ninguna respuesta ficticia ni filtro relajado.
+- **Validación:** 153 tests en verde, incluyendo persistencia del contexto tras URL
+  larga y exclusión de secretos. Integración posterior con Gemini/SearXNG reales:
+  ambas consultas conservan Re:Zero y fecha de estreno, dos búsquedas efectivas y
+  cero outbox. Repetición física omitida por el dueño y evidencia aceptada para
+  cierre (DEC-030). No se modifican datos históricos ni Evolution. Fase 1 lista
+  para cierre, con revisión del arquitecto previa al merge vigente.

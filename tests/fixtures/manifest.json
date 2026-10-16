@@ -33,5 +33,12 @@
     "fixture": "history.json",
     "sourceSha256": "69fc258976d446de77a2d46386e228d314f1383f4bd1a3df893eb4bf41042e72",
     "origin": "captured-rest-response"
+  },
+  {
+    "fixture": "image-quote.json",
+    "sourceSha256": "94bb95be4367246b11da8dfe290b3b80cdb5905c73f42411f6696304b3205037",
+    "origin": "captured-rest-response",
+    "capturedAt": "2026-10-16",
+    "selection": "Single quoted-image record from the private chat/findMessages response; IDs anonymized and media credentials omitted."
   }
 ]

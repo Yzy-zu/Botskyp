@@ -218,3 +218,227 @@ fue interrumpida. Solo admite `^botsky_test_\d{13}_[1-9]\d{0,9}$`, comprueba
 propiedad y ausencia de conexiones; no usa `FORCE` ni termina sesiones.
 Una base activa queda intacta, incluso si hay una conexión concurrente al borrado.
 Las bases de producción y nombres no coincidentes se rechazan antes del DROP.
+
+## 4. Decisiones de Fase 1 (propuestas del constructor; revisión pendiente)
+
+### DEC-019: Gemini gratuito comprobado; una sola clave
+El 16-10-2026 se consultaron [modelos](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite),
+[precios](https://ai.google.dev/gemini-api/docs/pricing),
+[cuotas](https://ai.google.dev/gemini-api/docs/rate-limits),
+[function calling](https://ai.google.dev/api/generate-content#FunctionDeclaration),
+[visión](https://ai.google.dev/gemini-api/docs/image-understanding) y
+[audio](https://ai.google.dev/gemini-api/docs/audio) oficiales.
+Se elige `gemini-3.5-flash-lite`: estable, entrada multimodal y salida de texto,
+function calling, y entrada/salida con nivel gratuito. La API real devolvió HTTP 200;
+una segunda prueba identificó un cuadrado rojo y produjo una llamada tipada con
+`color=rojo`. Audio queda verificado como capacidad, sin implementar transcripción
+hasta Fase 5. No se usan previews ni generación de audio/imágenes.
+
+El dueño confirmó que los proyectos de las claves locales no tienen facturación
+vinculada. Se recuperó únicamente `GEMINI_API_KEY` del archivo local heredado al
+`.env` con modo 600; las demás claves no se rotan ni se usan para eludir cuota.
+`GEMINI_FREE_TIER_CONFIRMED=true` explicita esa condición operacional. Ninguna
+API key permite demostrar por sí sola el estado de facturación.
+
+Los límites efectivos se consultan en AI Studio por proyecto; no hay un RPM/RPD
+universal garantizado en la documentación. Los topes locales conservadores en
+`config/product.ts` son política de Botsky, no promesa de Google: 8/usuario/min,
+5 global/min, 20/día y reserva de 32768 tokens por llamada contra 65536/min
+(efectivamente hasta 2 llamadas/min bajo esa reserva). Contexto y salida acotados.
+Intentos fallidos también consumen reservas. Día de cuota en `America/Los_Angeles`.
+429 tiene como máximo un reintento y luego cooldown persistido. Un bloqueo termina
+sin insistir. El presupuesto de tres intentos por mensaje se comparte con búsqueda.
+
+### DEC-020: Búsqueda gratuita autoalojada
+Aunque el catálogo anunció `gemini-2.5-flash-lite`, una llamada real a su grounding
+respondió 404. Google [restringe los modelos 2.5 a proyectos anteriores](https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-lite).
+El grounding de Gemini 3.x no está incluido en su nivel gratuito. Se adopta
+SearXNG autoalojado, permitido por §4: contenedor ARM64 sin puertos publicados,
+secreto propio independiente del webhook, memoria/CPU limitadas y API JSON interna.
+Se verificaron [instalación](https://docs.searxng.org/admin/installation-docker.html)
+y [API](https://docs.searxng.org/dev/search_api.html). No requiere cuenta, cookies ni
+Redis; el limitador público no aplica a esta instancia privada. Si los motores no
+responden, `web.search` explica el fallo y no inventa fuentes. El modo Gemini legado
+queda explícito y opcional, siempre con cuota y sin fallback hacia grounding pago.
+
+### DEC-021: Frontera de efectos y persistencia del núcleo
+Registro de tools con argumentos Zod estrictos, permisos y módulos verificados otra
+vez al ejecutar, también al confirmar. Contexto de ejecución separado del payload
+Gemini: nunca hay parámetros actor/chat/permisos. Atajos y ayuda salen del registro.
+Las memorias solo se escriben por orden determinista explícita, jamás por propuesta
+libre del modelo. Se filtran datos sensibles y no se inyectan recuerdos personales
+en respuestas grupales; se consultan por privado. Contexto por usuario/chat, 7 días.
+Los resultados de tools se entregan canónicos, sin otra llamada para estilizar.
+Confirmaciones de 2 minutos con acción/hash, actor/chat y versión; aclaraciones de
+5 minutos. PDF del ejemplo §9.1 corresponde a Fase 5: se explica que aún no existe.
+
+### DEC-022: Tick independiente y entrega de recordatorios
+Inbox/efectos locales/respuesta se mantienen transaccionales. Se separan los bucles
+de recepción procesada, tick y outbox para que la latencia de Gemini no detenga los
+envíos. El tick reclama y vincula cada vencimiento a una outbox única; solo pasa a
+sent tras confirmarse la entrega. Inciertos no se repiten. Recurrencias conservan
+hora IANA, saltan fechas mensuales inexistentes y condensan atrasos en una entrega.
+Tras entregarla calculan la siguiente ejecución futura. Se revisan módulo, chat,
+modo de operación y acceso del propietario antes de encolar. La barrera de grupos
+de Fase 0 se conserva: solo Botsky Lab; privados requieren membresía reciente o
+aprobación manual. Los módulos nuevos están disponibles en Lab y privados elegibles;
+los grupos reales permanecen bloqueados. Desplegar SearXNG se añade al script oficial,
+sin tocar Evolution. No se fusiona hasta revisión del arquitecto.
+
+### DEC-023: Corrección de reservas locales tras evidencia de WhatsApp
+La auditoría del 16-10-2026 confirmó que el rechazo de las 03:14:10 UTC era local:
+32768 × 3 excedía el tope de entrada aun cuando las dos llamadas anteriores solo
+sumaban 4046 tokens confirmados. Sustituye esa parte de DEC-019. La migración
+`003_llm_reservations.sql` añade `reserved_input_tokens` sin borrar ni reescribir
+historial. Solicitudes confirmadas usan `input_tokens`; pendientes, fallidas o sin
+metadatos mantienen su reserva. La nueva estimación suma bytes UTF-8 del payload
+textual, margen de 512 e importe local de 16384 por imagen; el base64 no cuenta como
+texto. Es una estimación local conservadora, no una garantía de tokenización exacta.
+Se comprobaron [tokens](https://ai.google.dev/gemini-api/docs/tokens) y
+[cuotas](https://ai.google.dev/gemini-api/docs/rate-limits) oficiales: se usa el
+consumo devuelto sin añadir otra llamada de conteo. Se mantienen todos los topes y
+la serialización transaccional de reservas. Google sigue siendo autoridad sobre
+su cuota real; no se rota la clave ni se activa facturación.
+
+Esta decisión sustituye el cálculo TPM por reserva fija de DEC-019; los valores
+allí descritos quedan como evidencia del despliegue inicial.
+
+La clasificación diferencia `local_limit`, `quota`, `timeout` y `provider`.
+`diag.cuota` muestra topes de Botsky y consumo/reservas del último minuto. Visión
+permite 40 s, texto 20 s. Un timeout se registra sin detalles sensibles ni reintento
+ciego. La primera foto de esta ronda carece de telemetría suficiente para atribuir
+su `network_error` exclusivamente al timeout; así queda documentado.
+
+### DEC-024: Recordatorios sin contenido requieren aclaración propia
+La solicitud real «haz un recordatorio para dentro de dos minutos botsky» dio una
+fecha válida pero Gemini inventó «Recordatorio automático». `reminders.create`
+acepta omitir contenido para pedirlo mediante sesión del actor/chat; nunca se
+inserta una fila sin contenido. El atajo para esa solicitud conserva la fecha sin
+consumir IA. Una respuesta ajena no completa la sesión. Si vence la fecha mientras
+se espera contenido, el siguiente paso pide fecha nueva conservando el contenido.
+La aclaración conserva la zona IANA explícita de la operación; no la sustituye
+por la zona predeterminada del chat. No se cambian las filas históricas que ya se
+crearon/entregaron durante la ronda.
+
+### DEC-025: Citas de imagen verificadas contra el inbox del mismo chat
+La pregunta de color real de las 03:14:09 UTC contenía `contextInfo.quotedMessage.imageMessage`
+y `stanzaId`, aunque `attachments` del mensaje nuevo estaba vacío. El normalizador
+anterior descartaba esa referencia: corregir cuota solo no permitía volver a ver
+los píxeles. Se conserva un adjunto citado de tipo imagen, sin URL, bytes ni claves.
+La app resuelve el ID citado contra un mensaje previamente aceptado en `inbox`,
+filtrando siempre por el chat autenticado y retención de contexto; valida el `Msg`
+original y usa el adaptador de imagen existente. El modelo no propone el ID ni el
+chat. Una imagen citada desconocida o de otra conversación no se descarga: se pide
+reenviar en el chat actual. Se mantiene límite de una imagen y comprobación de
+módulo, cuota y permisos. No hay recuperación arbitraria desde el historial global.
+Un fixture REST real sanitizado y tres regresiones cubren normalización, reutilización
+autorizada y rechazo de citas fuera del ámbito. Es cambio crítico pendiente de revisión.
+
+
+### DEC-026: Búsqueda completa determinista y referencias con intención conservada
+La segunda ronda real (16-10-2026, 03:35–03:36 UTC) mostró dos fallos: el atajo
+`busca cuando sale la nueva temporada botsky` enviaba una consulta sin tema y con
+la invocación final; la corrección posterior recordaba el personaje, pero buscaba
+disfraces y perdía la pregunta del estreno. No era un fallo de cuota o transporte.
+
+Se reconocen por separado consultas completas y búsquedas con referente o tema
+faltante. Las completas siguen siendo deterministas, sin consumir Gemini, incluso
+cuando invocan al bot al final. Esa limpieza solo afecta la consulta web, no notas
+ni otros contenidos exactos. Las contextuales usan el historial ya filtrado por
+actor/chat/retención y reciben la búsqueda anterior como dato explícito para
+conservar qué información se busca. Si falta antecedente, se pregunta el tema sin
+consultar proveedores. No se elige un número de temporada o fecha desde memoria. Si el modelo añade un
+número a «temporada/season» que no estaba solicitado y la petición era por una
+nueva temporada, el código conserva «nueva temporada/upcoming season» antes de
+buscar. Se respetan los números que sí especificó el usuario y no se alteran las
+fuentes devueltas. Los argumentos adicionales se conservan para que Zod los rechace,
+no se eliminan para volver válida una propuesta con actor/chat inyectados.
+
+Esta interpretación solo ofrece `web.search` cuando está permitida; también se
+rechazan por código propuestas de otras tools. Actor/chat/permisos siguen fuera
+de los argumentos del modelo y Zod valida la consulta. La respuesta canónica de
+fuentes no pasa otra vez por personalidad. Sin llamada a la tool solo se permite
+pedir aclaración, no presentar una fecha como resultado de búsqueda. No se añaden
+servicios, migraciones ni activaciones. Cambio de router pendiente del arquitecto.
+
+### DEC-027: Utilidad antes de personalidad y contexto visual propio para raza
+
+El dueño aclaró que el tono no sustituye la respuesta: primero contenido útil o
+incertidumbre concreta, después burla opcional. Se incorpora a §0 del plan y a
+`config/persona.md`. Para visión se exige identificación tentativa apoyada en
+rasgos observables, sin afirmar pureza/certeza de raza desde una foto ni inventar
+detalles de un meme editado. No se añade otra llamada de IA para estilizar.
+
+La auditoría INC-20261016-07 solo acreditaba continuidad textual: la pregunta sin
+cita no llevaba píxeles. Para preguntas breves de raza con referente implícito se
+aplica §6.5: adjunto actual, cita explícita o última imagen del mismo remitente y
+chat, como máximo diez minutos. Se comprueban recepción y fecha del mensaje;
+se excluyen entradas fallidas y fotos futuras. Una cita desconocida no se sustituye
+por otra foto reciente. Sin original autorizado se pide reenviar, antes de Gemini.
+Preguntas completas con sujeto propio (p. ej. raza de un personaje nombrado) siguen
+la ruta textual; no se les adjunta una foto ajena a su petición.
+
+La descarga, permiso, módulo, cuota y timeout siguen en sus adaptadores actuales.
+No se cambian APIs, herramientas, sesiones, migraciones, outbox ni dependencias.
+Regresiones aisladas comprueban ámbito/retención, precedencia y conservación del
+texto con incertidumbre. `npm run eval:phase1 -- /ruta/privada/al/meme-del-pug.jpg`
+ejecuta además una evaluación explícita con Gemini y SearXNG reales, base aislada
+y cero envíos: descripción útil, raza tentativa antes de la burla, una pregunta
+aritmética y las dos búsquedas contextuales. La evaluación exige ese meme ya
+revisado; no es un identificador universal de razas ni garantía de cada salida
+futura del modelo. La confirmación manual en Lab quedó pendiente; posteriormente
+el dueño omitió la secuencia propuesta, según DEC-029.
+
+### DEC-028: Conservar una petición segura aunque se filtre el resultado web
+
+La evaluación real de DEC-027 descubrió que la segunda búsqueda perdía el objetivo
+aunque la primera consulta fuera correcta. `sensitiveMemory` reconoce como posible
+secreto una cadena larga de caracteres, incluyendo rutas de URL públicas. Antes,
+`rememberContext` descartaba tanto la respuesta como la pregunta; por eso faltaba
+`previousSearchRequest` en el siguiente turno. Las pruebas anteriores sembraban esa
+petición y no ejercitaban su persistencia tras recibir fuentes reales.
+
+Se conserva la petición solo si pasa el filtro actual. La respuesta se guarda solo
+si también pasa; una petición sensible sigue excluyendo el turno completo. No se
+relaja el filtro ni se guardan enlaces rechazados. La secuencia se prueba ahora
+pasando por `rememberContext`, no sembrando la búsqueda anterior. El historial
+puede tener mensajes consecutivos del usuario: al formar `contents` se agrupan en
+partes del mismo turno para conservar la alternancia `user`/`model` indicada en la
+[documentación oficial de texto](https://ai.google.dev/gemini-api/docs/generate-content/text-generation).
+No se fabrican respuestas del modelo para rellenar huecos. El actor/chat y la
+retención siguen filtrados por el programa. Sin cambios a permisos, tools o outbox;
+cambio de router pendiente de revisión arquitectónica antes de cualquier merge.
+
+### DEC-029: Omisión de la última secuencia manual por instrucción del dueño
+
+El 16-10-2026 el dueño indicó omitir los cinco pasos manuales propuestos tras
+DEC-027/028. Se deja de esperar esos mensajes y se pasa a revisión del arquitecto.
+Su estado es **omitidos, sin ejecución física confirmada**; no se fabrican respuestas
+de WhatsApp ni se marcan aprobados. Se conserva la evidencia existente: 153 tests,
+typecheck/lint/build, integraciones reales aisladas y despliegue con health HTTP 200.
+La omisión se limita a esta secuencia; no aprueba otros pendientes, no sustituye la
+revisión del arquitecto y no autoriza merge a `main`, Fase 2 ni activaciones nuevas.
+
+### DEC-030: Evidencia automática e integración suficientes para el cierre de Fase 1
+
+**Decisión expresa del dueño, 16-10-2026.** Las validaciones automáticas y de
+integración existentes se consideran suficientes para cerrar Fase 1. El dueño
+decidió no realizar las pruebas físicas adicionales pendientes en Botsky Lab,
+incluidas raza/contexto visual, búsqueda contextual de temporada y recordatorio
+con reinicio físico. Se omiten voluntariamente y dejan de ser condiciones de cierre.
+
+Esta decisión amplía DEC-029 a todas las pruebas manuales pendientes de Fase 1 y
+sustituye su limitación a la última secuencia de cinco pasos. Se incorpora también
+a §0 del Plan Maestro para que no quede una exigencia documental contradictoria.
+La fase queda **lista para cierre** con la evidencia documentada. No se presentan
+pruebas físicas omitidas como ejecutadas ni se alteran resultados históricos.
+
+La omisión **no elimina ni reduce la cobertura automática o de integración**:
+se conservan tests, fixtures, evaluaciones y evidencias. La prueba de reinicio con
+SIGKILL sobre un proceso real y transporte simulado, junto con las integraciones
+reales de Gemini/SearXNG, mantienen su alcance técnico documentado. Los fallos de
+disponibilidad externa ya observados siguen registrados.
+
+Solo cambia el criterio documental de aceptación de Fase 1. La revisión del
+arquitecto previa al merge sigue vigente; no se autoriza fusionar a `main`, iniciar
+Fase 2 ni activar módulos en grupos reales.

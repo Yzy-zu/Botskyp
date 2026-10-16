@@ -30,7 +30,7 @@ export function makeApp(db:Db,config:Config,transport:Transport,normalize:Normal
     if (!msg) return {status:'ignored'};
     const start=performance.now();
     const status=await receive(db,config,msg);
-    app.log.info({msgId:msg.id,chatId:msg.chatId,tool:'ping',ms:Math.round(performance.now()-start),status},'Evento recibido');
+    app.log.info({msgId:msg.id,chatId:msg.chatId,tool:'inbox',ms:Math.round(performance.now()-start),status},'Evento recibido');
     return {status};
   });
   return app;

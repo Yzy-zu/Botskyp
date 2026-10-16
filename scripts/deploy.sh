@@ -74,6 +74,7 @@ PY_PROBE
 fi
 rollback_needed=true
 compose -f "$candidate" run --rm --no-deps app node dist/src/db/migrate.js
+compose -f "$candidate" up -d --wait --wait-timeout 60 searxng
 compose -f "$candidate" up -d --no-build --wait --wait-timeout 60 app worker
 if [[ "$mode" == --test-rollback ]]; then
   [[ -f "$previous" ]] || { echo 'Primero se necesita un despliegue sano' >&2; false; }

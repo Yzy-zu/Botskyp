@@ -15,3 +15,9 @@ se retiran credenciales, bytes, metadatos criptográficos y nombres personales.
 Las fuentes originales viven bajo `.local/` con acceso restringido, fuera de Git.
 Los tests distinguen fixtures originales de modificaciones sintéticas destinadas
 exclusivamente a simular errores. No se ha capturado un voto nativo.
+
+`image-quote.json` incorpora la cita de imagen de la ronda manual del 16-10-2026.
+Es un registro de la respuesta real `chat/findMessages`, no un webhook fabricado.
+La copia REST privada completa tiene el SHA-256 indicado en el manifiesto. Solo
+se conservan claves originales necesarias; se sustituyen identidades e IDs y se
+omiten URLs, claves de medios, hashes y miniaturas. La imagen original no va a Git.

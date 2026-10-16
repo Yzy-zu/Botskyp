@@ -5,7 +5,7 @@ RUN npm ci
 COPY tsconfig*.json ./
 COPY src ./src
 COPY config ./config
-RUN npm run build && mkdir -p dist/src/db/migrations && cp src/db/migrations/*.sql dist/src/db/migrations/
+RUN npm run build && mkdir -p dist/src/db/migrations && cp src/db/migrations/*.sql dist/src/db/migrations/ && cp config/persona.md dist/config/persona.md
 RUN npm prune --omit=dev
 FROM node:24-bookworm-slim
 ENV NODE_ENV=production

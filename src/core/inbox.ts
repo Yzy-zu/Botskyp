@@ -3,7 +3,13 @@ import { transaction, type Db } from '../db/client.js';
 import type { Config } from '../config.js';
 import { product } from '../../config/product.js';
 import { msgSchema, type Msg } from '../wa/types.js';
-import { activated, enableCommand, isPing } from './activation.js';
+import { actorFor,privateEligible,type Chat } from './permissions.js';
+import { activeSession,sessionAccepts } from './sessions.js';
+import { route,rememberContext } from './router.js';
+import { Gemini } from './llm.js';
+import { searxSearch } from '../modules/web/index.js';
+import { commandText } from './shortcuts.js';
+import { activated, enableCommand } from './activation.js';
 
 export async function receive(db: Db, config: Config, input: Msg, now = new Date()):Promise<string> {
   const msg = msgSchema.parse(input);
@@ -25,33 +31,47 @@ export async function processNext(db: Db, config: Config):Promise<boolean> {
     const row = result.rows[0];
     if (!row) return false;
     const msg = msgSchema.parse(row.payload);
-    const alias = await c.query<{user_id:string}>("SELECT user_id FROM user_aliases WHERE alias=$1 AND evidence NOT LIKE 'conflict:%'",[msg.senderId]);
-    const actor = alias.rows[0]?.user_id ?? msg.senderId;
-    const owner = config.OWNER_JIDS.includes(actor);
-    if (!msg.isGroup && msg.chatId===msg.senderId) msg.chatId=actor;
+    const actor=await actorFor(c,msg,config);
+    const owner=actor.role==='owner';
+    if (!msg.isGroup && msg.chatId===msg.senderId) msg.chatId=actor.id;
     if (msg.quoted) {
       const sent = await c.query('SELECT id FROM outbox WHERE provider_msg_id=$1 AND chat_id=$2 AND status=\'sent\'',[msg.quoted.id,msg.chatId]);
       msg.quoted.fromBot = Boolean(sent.rowCount);
     }
-    const panic = await c.query("SELECT key FROM system_flags WHERE key='emergency' AND value='true'::jsonb");
-    let reply: string | undefined;
-    if (!panic.rowCount) {
-      if (msg.isGroup && msg.chatId === config.LAB_CHAT_ID && enableCommand(msg.text) && owner) {
-        await c.query(`INSERT INTO chats(id,is_group,enabled) VALUES($1,true,true) ON CONFLICT(id) DO UPDATE SET enabled=true`,[msg.chatId]);
-        reply = 'Botsky habilitado en este chat.';
-      } else {
-        const chat = await c.query<{enabled:boolean}>('SELECT enabled FROM chats WHERE id=$1',[msg.chatId]);
-        let allowed = chat.rows[0]?.enabled === true;
-        if (!msg.isGroup) {
-          const access = await c.query(`SELECT id FROM users WHERE id=$1 AND (private_ok_manual OR EXISTS(
-            SELECT 1 FROM group_memberships m JOIN chats c ON c.id=m.chat_id WHERE m.user_id=$1 AND m.active AND c.enabled))`,[actor]);
-          const eligible = owner || Boolean(access.rowCount);
-          if (eligible && !chat.rows[0]) {
+    const flags=await c.query<{key:string;value:unknown}>('SELECT key,value FROM system_flags');
+    const emergency=flags.rows.some(f=>f.key==='emergency' && f.value===true);
+    const maintenance=flags.rows.some(f=>f.key==='maintenance' && f.value===true);
+    const reactivating=owner && /^reactiva$/iu.test(commandText(msg.text));
+    let reply:string|undefined;
+    if(!emergency || reactivating){
+      if(msg.isGroup && msg.chatId===config.LAB_CHAT_ID && enableCommand(msg.text) && owner){
+        await c.query('INSERT INTO chats(id,is_group,enabled) VALUES($1,true,true) ON CONFLICT(id) DO UPDATE SET enabled=true',[msg.chatId]);
+        reply='Botsky habilitado en este chat.';
+      }else{
+        const result=await c.query<{enabled:boolean;settings:Chat['settings']}>('SELECT enabled,settings FROM chats WHERE id=$1',[msg.chatId]);
+        let saved=result.rows[0];
+        let allowed=saved?.enabled===true;
+        if(!msg.isGroup){
+          const eligible=await privateEligible(c,actor);
+          if(eligible && !saved){
             await c.query('INSERT INTO chats(id,is_group,enabled) VALUES($1,false,true) ON CONFLICT DO NOTHING',[msg.chatId]);
+            saved={enabled:true,settings:{}};
           }
-          allowed = eligible && (chat.rows[0]?.enabled ?? true);
+          allowed=eligible && (saved?.enabled ?? true);
         }
-        if (allowed && activated(msg, config.BOT_JIDS) && isPing(msg.text)) reply = 'pong';
+        const session=await activeSession(c,actor.id,msg.chatId);
+        const text=commandText(msg.text);
+        const accepts=sessionAccepts(session,text);
+        if(allowed && activated(msg,config.BOT_JIDS,Boolean(accepts))){
+          if(maintenance && !owner)reply='Estoy en mantenimiento.';
+          else {
+            const gemini=new Gemini(db,config,actor.id);
+            const ctx={actor,chat:{id:msg.chatId,isGroup:msg.isGroup,enabled:true,settings:saved?.settings ?? {}},msg,db,c,config,now:new Date(),search:(query:string)=>config.WEB_SEARCH_PROVIDER==='gemini'?gemini.search(query):searxSearch(config,query)};
+            reply=await route(ctx,config.GEMINI_API_KEY && config.GEMINI_FREE_TIER_CONFIRMED?gemini:undefined);
+            if(commandText(msg.text).toLowerCase()==='apagado de emergencia' && owner)reply=undefined;
+            if(reply)await rememberContext(ctx,reply);
+          }
+        }
       }
     }
     if (reply) {

@@ -48,3 +48,10 @@ describe('actual Evolution 2.3.7 captures',()=>{
     expect(()=>normalizeEvent({event:'messages.upsert',instance:'botsky',data:{}},'botsky')).toThrow();
   });
 });
+it('retains an original manual-test image quote as a scoped reference without media credentials',()=>{
+  const event=normalizeData(fixture('image-quote'));if(event?.kind!=='message')throw new Error('Missing captured image quote');
+  expect(event.message.text).toBe('oye botsky de que color es lo que sale aqui?');
+  expect(event.message.attachments).toEqual([]);
+  expect(event.message.quoted?.attachments).toEqual([{kind:'image',ref:'manual-image-origin:image',mime:'image/jpeg'}]);
+  expect(JSON.stringify(event.message)).not.toMatch(/mediaKey|directPath|base64|sha256|https?:/);
+});

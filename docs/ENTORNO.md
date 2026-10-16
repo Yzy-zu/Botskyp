@@ -195,3 +195,82 @@ scripts/panic.sh     # Apagado de emergencia inmediato desde consola
 - Fixtures originales y procedencia en `tests/fixtures`; 61 pruebas automáticas.
 - Sigue pendiente revisión del arquitecto y copia/restauración externa. SSH al
   candidato `jssi-1` se rechazó por clave de host desconocida; no se aceptó sin verificar.
+
+## 8. Evidencia de despliegue de Fase 1 (constructor, 16-10-2026)
+
+- Rama `phase-1-nucleo`, código desplegado `218b38e`, sin fusión a `main`.
+- Script oficial ejecutado con respaldo previo; migraciones `001_init.sql` y
+  `002_core.sql` presentes en la base propia. App y worker saludables.
+- `/health` HTTP 200 con base y conexión real de Evolution en verde.
+- Gemini principal `gemini-3.5-flash-lite`; clave primaria local recuperada con
+  autorización del dueño y confirmación de proyecto sin facturación. El `.env`
+  heredado y el activo son locales, ignorados por Git y con permisos 600.
+- SearXNG `2026.10.16-ff8f5ddcc`, contenedor `botsky-searxng-1`, ARM64, sin puertos
+  publicados, 256 MiB / 0.20 CPU, red de salida propia y acceso por la red interna.
+  Firma con secreto propio (`SEARXNG_SECRET`) generado localmente, distinto al webhook.
+- API JSON de búsqueda comprobada desde app: cinco enlaces para PostgreSQL.
+- Cero grupos habilitados fuera de Botsky Lab. El dueño confirmó nota y programación
+  con aclaración de fecha en WhatsApp. Entrega tras reinicio y demás pruebas físicas pendientes.
+- Node local 24 sigue en `.local/node/bin`; no se sustituyó el Node del sistema.
+- Guía y evidencia: `docs/fases/FASE-1.md`, `docs/fases/FASE-1-PRUEBAS.md` y DEC-019–022.
+
+
+## 9. Revisión de pruebas manuales de Fase 1 (16-10-2026)
+
+- Código final de correcciones: `90a63a3`, desplegado por el script oficial con
+  respaldo previo. Rama `phase-1-nucleo` solamente; la documentación posterior no
+  cambia la imagen de código desplegada.
+- Base propia con `001_init.sql`, `002_core.sql`, `003_llm_reservations.sql`.
+  La migración nueva solo añade reserva de tokens; no modifica datos de usuario.
+- `/health` HTTP 200 con base y Evolution conectados; app, worker y SearXNG saludables.
+- Nueve solicitudes de esta ronda auditadas contra historial del proveedor. Nota #1,
+  aclaración/fecha de recordatorio #1, entrega de #2 con 1,139310 s de retraso,
+  búsqueda y visión correctas. La entrega de #2 no incluyó un reinicio intermedio.
+- Corregidos exceso de reserva TPM, diagnóstico de timeout/límite local, contenido
+  faltante del recordatorio y resolución de imágenes citadas del mismo chat.
+- Typecheck, lint, build y 127 tests correctos. Dos integraciones de imagen con
+  proveedor real en base aislada; la cita respondió en 1266 ms sin envíos a WhatsApp.
+- Se conserva el estado histórico de notas/recordatorios y cero grupos habilitados
+  fuera de Lab. Evolution no se modificó ni reinició.
+- Evidencia detallada, fallos y pendientes: `docs/fases/FASE-1-PRUEBAS.md`, DEC-023–025
+  e INC-20261016-05. Pendiente repetición física de correcciones y revisión del arquitecto.
+
+
+## 10. Segunda revisión manual de Fase 1 (16-10-2026)
+
+- Tres solicitudes nuevas, 03:35–03:36 UTC, auditadas por ID y texto contra Evolution.
+  Visión y entregas sin duplicación; búsquedas fallidas por contexto/intención.
+- Corrección DEC-026 e INC-20261016-06: consultas completas sin IA y referencias con
+  contexto del mismo actor/chat, conservación del objetivo y tool web exclusivamente.
+- Typecheck, lint, build y 140 tests en 14 archivos correctos. Integración real
+  Gemini/SearXNG en base aislada: consultas pertinentes en 1747/2328 ms, cero envíos.
+- Sin migraciones o servicios nuevos; no se cambian datos ni activaciones de grupos.
+- Estado físico y pendientes en `docs/fases/FASE-1-PRUEBAS.md`. La corrección requiere
+  repetición física; no sustituye la revisión del arquitecto ni autoriza Fase 2.
+- Despliegue final de código **`f56dbc1`** por script oficial, respaldo verificado
+  y `/health` HTTP 200 a las 03:48 UTC. App/worker/SearXNG saludables; base y
+  Evolution conectados. Sin errores nuevos de arranque, sin cambios a Evolution.
+  Notas/recordatorios conservan sus campos auditados; cero grupos activos fuera de
+  Lab. Los commits documentales posteriores no cambian esa imagen desplegada.
+
+## 11. Corrección de utilidad visual y contexto de búsqueda (16-10-2026)
+
+- Código **`38163f2`**, desplegado únicamente desde `phase-1-nucleo` por
+  `scripts/deploy.sh`, con respaldo previo verificado. Sin migraciones nuevas.
+- DEC-027: contenido/uncertidumbre antes de la burla; preguntas breves de raza
+  reutilizan la última imagen propia del mismo chat, máximo diez minutos.
+- DEC-028: una petición segura conserva su contexto aunque la respuesta con enlaces
+  sea filtrada. Los filtros de datos sensibles y los ámbitos siguen vigentes.
+- Typecheck, lint, build y **153 tests** correctos. Gemini real confirmó utilidad
+  visual e incertidumbre; dos búsquedas posteriores con persistencia de contexto
+  usaron Gemini/SearXNG reales, 4349/4132 ms. Cero envíos desde las bases aisladas.
+- `/health` HTTP 200 a las **10:20 UTC**, base y Evolution conectados; app/worker
+  con la imagen esperada y saludables, sin advertencias/errores nuevos de arranque.
+- Notas y recordatorios idénticos al snapshot previo; cero grupos habilitados
+  fuera de Lab. Evolution no se reinició ni modificó. La documentación posterior
+  no cambia el código de la imagen desplegada.
+- Todas las pruebas físicas adicionales pendientes de Fase 1 omitidas voluntariamente
+  por el dueño (DEC-030), incluido recordatorio con reinicio físico. La evidencia
+  automática/integración existente es suficiente para cierre y se conserva su
+  cobertura. Fase 1 lista para cierre; siguiente paso: revisión del arquitecto,
+  sin merge a `main` ni Fase 2. No se afirma ejecución física de las pruebas omitidas.

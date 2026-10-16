@@ -35,3 +35,10 @@ backups/
 .vscode/
 *.swp
 *.swo
+
+# Datos privados y estado operativo local
+.local/
+!src/db/migrations/*.sql
+
+# Python bytecode
+__pycache__/

@@ -1,0 +1,35 @@
+{
+  "event": "messages.upsert",
+  "instance": "botsky",
+  "date_time": "2026-10-15T21:39:17.563Z",
+  "data": {
+    "messageType": "reactionMessage",
+    "messageTimestamp": 1792111157,
+    "source": "android",
+    "status": "DELIVERY_ACK",
+    "key": {
+      "remoteJid": "300@g.us",
+      "fromMe": false,
+      "id": "msg-a94c023a7342",
+      "participant": "111@lid",
+      "participantAlt": "100@s.whatsapp.net",
+      "addressingMode": "lid"
+    },
+    "message": {
+      "reactionMessage": {
+        "text": "👍",
+        "senderTimestampMs": {
+          "low": 1109795294,
+          "high": 417,
+          "unsigned": false
+        },
+        "key": {
+          "remoteJid": "300@g.us",
+          "fromMe": false,
+          "id": "msg-a401473a6063",
+          "participant": "111@lid"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,15 @@
+export const product = {
+  staleSeconds: 120,
+  futureToleranceSeconds: 30,
+  outboxGapMs: 1_000,
+  tickMs: 5_000,
+  pollMs: 100,
+  historyPageSize: 50,
+  membershipRefreshMs: 60_000,
+  requestTimeoutMs: 10_000,
+  maxSendAttempts: 3,
+  maxReconcileAttempts: 3,
+  retryBaseMs: 5_000,
+  workerConcurrency: 1,
+  maxBodyBytes: 2_000_000,
+} as const;

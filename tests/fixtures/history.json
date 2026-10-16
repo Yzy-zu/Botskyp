@@ -1,0 +1,210 @@
+{
+  "messages": {
+    "total": 9,
+    "pages": 1,
+    "currentPage": 1,
+    "records": [
+      {
+        "messageType": "conversation",
+        "messageTimestamp": 1792113245,
+        "source": "android",
+        "key": {
+          "id": "msg-f83d1c155a10",
+          "fromMe": false,
+          "remoteJid": "300@g.us",
+          "participant": "111@lid",
+          "addressingMode": "lid",
+          "participantAlt": "100@s.whatsapp.net"
+        },
+        "message": {
+          "conversation": "bot ping"
+        }
+      },
+      {
+        "messageType": "conversation",
+        "messageTimestamp": 1792113245,
+        "source": "web",
+        "key": {
+          "id": "msg-d53cf57ed260",
+          "fromMe": true,
+          "remoteJid": "300@g.us"
+        },
+        "message": {
+          "conversation": "pong"
+        },
+        "contextInfo": {
+          "stanzaId": "msg-f83d1c155a10",
+          "participant": "111@lid",
+          "quotedMessage": {
+            "conversation": "bot ping"
+          }
+        }
+      },
+      {
+        "messageType": "reactionMessage",
+        "messageTimestamp": 1792111157,
+        "source": "android",
+        "key": {
+          "id": "msg-a94c023a7342",
+          "fromMe": false,
+          "remoteJid": "300@g.us",
+          "participant": "111@lid",
+          "addressingMode": "lid",
+          "participantAlt": "100@s.whatsapp.net"
+        },
+        "message": {
+          "reactionMessage": {
+            "text": "👍",
+            "senderTimestampMs": {
+              "low": 1109795294,
+              "high": 417,
+              "unsigned": false
+            },
+            "key": {
+              "id": "msg-a401473a6063",
+              "fromMe": false,
+              "remoteJid": "300@g.us",
+              "participant": "111@lid"
+            }
+          }
+        }
+      },
+      {
+        "messageType": "documentMessage",
+        "messageTimestamp": 1792111152,
+        "source": "android",
+        "key": {
+          "id": "msg-a401473a6063",
+          "fromMe": false,
+          "remoteJid": "300@g.us",
+          "participant": "111@lid",
+          "addressingMode": "lid",
+          "participantAlt": "100@s.whatsapp.net"
+        },
+        "message": {
+          "documentMessage": {
+            "fileName": "ejemplo.pdf",
+            "mimetype": "application/pdf",
+            "contextInfo": {
+              "mentionedJid": []
+            }
+          }
+        },
+        "contextInfo": {
+          "mentionedJid": []
+        }
+      },
+      {
+        "messageType": "imageMessage",
+        "messageTimestamp": 1792111144,
+        "source": "android",
+        "key": {
+          "id": "msg-fcc97e4f9b26",
+          "fromMe": false,
+          "remoteJid": "300@g.us",
+          "participant": "111@lid",
+          "addressingMode": "lid",
+          "participantAlt": "100@s.whatsapp.net"
+        },
+        "message": {
+          "imageMessage": {
+            "mimetype": "image/jpeg",
+            "contextInfo": {
+              "mentionedJid": []
+            }
+          }
+        },
+        "contextInfo": {
+          "mentionedJid": []
+        }
+      },
+      {
+        "messageType": "audioMessage",
+        "messageTimestamp": 1792111138,
+        "source": "android",
+        "key": {
+          "id": "msg-e9524deff5d9",
+          "fromMe": false,
+          "remoteJid": "300@g.us",
+          "participant": "111@lid",
+          "addressingMode": "lid",
+          "participantAlt": "100@s.whatsapp.net"
+        },
+        "message": {
+          "audioMessage": {
+            "ptt": true,
+            "seconds": 4,
+            "mimetype": "audio/ogg; codecs=opus",
+            "contextInfo": {
+              "mentionedJid": []
+            }
+          }
+        },
+        "contextInfo": {
+          "mentionedJid": []
+        }
+      },
+      {
+        "messageType": "conversation",
+        "messageTimestamp": 1792111129,
+        "source": "android",
+        "key": {
+          "id": "msg-5498d81acb36",
+          "fromMe": false,
+          "remoteJid": "300@g.us",
+          "participant": "111@lid",
+          "addressingMode": "lid",
+          "participantAlt": "100@s.whatsapp.net"
+        },
+        "message": {
+          "conversation": "@222 ping"
+        },
+        "contextInfo": {
+          "mentionedJid": [
+            "222@lid"
+          ]
+        }
+      },
+      {
+        "messageType": "conversation",
+        "messageTimestamp": 1792111123,
+        "source": "android",
+        "key": {
+          "id": "msg-10efa72629eb",
+          "fromMe": false,
+          "remoteJid": "300@g.us",
+          "participant": "111@lid",
+          "addressingMode": "lid",
+          "participantAlt": "100@s.whatsapp.net"
+        },
+        "message": {
+          "conversation": "prueba de cita"
+        },
+        "contextInfo": {
+          "stanzaId": "msg-3497176381ff",
+          "participant": "111@lid",
+          "mentionedJid": [],
+          "quotedMessage": {
+            "conversation": "bot ping"
+          }
+        }
+      },
+      {
+        "messageType": "conversation",
+        "messageTimestamp": 1792111108,
+        "source": "android",
+        "key": {
+          "id": "msg-3497176381ff",
+          "fromMe": false,
+          "remoteJid": "300@g.us",
+          "participant": "111@lid",
+          "addressingMode": "lid",
+          "participantAlt": "100@s.whatsapp.net"
+        },
+        "message": {
+          "conversation": "bot ping"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,37 @@
+[
+  {
+    "fixture": "reactionMessage.json",
+    "sourceSha256": "9bc589e1b4f8136cac36f78e9089ccca67b056718bf087ec31e306672254f743",
+    "origin": "captured-webhook"
+  },
+  {
+    "fixture": "audioMessage.json",
+    "sourceSha256": "7da229e7cf07d6aed11d37ffe81afc8904b34bfc565fe46b66a9da4fe4fccbc6",
+    "origin": "captured-webhook"
+  },
+  {
+    "fixture": "documentMessage.json",
+    "sourceSha256": "a78fb0c340ffe0123dc8feffe944fbc9dbe6d0a33745bf508c46fb6fabfd1dd7",
+    "origin": "captured-webhook"
+  },
+  {
+    "fixture": "imageMessage.json",
+    "sourceSha256": "8b195646d914c3c77123cf99a3ee7a7a853b3778dc1797c9888c5c7b3910db27",
+    "origin": "captured-webhook"
+  },
+  {
+    "fixture": "text-private.json",
+    "sourceSha256": "36f795f46e0e1d7416071fc36545d916f672e745d3a2a5122b1c50ad261b0b0a",
+    "origin": "captured-webhook"
+  },
+  {
+    "fixture": "text-group.json",
+    "sourceSha256": "8fa4dcbde62b6fae3e4059799b6320c6ac4019330a1f138c75f09cb06fda323c",
+    "origin": "captured-webhook"
+  },
+  {
+    "fixture": "history.json",
+    "sourceSha256": "69fc258976d446de77a2d46386e228d314f1383f4bd1a3df893eb4bf41042e72",
+    "origin": "captured-rest-response"
+  }
+]

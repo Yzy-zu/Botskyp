@@ -154,3 +154,29 @@ Historial operativo de fallos, causas, impacto y soluciones aplicadas en producc
   cero outbox. Repetición física omitida por el dueño y evidencia aceptada para
   cierre (DEC-030). No se modifican datos históricos ni Evolution. Fase 1 lista
   para cierre, con revisión del arquitecto previa al merge vigente.
+
+## INC-20261016-08 — Validación aislada de PDF de LibreOffice en Fase 5
+
+- **Impacto:** solo prueba automática en contenedor aislado sin red; producción intacta.
+- **Síntoma:** documento DOCX mínimo se convertía pero la validación rechazaba su PDF.
+- **Causa:** LibreOffice agrega `/OpenAction` como destino pasivo de página/zoom; el
+  filtro inicial rechazaba ese campo sin distinguirlo de una acción ejecutable.
+- **Solución:** admitir exclusivamente array cerrado de destino pasivo; conservar
+  rechazo de diccionarios de acción, JavaScript, Launch, AA y archivos embebidos.
+- **Evidencia:** caso real DOCX→PDF→TXT y prueba de PDF con JavaScript; resultados
+  finales se registran en FASE-5-PRUEBAS.md. Sin cambios a Evolution ni datos reales.
+
+## INC-20261016-09 — Primera integración de audio Gemini no disponible
+
+- **Impacto:** evaluador explícito en base aislada; cero mensajes WhatsApp y sin
+  caída de producción. QR/Piper del worker ya habían pasado.
+- **Síntoma:** el adaptador devolvió `LlmUnavailable(provider)` en la rama HTTP
+  no exitosa; no se capturó código/cuerpo. No permite atribuirlo a cuota, formato
+  o un HTTP específico. Se conserva ese límite de evidencia.
+- **Diagnóstico:** una segunda ejecución equivalente, con observación de respuesta
+  HTTP fallida si ocurría, aceptó el mismo flujo de audio y transcribió 34 caracteres.
+- **Resultado:** integración de audio confirmada en la segunda ejecución; causa
+  inicial no determinada. Sin parche funcional, cambio de clave/modelo/formato,
+  facturación ni bucle de reintentos. Disponibilidad externa observada, no garantizada.
+- **Evidencia:** logs privados `phase5-real-integration.log` y
+  `phase5-audio-diagnostic.log`; producción siguió healthy y `/health` HTTP 200.

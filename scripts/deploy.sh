@@ -52,7 +52,8 @@ if git rev-parse --abbrev-ref '@{upstream}' >/dev/null 2>&1; then
 fi
 [[ -z $(git status --porcelain --untracked-files=no) ]]
 image="botsky:$(git rev-parse --short=12 HEAD)"
-BOTSKY_IMAGE="$image" compose build app
+worker_image="botsky-worker:$(git rev-parse --short=12 HEAD)"
+BOTSKY_IMAGE="$image" BOTSKY_WORKER_IMAGE="$worker_image" compose build app worker
 # Pin rollback to the immutable image ID, even when rebuilding the same commit.
 if [[ "$mode" == --test-rollback ]]; then
   [[ -f "$previous" ]] || { echo 'Primero se necesita un despliegue sano' >&2; false; }
@@ -63,7 +64,8 @@ EOF_PROBE
   image="$image-rollback-probe"
 fi
 image_id=$(docker image inspect "$image" --format '{{.Id}}')
-BOTSKY_IMAGE="$image_id" compose config --format json > "$candidate"
+worker_image_id=$(docker image inspect "$worker_image" --format '{{.Id}}')
+BOTSKY_IMAGE="$image_id" BOTSKY_WORKER_IMAGE="$worker_image_id" compose config --format json > "$candidate"
 if [[ "$mode" == --test-rollback ]]; then
   python3 - "$candidate" <<'PY_PROBE'
 import json, pathlib, sys

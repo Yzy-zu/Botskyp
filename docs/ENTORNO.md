@@ -328,3 +328,36 @@ con status/players reales y rechazo de `id`. Worker sin llave ni flag habilitado
 Evolution y Minecraft conservan tiempos de arranque; cero operaciones administrativas
 reales y cero grupos habilitados fuera de Lab. 360/360 pruebas y 14/14 del wrapper;
 pruebas físicas de control/restauración pendientes. Sin merge ni Fase 5.
+
+## 13. Preparación de Fase 5 — 16-10-2026
+
+- Base `afe4b84a853308c02c7e52e650d15b00310083cc`, rama
+  `phase-5-multimedia-documentos`; Fases 0–4 cerradas según el dueño.
+- Wikimedia Commons responde desde el VPS a búsquedas públicas de audio/video.
+  El cliente HTTPS con DNS IPv4 fijado descargó `En-us-hello.ogg`, 9036 bytes,
+  MIME application/ogg, sin cookies ni credenciales.
+- Evolution 2.3.7 admite sendMedia image/document/video/audio y sendSticker por
+  separado. Fuente oficial verifica JSON 136 MB; los topes locales de Botsky son
+  más bajos y no se confunden con una garantía de entrega física WhatsApp.
+- Imagen de worker ARM64 separada: ffmpeg, Pillow, Tesseract spa/eng, Poppler,
+  pypdf, LibreOffice, zbar y Piper 1.8.0, voz es_MX-ald-medium descargada al build.
+- 17 casos reales de procesadores pasaron en contenedor read-only, sin red,
+  768 MiB/0.50 CPU/64 PIDs; incluye QR, OCR, DOCX/PDF, audio/video/stickers,
+  Piper y seccomp en descendientes. No se atribuyen envíos WhatsApp a esa evidencia.
+- Nuevos datos en PostgreSQL propio (`media_attachments`), no volúmenes de
+  archivos externos al backup. Originales 7 días, generados 2; tope 256 MB.
+- Despliegue final e imágenes inmutables se registran en la documentación de fase
+  al obtener evidencia. Evolution/SSH/Minecraft no se reinstalan ni reconfiguran.
+
+### 13.1 Despliegue de Fase 5 verificado
+
+`7675380`, script oficial, respaldo `botsky-20261016T203854-2377634.dump` verificado.
+App/worker healthy; `/health` HTTP 200 con BD/Evolution conectados; migraciones
+001–007. Imágenes separadas fijadas por ID en el snapshot privado de despliegue
+(detalle en FASE-5.md). Límites reales worker: 768 MiB/0.50 CPU/64 PIDs, sin llave
+Minecraft. Evolution API/Postgres/Redis conservan imagen y StartedAt previos.
+Cero grupos habilitados fuera de Lab y cero jobs multimedia en producción.
+QR/Piper y dos entregas simuladas con worker real en BD aislada; audio Gemini real
+correcto tras un primer error de proveedor no atribuido a código HTTP concreto.
+445/445 Vitest, wrapper 14/14; verificación posterior focalizada 82/82 y procesadores
+17/17. No hay pruebas físicas WhatsApp confirmadas de esta fase.

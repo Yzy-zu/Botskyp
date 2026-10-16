@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { product } from '../../config/product.js';
-export type Session={id:string;chat_id:string;owner_id:string;kind:'confirm'|'clarify'|'game';state:unknown;version:number;accepted_inputs:string[]};
+export type Session={id:string;chat_id:string;owner_id:string;kind:'confirm'|'clarify'|'game'|'media';state:unknown;version:number;accepted_inputs:string[]};
 export function argumentHash(action:string,args:unknown):string{
   function canonical(value:unknown):unknown{
     if(Array.isArray(value))return value.map(canonical);
@@ -25,8 +25,9 @@ export async function closeSession(c:PoolClient,session:Session,status:'done'|'c
   return Boolean(result.rowCount);
 }
 
-export function sessionAccepts(session:Session|undefined,text:string):boolean{
+export function sessionAccepts(session:Session|undefined,text:string,hasAttachments=false):boolean{
   if(!session)return false;
+  if(session.kind==='media')return hasAttachments || /^(?:[1-5]|terminar|cancelar|no)[.!]?$/iu.test(text);
   if(session.kind==='game')return /^(carta|plantarse|doblar|estado|partida|cancelar)[.!]?$/iu.test(text);
   if(session.kind==='clarify' && session.accepted_inputs.includes('contenido'))return text.trim().length>0;
   if(session.kind==='confirm')return /^(s[ií]|no|cancelar)[.!]?$/iu.test(text);

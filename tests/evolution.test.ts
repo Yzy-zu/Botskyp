@@ -73,3 +73,17 @@ it('an uncertain media send cannot be reconciled by a caption-only text match',a
   rows=[{key:{id:'text-only',remoteJid:'300@g.us',fromMe:true},message:{conversation:'pong'},contextInfo:{stanzaId:'inbound-1'}}];
   expect(await adapter.reconcile({...delivery,attachmentId:'f7b4b074-d968-444b-969c-7b31c3c12a96'})).toEqual({status:'unknown'});
 });
+
+it.each(['audio','video','sticker'] as const)('sends Phase 5 %s through its verified contract and preserves ambiguous sends',async kind=>{
+  const media={kind,mime:kind==='audio'?'audio/ogg':kind==='video'?'video/mp4':'image/webp',base64:'dGVzdA==',fileName:'botsky-1.ogg'};
+  vi.spyOn(globalThis,'fetch').mockImplementationOnce(async(url,init)=>{
+    expect(String(url)).toContain(kind==='sticker'?'/sendSticker/':'/sendMedia/');
+    const body=JSON.parse(String(init?.body)) as Record<string,unknown>;
+    expect(body[kind==='sticker'?'sticker':'media']).toBe(media.base64);
+    if(kind!=='sticker')expect(body['mediatype']).toBe(kind);
+    return Response.json({key:{id:'media-5',remoteJid:'300@g.us',fromMe:true}},{status:201});
+  });
+  expect(await adapter.send({...delivery,media})).toEqual({status:'sent',id:'media-5'});
+  vi.spyOn(globalThis,'fetch').mockRejectedValueOnce(new TypeError('lost_response'));
+  expect((await adapter.send({...delivery,media})).status).toBe('uncertain');
+});

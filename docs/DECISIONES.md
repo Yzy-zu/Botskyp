@@ -729,3 +729,111 @@ Se autoriza exclusivamente documentación de control, verificaciones y commit/pu
 a `phase-4-minecraft`. **No se autoriza merge a `main`, inicio de Fase 5 ni
 activación de módulos fuera de Lab.** No se requiere nuevo despliegue. Al terminar,
 el constructor se detiene sin esperar acciones físicas del dueño.
+
+## 8. Decisiones de Fase 5 (aprobadas por el arquitecto sin correcciones de código ni configuración)
+
+### DEC-043: Inicio autorizado, fuente abierta comprobada y límites conservadores
+
+El dueño declara Fases 0–4 cerradas y fusionadas, base
+`afe4b84a853308c02c7e52e650d15b00310083cc`, y autoriza solo Fase 5, sin merge ni
+Fases 6/7. Un constructor, rama `phase-5-multimedia-documentos`; sigue la barrera
+Lab, sin activaciones en grupos reales. Supera las prohibiciones históricas de
+DEC-042 únicamente dentro de ese alcance.
+
+Se habilita inicialmente Wikimedia Commons: API de búsqueda audio/video y archivos
+originales de upload.wikimedia.org con ruta cerrada. Verificadas búsquedas reales
+y descarga de `File:En-us-hello.ogg`, 9036 bytes, desde el VPS sin cookies/cuentas.
+No se necesita yt-dlp para esta fuente directa, ni se instala un extractor genérico.
+YouTube permanece excluido. Las páginas del archivo permiten consultar autor y
+licencia; se atribuye cada descarga a su página. Otras plataformas no se prometen.
+
+Se revisaron el [schema oficial Evolution 2.3.7](https://github.com/EvolutionAPI/evolution-api/blob/2.3.7/src/validate/message.schema.ts)
+y [main de esa versión](https://github.com/EvolutionAPI/evolution-api/blob/2.3.7/src/main.ts):
+mediatype image/document/video/audio, sendSticker separado y JSON hasta 136 MB.
+Son límites del servidor REST, no garantía de WhatsApp. La referencia de
+[medios WhatsApp](https://developers.facebook.com/docs/whatsapp/cloud-api/reference/media/)
+se toma solo como referencia conservadora, no como API instalada. Se fijan máximos
+locales inferiores: 8 MB total por entrada/salida, 4 MB imagen/video, 100 KB sticker
+estático y 500 KB animado. La entrega física queda pendiente, sin atribuir validez
+a un mero HTTP del mock. Sin Drive ni alternativa que amplíe el ámbito de entrega.
+
+### DEC-044: Cola durable, artefactos en BD y aislamiento de procesadores
+
+Migración aditiva 007: ampliación del enum de sesiones, referencias únicas de jobs
+y `media_attachments` con ámbito chat/actor, hash y expiración. No borra datos.
+Dos activos por actor globalmente, veinte en cola global, worker único SKIP LOCKED.
+Originales 7 días, generados 2 (§0); bytes en PostgreSQL propio y por tanto cubiertos
+por el respaldo existente. Tope 256 MB de artefactos retenidos; limpieza idempotente
+vacía bytes caducados y conserva metadatos. No se añaden volúmenes con originales
+fuera del backup. Backups mantienen su política heredada, sin fingir copia externa.
+
+Conversiones en imagen separada del worker (ARM64): ffmpeg, Pillow, Tesseract,
+Poppler, pypdf, LibreOffice, zbar y Piper. App mantiene imagen ligera. Deploy oficial
+construye y fija por ID inmutable ambas imágenes; rollback conserva ambas y la BD.
+Worker 768 MiB/0.50 CPU, 64 PIDs, tmpfs 256 MiB. Procesadores sin entorno de servicios,
+con nice, rlimits, timeout y grupo de procesos terminable; seccomp bloquea sockets
+IP también en sus descendientes y conserva solo IPC local. Fallo al instalar el
+filtro impide procesar. Sin shell, argumentos libres ni rutas del modelo/usuario.
+
+Se verificaron [protocolos ffmpeg](https://ffmpeg.org/ffmpeg-protocols.html),
+[Piper CLI](https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/CLI.md),
+[voz ald es_MX](https://huggingface.co/rhasspy/piper-voices/blob/main/es/es_MX/ald/medium/MODEL_CARD),
+[API MediaWiki](https://www.mediawiki.org/wiki/API:Imageinfo) y
+[límites Compose](https://docs.docker.com/reference/compose-file/services/).
+Piper 1.8.0 tiene wheel ARM64; ald-medium declara dataset Unlicense. Síntesis local
+real comprobada en contenedor sin red; la escucha/calidad física queda pendiente.
+No se usa TTS Gemini ni nuevos proveedores. Transcripción reutiliza Gemini/cuota
+existentes, sin ofrecer tools al audio y con resumen opcional separado.
+
+### DEC-045: Entrega verificable, reinicios y documentos no ejecutables
+
+El job guarda resultado + outbox en una transacción; `done` solo significa procesado.
+La consulta distingue pendiente, incierta, fallida y confirmada por proveedor.
+Reinicios recuperan running hasta tres intentos totales, sin repetir jobs terminados
+ni entregas inciertas. El outbox conserva la reconciliación conservadora anterior.
+Se revalidan permisos/módulo/emergencia antes de procesar y entregar. Referencias
+a archivos recibidos vienen de inbox aceptado, nunca de Gemini; citas a generados
+requieren artefacto vigente del mismo chat/actor y envío confirmado.
+
+Office admite DOCX/XLSX/PPTX, inspecciona ZIP acotado sin extraer, rechaza macros,
+embebidos, referencias externas y rutas peligrosas; LibreOffice usa perfil aislado.
+PDF rechaza scripts/acciones ejecutables/embebidos. Una prueba real mostró que
+LibreOffice escribe OpenAction con destino inicial pasivo de página/zoom: se admite
+solo esa forma de array cerrada. Un diccionario de acción sigue rechazado. No se
+relaja ejecución de contenido y seccomp continúa bloqueando red. La revisión
+arquitectónica fue aprobada sin correcciones de código ni configuración (DEC-046).
+
+
+### DEC-046: Aprobación arquitectónica y cierre técnico de Fase 5
+
+**Confirmación e instrucción expresa del dueño, 16-10-2026.** La auditoría
+arquitectónica de Fase 5 — Multimedia y Documentos fue **aprobada, sin correcciones
+de código ni configuración requeridas**. La fase queda **aprobada y lista para
+cierre técnico**.
+
+La evidencia automática, los procesadores reales, el worker, Gemini y la
+integración existente se consideran suficientes para el cierre técnico.
+**Ninguna prueba física pendiente es bloqueante para ese cierre**. Las pruebas de
+**Piper/voz, sticker nativo y QR extremo a extremo** quedan **recomendables antes
+de activar Multimedia fuera de Botsky Lab**. Se mantiene la secuencia de Lab para
+validaciones voluntarias; no se espera su ejecución para terminar esta tarea.
+
+Las pruebas físicas pendientes permanecen **sin ejecución confirmada**. No se
+presentan como realizadas ni se confunde el transporte simulado con recepción
+WhatsApp, escucha de la voz o lectura física de un QR.
+
+**No se eliminan tests, fixtures ni cobertura automática o de integración.** Se
+conservan las 445 pruebas existentes (360 regresiones anteriores y 85 de Fase 5),
+las 82 comprobaciones multimedia, los 17 casos de procesadores reales, los 14 del
+wrapper Minecraft y la evidencia de worker/Gemini. Se vuelven a ejecutar las
+verificaciones solicitadas sin cambiar sus implementaciones ni la configuración.
+
+Esta instrucción directa prevalece sobre los pendientes anteriores de revisión o
+prueba física como condición de cierre técnico de Fase 5. No modifica fuentes,
+formatos, límites, retención, permisos, aislamiento, idempotencia ni reconciliación.
+Se conserva el despliegue existente desde `7675380`, sin activar grupos reales.
+
+Se autoriza exclusivamente documentación de control, verificaciones existentes y
+commit/push a `phase-5-multimedia-documentos`. **No se autoriza merge a `main`,
+inicio de Fase 6/7, cambios funcionales o de configuración ni un nuevo despliegue**.
+El constructor se detiene al terminar, sin esperar pruebas físicas del dueño.

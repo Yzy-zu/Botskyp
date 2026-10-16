@@ -32,7 +32,7 @@ function isTimeout(error:unknown,signal:AbortSignal):boolean{
   return signal.aborted || (error instanceof Error && (error.name==='TimeoutError' || error.name==='AbortError'));
 }
 export class Gemini implements Llm {
-  constructor(private db:Db,private config:Config,private actor:string,private budget:CallBudget={used:0},private http:typeof fetch=fetch){}
+  constructor(private db:Db,private config:Config,private actor:string,private budget:CallBudget={used:0},private http:typeof fetch=fetch,private parentSignal?:AbortSignal){}
   private async request(input:LlmInput,search=false):Promise<z.infer<typeof responseSchema>>{
     if(!this.config.GEMINI_API_KEY || !this.config.GEMINI_FREE_TIER_CONFIRMED)throw new LlmUnavailable('disabled');
     const textOnly=JSON.stringify({...input,contents:input.contents},(key,value:unknown)=>key==='data'?'[image]':value);
@@ -43,7 +43,7 @@ export class Gemini implements Llm {
       if(this.budget.used>=product.llmMaxCalls)throw new LlmUnavailable('local_limit','message');
       const hasImage=JSON.stringify(input.contents,(key,value:unknown)=>key==='data'?'[bytes]':value).includes('"inlineData"');
       const id=await reserveCall(this.db,this.actor,model,search?'web':hasImage?'vision':'router',estimateInputTokens(input));this.budget.used++;
-      const signal=AbortSignal.timeout(hasImage?product.llmVisionTimeoutMs:product.llmTimeoutMs);
+      const signal=AbortSignal.any([AbortSignal.timeout(hasImage?product.llmVisionTimeoutMs:product.llmTimeoutMs),...(this.parentSignal?[this.parentSignal]:[])]);
       let response:Response;
       try {
         response=await this.http(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,{

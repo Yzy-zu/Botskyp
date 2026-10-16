@@ -63,7 +63,7 @@ export async function processNext(db: Db, config: Config):Promise<boolean> {
         }
         const session=await activeSession(c,actor.id,msg.chatId);
         const text=commandText(msg.text);
-        const accepts=sessionAccepts(session,text);
+        const accepts=sessionAccepts(session,text,msg.attachments.length>0);
         if(allowed && msg.isGroup){await chatLock(c,msg.chatId);await lockChatWallets(c,msg.chatId,actor.id);}
         const xpCtx={actor,chat:{id:msg.chatId,isGroup:msg.isGroup,enabled:allowed,settings:saved?.settings ?? {}},msg,db,c,config,now:new Date(),search:async()=>''};
         if(allowed && !maintenance)await activity(xpCtx);

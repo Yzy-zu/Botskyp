@@ -35,10 +35,12 @@ export class Evolution implements Transport {
     try{
       const quote=delivery.sourceId?{quoted:{key:{id:delivery.sourceId,remoteJid:delivery.chatId}}}:{};
       const media=delivery.media;
-      const response=z.object({key}).parse(await this.request(`/message/${media?'sendMedia':'sendText'}/${this.config.INSTANCE}`,
-        media?{number:delivery.chatId,mediatype:media.kind,mimetype:media.mime,media:media.base64,caption:delivery.text,
-          fileName:`adjunto-${delivery.id}.${media.mime==='application/pdf'?'pdf':media.mime.split('/')[1]}`,...quote}
-          :{number:delivery.chatId,text:delivery.text,linkPreview:false,...quote}));
+      const path=media?.kind==='sticker'?'sendSticker':media?'sendMedia':'sendText';
+      const body=media?.kind==='sticker'?{number:delivery.chatId,sticker:media.base64,...quote}:media?
+        {number:delivery.chatId,mediatype:media.kind,mimetype:media.mime,media:media.base64,caption:delivery.text,
+          fileName:media.fileName ?? `adjunto-${delivery.id}.${media.mime==='application/pdf'?'pdf':media.mime.split('/')[1]}`,...quote}:
+        {number:delivery.chatId,text:delivery.text,linkPreview:false,...quote};
+      const response=z.object({key}).parse(await this.request(`/message/${path}/${this.config.INSTANCE}`,body));
       if(!response.key.fromMe || response.key.remoteJid!==delivery.chatId)return {status:'uncertain',reason:'unexpected_send_response'};
       return {status:'sent',id:response.key.id};
     }catch(error){

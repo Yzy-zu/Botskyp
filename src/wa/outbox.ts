@@ -1,3 +1,4 @@
+import { mediaDelivery } from '../modules/media/delivery.js';
 import { schoolDelivery } from '../modules/school/delivery.js';
 import { product } from '../../config/product.js';
 import type { Db } from '../db/client.js';
@@ -52,6 +53,11 @@ export async function sendNext(db:Db, transport:Transport, config:Config):Promis
       return true;
     }
     if(school.media)delivery.media=school.media;
+  }
+  if(row.kind==='media_result'){
+    const media=await mediaDelivery(db,config,row);
+    if(!media){await db.query("UPDATE outbox SET status='failed',last_error='media_delivery_not_allowed' WHERE id=$1 AND status='queued'",[row.id]);return true;}
+    delivery.media=media;
   }
   // Persist uncertainty BEFORE crossing the network boundary.
   const claimed=await db.query("UPDATE outbox SET status='sending',sending_at=now(),attempts=attempts+1 WHERE id=$1 AND status='queued' RETURNING id",[row.id]);

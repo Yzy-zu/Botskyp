@@ -19,7 +19,7 @@ flowchart TD
     f1 --> f2["Fase 2: Escuela<br/>(Horarios, Tareas, Visión)"]
     f1 --> f3["Fase 3: Economía y Juegos<br/>(Aprobada · lista para cierre)"]
     f1 --> f4["Fase 4: Minecraft<br/>(Aprobada · lista para cierre)"]
-    f1 --> f5["Fase 5: Multimedia y Worker<br/>(ffmpeg, PDF, OCR, Jobs)"]
+    f1 --> f5["Fase 5: Multimedia y Documentos<br/>(Aprobada · lista para cierre técnico)"]
     
     f3 --> f6["Fase 6: Biblioteca, Packs y Cooperacha<br/>(Drive, Sincronización, Cooperacha grupal)"]
     f5 --> f6
@@ -128,24 +128,44 @@ En lugar de atar rígidamente herramientas específicas (como Antigravity o Code
 
 ## 6. Estado y siguiente paso inmediato
 
-Las **Fases 0–3 están cerradas y fusionadas a `main`**, según la confirmación del
-dueño; base de Fase 4 `27572701d231ff17fa5fba886bd82880b92fe91f`.
+Las **Fases 0–4 están cerradas y fusionadas a `main`**, según la confirmación del
+dueño; base de Fase 5 `afe4b84a853308c02c7e52e650d15b00310083cc`.
 
-La **Fase 4 — Minecraft está aprobada por el arquitecto y lista para cierre
-técnico**, sin correcciones de código requeridas. El dueño comunicó la aprobación
-el 16-10-2026; se registra en DEC-042. Está implementada y desplegada desde
-`49a3f14` en `phase-4-minecraft`. La documentación posterior conserva esa imagen.
+La **Fase 5 — Multimedia y Documentos está aprobada por el arquitecto y lista para
+cierre técnico**, sin correcciones de código ni configuración requeridas. El dueño
+comunicó la aprobación el 16-10-2026; se registra en DEC-046. Se conserva el
+despliegue desde `7675380` en `phase-5-multimedia-documentos`.
 
-La evidencia automática, la integración SSH real de solo lectura y la auditoría
-existente se consideran suficientes para el cierre técnico. Las pruebas físicas
-de start/stop/restart, backup real y restauración aislada son **recomendables pero
-no bloqueantes**. `bot mc estado` y `bot mc jugadores` quedan como **validaciones
-operativas opcionales**. Se conserva su estado de no ejecutadas físicamente y toda
-la cobertura automática, fixtures y pruebas del wrapper. La secuencia de Lab sigue
-disponible en `docs/fases/FASE-4-PRUEBAS.md`.
+La evidencia automática, procesadores reales, worker, Gemini e integración
+existente se consideran suficientes para el cierre técnico. **Ninguna prueba
+física pendiente es bloqueante**. Piper/voz, sticker nativo y QR extremo a extremo
+quedan **recomendables antes de activar Multimedia fuera de Botsky Lab**. Se
+conservan su estado de pendientes y todos los tests, fixtures y cobertura; no se
+atribuyen entregas físicas a simulaciones.
 
-El trabajo autorizado se limita a registrar esta aprobación, verificar typecheck,
-lint, tests, build y `/health`, y hacer commit/push de la documentación a
-`phase-4-minecraft`. **No se cambia código funcional, no se fusiona a `main`, no se
-inicia Fase 5 ni se activan módulos fuera de Lab.** El constructor se detiene al
-terminar, sin esperar pruebas físicas ni realizar un nuevo despliegue.
+El trabajo autorizado se limita a registrar la aprobación, ejecutar las
+verificaciones existentes y hacer commit/push de la documentación a
+`phase-5-multimedia-documentos`. **Sin cambios funcionales ni de configuración,
+nuevo despliegue, merge a `main`, Fase 6/7 ni activaciones fuera de Lab**. El
+constructor se detiene al terminar, sin esperar pruebas físicas.
+
+## 7. Autorización y aprobación de Fase 5 — 16-10-2026
+
+La instrucción directa del dueño confirma Fases 0–4 cerradas y fusionadas, base
+`afe4b84a853308c02c7e52e650d15b00310083cc`, y autoriza únicamente Fase 5 en
+`phase-5-multimedia-documentos`. Esa autorización superó el bloqueo histórico de
+Fase 4 (DEC-042) únicamente dentro de ese alcance.
+Un constructor, sin paralelización, merge ni inicio de Fase 6/7. Módulos nuevos
+conservan barrera de Botsky Lab; ningún grupo real se activa.
+
+Implementación y evidencia en FASE-5.md y FASE-5-PRUEBAS.md. DEC-043–045 quedan
+aprobadas sin correcciones; DEC-046 registra formalmente la aprobación comunicada
+por el dueño. La siguiente acción autorizada es cerrar esta verificación documental
+y detenerse, sin avanzar a otra fase.
+
+Fase 5 implementada y desplegada desde `7675380`: 445/445 Vitest, wrapper 14/14,
+82/82 comprobaciones focalizadas posteriores, 17/17 procesadores reales y health
+HTTP 200. QR/Piper y audio Gemini comprobados en integración aislada, sin envíos
+reales. Pruebas físicas siguen pendientes, recomendables y no bloqueantes para el
+cierre técnico. Estado: **aprobada y lista para cierre técnico**; sin merge,
+Fase 6/7 ni activaciones fuera de Lab.

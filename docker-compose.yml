@@ -102,7 +102,7 @@ services:
       options: {max-size: 5m, max-file: '3'}
   app:
     <<: *runtime
-    build: .
+    build: {context: ., target: app}
     container_name: botsky-app
     ports: ['127.0.0.1:${BIND_PORT:-3000}:3000']
     networks: [internal, evolution]
@@ -119,12 +119,17 @@ services:
       retries: 12
   worker:
     <<: *runtime
+    image: ${BOTSKY_WORKER_IMAGE:-botsky-worker:phase5}
+    build: {context: ., target: worker}
     container_name: botsky-worker
+    tmpfs: ['/tmp:size=256m,mode=1777']
+    pids_limit: 64
+    stop_grace_period: 190s
     command: [node, dist/src/worker.js]
     environment:
       <<: *environment
       CAPTURE_ENABLED: 'false'
-    networks: [internal]
+    networks: [internal, media-egress, evolution]
     mem_limit: 768m
     cpus: '0.50'
     healthcheck:
@@ -135,6 +140,7 @@ services:
 volumes:
   botsky_pgdata:
 networks:
+  media-egress:
   search-egress:
   internal:
     internal: true

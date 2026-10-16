@@ -1,3 +1,4 @@
+import { minecraftShortcut } from '../modules/minecraft/shortcuts.js';
 import { economyShortcut } from '../modules/games/shortcuts.js';
 import { schoolShortcut } from '../modules/school/shortcuts.js';
 import { DateTime } from 'luxon';
@@ -23,6 +24,7 @@ export function parseDate(text:string,zone:string,now:Date):string|undefined{
 }
 export function shortcut(text:string,zone:string,now:Date):Shortcut|undefined{
   const t=commandText(text);let m:RegExpExecArray|null;
+  const mc=minecraftShortcut(t);if(mc)return mc;
   const economy=economyShortcut(t);if(economy)return economy;
   const school=schoolShortcut(t);if(school)return school;
   const direct:Record<string,string>={'ping':'core.ping','apagado de emergencia':'control.emergency','reactiva':'control.reactivate','mantenimiento on':'control.maintenance_on','mantenimiento off':'control.maintenance_off','módulos':'control.modules','modulos':'control.modules','diag cuota':'diag.cuota','diag.cuota':'diag.cuota','diag errores':'diag.errores','diag.errores':'diag.errores','qué sabes de mí':'memory.list','que sabes de mi':'memory.list','olvídalo todo':'memory.forget','olvidalo todo':'memory.forget','recordatorios':'reminders.list','notas':'notes.list'};

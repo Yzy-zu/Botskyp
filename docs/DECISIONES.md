@@ -647,3 +647,85 @@ Se autoriza exclusivamente documentación de control, verificaciones y commit/pu
 a `phase-3-economia-juegos`. **No se autoriza merge a `main`, inicio de Fase 4 ni
 activación de módulos fuera de Lab.** Al finalizar, el constructor se detiene sin
 esperar acciones físicas del dueño.
+
+## 7. Decisiones de Fase 4 (aprobadas por el arquitecto sin correcciones de código)
+
+### DEC-039: Inicio autorizado, acceso remoto restringido y alcance de Minecraft
+
+El dueño confirma Fases 0–3 cerradas/fusionadas, base `27572701d231ff17fa5fba886bd82880b92fe91f`,
+y autoriza exclusivamente Fase 4 en rama nueva, sin merge ni Fase 5. Supera los
+bloqueos históricos de DEC-038 dentro de ese alcance. Un constructor en
+`phase-4-minecraft`; continúa la barrera de Lab sin activar grupos reales.
+
+Inspección confirma redspi `100.104.54.2`, contenedor `mc-bedrock`, imagen itzg y
+volumen bind remoto. No se usa la carpeta residual de miroslav. La red bridge actual
+alcanza SSH, sin host networking/sidecar. Cuenta botsky-mc sin grupo docker, llave
+dedicada, pin de host previamente verificado, restrict/ForceCommand y origen IP
+limitado. Sudo únicamente al gateway root-owned validado. La AllowUsers existente
+exigió agregar esa cuenta/origen; se conservó petrov y se validó sshd antes del reload.
+Miembros vigentes: estado/jugadores; demás infraestructura solo owner. Stop/restart
+usan confirmación existente. Administración determinista, sin argumentos SSH del modelo.
+Inventario de mundos/addons sin inventar instalación/borrado no especificados.
+
+### DEC-040: Cola durable, recibos remotos e incertidumbre sin replay
+
+Migración aditiva 006; commit queued/sending y auditoría antes del efecto; lock e
+índice parcial global evitan escrituras concurrentes. UUID/actor/chat/mensaje y
+recibos remotos con hash y fsync previos al efecto impiden doble ejecución.
+Un bucle dedicado despacha; no comparte la espera de backups con el tick/outbox.
+Timeout/error SSH/protocolo inesperado o reinicio durante sending quedan review,
+sin reintentar; queued sobrevive y vuelve a comprobar permisos. Review bloquea
+nuevas escrituras hasta resolución técnica auditada por evidencia, nunca por IA.
+Resultados a outbox con referencia única; consultas también auditadas sin copiar
+contenido sensible de logs/configuración. La implementación no cambia ToolCtx,
+router, sesiones, dedupe u outbox; añade registro/atajos y permiso de lectura
+Minecraft con membresía vigente. Evidencia y procedimiento en FASE-4.md.
+
+### DEC-041: Backups offline verificables y configuración sin éxito optimista
+
+El manual de Bedrock instalado confirma que un respaldo vivo requiere hold/query,
+lista exacta y truncado, no una copia ordinaria de LevelDB. Se implementa backup
+solo con servidor ya detenido; si está activo devuelve no realizado y no lo para
+implícitamente. Lock exclusivo, rechazo de enlaces, espacio, artefacto parcial,
+lectura completa de tar y SHA-256. Todo se ejecuta en redspi; no se añaden servicios
+ni costos, no se borran copias y no se afirma restauración probada. Soporte online y
+restauración física aislada no se declaran realizados. Es un límite operativo
+explícito dentro de la capacidad de backup, no una copia insegura de datos activos.
+
+Propiedades permitidas con valores enumerados; si env del contenedor domina la
+clave, se rechaza. Cambios admitidos tienen copia previa, reemplazo atómico y
+lectura de verificación, con aviso de reinicio separado. Start/stop/restart se
+confirman con estado posterior; consola solo confirma aceptación/salida observada.
+
+### DEC-042: Aprobación arquitectónica y cierre técnico de Fase 4
+
+**Confirmación e instrucción expresa del dueño, 16-10-2026.** La auditoría
+arquitectónica de Fase 4 — Minecraft fue **aprobada, sin correcciones de código
+requeridas**. La fase queda **aprobada y lista para cierre técnico**.
+
+La evidencia automática, la integración SSH real de solo lectura y la auditoría
+existente se consideran suficientes para el cierre técnico. Las pruebas físicas
+de **start/stop/restart, backup real y restauración aislada** son **recomendables
+pero NO bloqueantes**. Los mensajes `bot mc estado` y `bot mc jugadores` quedan
+como **validaciones operativas opcionales**. Se conserva la secuencia de pruebas
+para una eventual ventana coordinada en Botsky Lab.
+
+Estas pruebas físicas permanecen **sin ejecución confirmada**; no se presentan
+como realizadas ni se atribuyen efectos externos a simulaciones. La inspección SSH
+real existente conserva su alcance de solo lectura. La aprobación no transforma
+esa evidencia en una prueba física de control, backup o restauración.
+
+**No se eliminan tests, fixtures ni cobertura automática o de integración.** Se
+conservan las 360 pruebas existentes (318 regresiones anteriores y 42 de Fase 4),
+los 14 casos Python del wrapper y todas las evidencias ya documentadas. Se vuelven
+a ejecutar las verificaciones solicitadas sin cambiar código funcional.
+
+Esta instrucción directa prevalece sobre los pendientes anteriores de revisión o
+prueba física como condición de cierre técnico de Fase 4. No modifica permisos,
+confirmaciones, controles SSH, auditoría, idempotencia ni los límites de backup
+con servidor detenido y de revisión de resultados inciertos.
+
+Se autoriza exclusivamente documentación de control, verificaciones y commit/push
+a `phase-4-minecraft`. **No se autoriza merge a `main`, inicio de Fase 5 ni
+activación de módulos fuera de Lab.** No se requiere nuevo despliegue. Al terminar,
+el constructor se detiene sin esperar acciones físicas del dueño.

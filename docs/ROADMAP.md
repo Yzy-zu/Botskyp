@@ -18,7 +18,7 @@ flowchart TD
     
     f1 --> f2["Fase 2: Escuela<br/>(Horarios, Tareas, Visión)"]
     f1 --> f3["Fase 3: Economía y Juegos<br/>(Aprobada · lista para cierre)"]
-    f1 --> f4["Fase 4: Minecraft<br/>(SSH Bedrock, Tailscale, mc-ctl)"]
+    f1 --> f4["Fase 4: Minecraft<br/>(Aprobada · lista para cierre)"]
     f1 --> f5["Fase 5: Multimedia y Worker<br/>(ffmpeg, PDF, OCR, Jobs)"]
     
     f3 --> f6["Fase 6: Biblioteca, Packs y Cooperacha<br/>(Drive, Sincronización, Cooperacha grupal)"]
@@ -128,22 +128,24 @@ En lugar de atar rígidamente herramientas específicas (como Antigravity o Code
 
 ## 6. Estado y siguiente paso inmediato
 
-Las **Fases 0, 1 y 2 están cerradas y fusionadas a `main`**, según la confirmación
-del dueño. La base de Fase 3 es `6566f21fd631ea08886f56267e985c9e00d8e476`.
+Las **Fases 0–3 están cerradas y fusionadas a `main`**, según la confirmación del
+dueño; base de Fase 4 `27572701d231ff17fa5fba886bd82880b92fe91f`.
 
-La **Fase 3 — Economía y Juegos está aprobada por el arquitecto y lista para
-cierre técnico**, sin correcciones de código requeridas. El dueño comunicó la
-aprobación el 16-10-2026; se registra en DEC-038. Está implementada y desplegada
-desde `f656b1c`, exclusivamente en la rama `phase-3-economia-juegos`.
+La **Fase 4 — Minecraft está aprobada por el arquitecto y lista para cierre
+técnico**, sin correcciones de código requeridas. El dueño comunicó la aprobación
+el 16-10-2026; se registra en DEC-042. Está implementada y desplegada desde
+`49a3f14` en `phase-4-minecraft`. La documentación posterior conserva esa imagen.
 
-La evidencia automática y de integración existente es suficiente para cerrar
-técnicamente la fase. La prueba física de expulsión/enlace/reingreso en Botsky Lab
-es **recomendable, opcional y no bloqueante**. Las pruebas físicas conservan su
-estado de no ejecutadas, sin afirmar éxitos externos. Se mantienen todos los tests,
-fixtures y cobertura; la secuencia voluntaria sigue en `docs/fases/FASE-3-PRUEBAS.md`.
+La evidencia automática, la integración SSH real de solo lectura y la auditoría
+existente se consideran suficientes para el cierre técnico. Las pruebas físicas
+de start/stop/restart, backup real y restauración aislada son **recomendables pero
+no bloqueantes**. `bot mc estado` y `bot mc jugadores` quedan como **validaciones
+operativas opcionales**. Se conserva su estado de no ejecutadas físicamente y toda
+la cobertura automática, fixtures y pruebas del wrapper. La secuencia de Lab sigue
+disponible en `docs/fases/FASE-4-PRUEBAS.md`.
 
-El siguiente paso autorizado se limita a registrar esta aprobación y verificar
-typecheck, lint, tests, build y `/health`. **No se fusiona a `main`, no se inicia
-Fase 4 ni se activan módulos fuera de Lab.** Tras commit y push de la documentación
-a `phase-3-economia-juegos`, el constructor se detiene sin esperar pruebas físicas.
-Las reglas generales de dependencias y revisión de cambios críticos siguen vigentes.
+El trabajo autorizado se limita a registrar esta aprobación, verificar typecheck,
+lint, tests, build y `/health`, y hacer commit/push de la documentación a
+`phase-4-minecraft`. **No se cambia código funcional, no se fusiona a `main`, no se
+inicia Fase 5 ni se activan módulos fuera de Lab.** El constructor se detiene al
+terminar, sin esperar pruebas físicas ni realizar un nuevo despliegue.

@@ -274,3 +274,57 @@ scripts/panic.sh     # Apagado de emergencia inmediato desde consola
   automática/integración existente es suficiente para cierre y se conserva su
   cobertura. Fase 1 lista para cierre; siguiente paso: revisión del arquitecto,
   sin merge a `main` ni Fase 2. No se afirma ejecución física de las pruebas omitidas.
+
+## 12. Fase 4 — inspección y acceso restringido a redspi (16-10-2026)
+
+- Base autorizada `27572701d231ff17fa5fba886bd82880b92fe91f`; rama
+  `phase-4-minecraft`, sin merge ni Fase 5. Fases 0–3 cerradas según el dueño.
+- Redspi `100.104.54.2`: SSH puerto 22 con host key ya verificada en known_hosts.
+  Imagen real `itzg/minecraft-bedrock-server:latest`, ID
+  `sha256:e4a2e3cbbf9b02af56aef962af85a1462a94f39b3063048ae33b0598b3e84c6c`.
+  Contenedor `mc-bedrock`, arranque observado `2026-10-16T10:00:02.624472706Z`.
+- Datos autoritativos bind `/home/petrov/docker/minecraft/data` → `/data`.
+  Ocho carpetas de mundos, unos 16 MiB al inspeccionar; behavior/resource packs
+  presentes. Existe además `backup_peppa_mod`; no se modifica ninguna copia previa.
+- Consola real `/usr/local/bin/send-command`, proceso Bedrock sobre box64 en ARM64.
+  Escribe stdin sin confirmación. `mc-monitor status-bedrock --host 127.0.0.1`
+  responde versión `1.26.52`, conteo y máximo actuales. Uptime es del contenedor.
+- Red actual de app alcanza redspi:22 desde dentro del contenedor; sin modificar
+  redes de Evolution, sin network_mode host ni sidecar Tailscale.
+- Cuenta nueva `botsky-mc`, home root-owned `/var/lib/botsky-mc`, sin docker group.
+  Llave Ed25519 dedicada local en `.local/minecraft` (privada 600, directorio 700,
+  UID/GID 1000 para node del contenedor). App monta únicamente esa carpeta read-only;
+  worker no recibe la llave. Ninguna clave personal se monta en Botsky.
+- Authorized_keys root-owned con `from="100.109.237.37",restrict,command="/opt/botsky/mc-ctl.sh"`.
+  `ForceCommand` adicional para la cuenta en `/etc/ssh/sshd_config.d/60-botsky-minecraft.conf`;
+  solo publickey, sin PTY, agent/TCP/X11 forwarding ni user rc. AllowUsers conserva
+  petrov y agrega solo botsky-mc desde la IP de miroslav. `sshd -t` validado antes
+  del reload. Acceso petrov comprobado después; no se reinicia Minecraft.
+- `/opt/botsky/mc-ctl.sh` y `mc-control.py`: root 755. Sudoers root 440 permite
+  únicamente ejecutar ese Python fijo con protocolo validado; nunca Docker libre.
+  Recibos/lock/copias en `/var/lib/botsky-minecraft`, root 700. Backup offline
+  únicamente, conservado en `backups/<UUID>.tar`; sin rotación/borrado automático.
+- Configuración local `MINECRAFT_ENABLED`; secretos solo locales. El pin se copió
+  del known_hosts existente tras comprobar acceso con StrictHostKeyChecking=yes.
+  Una rotación exige verificar la nueva huella por un canal confiable antes de
+  reemplazar el pin; el bot falla cerrado si cambia. Nunca se usa ssh-keyscan
+  como prueba de autenticidad ni se desactiva la comprobación de host.
+- Consultas directas de inspección por la cuenta restringida: status, players,
+  config-get, worlds, addons, resources y logs respondieron código ok. `id` fue
+  rechazado con exit 64 por el comando forzado. Sin acciones administrativas de
+  juego, sin mensajes WhatsApp, sin parar/reiniciar el servidor real.
+- El contenedor fija DIFFICULTY, GAMEMODE y MAX_PLAYERS; config-set de esas claves
+  se rechaza para evitar una edición revertida al arrancar. Pvp/allow-cheats solo
+  si no están dominadas por env. Detalles y provisión reproducible en
+  `scripts/minecraft/` y `docs/fases/FASE-4.md`.
+
+### 12.1 Despliegue verificado de Fase 4
+
+Código `49a3f14`, rama `phase-4-minecraft`, mediante el script oficial y respaldo
+verificado `botsky-20261016T162347-2032949.dump`. App/worker healthy y `/health`
+HTTP 200 con base/Evolution conectados, ~16:25 UTC. Migraciones 001–006 presentes.
+Minecraft habilitado técnicamente en app únicamente; key mount read-only probado
+con status/players reales y rechazo de `id`. Worker sin llave ni flag habilitado.
+Evolution y Minecraft conservan tiempos de arranque; cero operaciones administrativas
+reales y cero grupos habilitados fuera de Lab. 360/360 pruebas y 14/14 del wrapper;
+pruebas físicas de control/restauración pendientes. Sin merge ni Fase 5.

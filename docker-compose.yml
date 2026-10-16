@@ -106,7 +106,10 @@ services:
     container_name: botsky-app
     ports: ['127.0.0.1:${BIND_PORT:-3000}:3000']
     networks: [internal, evolution]
-    volumes: ['./.local/captures:/app/captures']
+    environment:
+      <<: *environment
+      MINECRAFT_ENABLED: ${MINECRAFT_ENABLED:-false}
+    volumes: ['./.local/captures:/app/captures', './.local/minecraft:/run/botsky-minecraft:ro']
     mem_limit: 256m
     cpus: '0.25'
     healthcheck:

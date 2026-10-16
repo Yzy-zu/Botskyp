@@ -1,3 +1,4 @@
+import { recoverMinecraft,tickMinecraft } from '../modules/minecraft/service.js';
 import { tickGames } from '../modules/games/tick.js';
 import { tickObligations } from '../modules/moderation/obligations.js';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -18,6 +19,7 @@ export async function startRuntime(db:Db, transport:Transport, config:Config, lo
   // A lost session releases the advisory lock: stop this process before another can send.
   lock.on('error',()=>process.exit(1));
   await recoverSending(db);
+  await recoverMinecraft(db);
   const task=(async()=>{
     while(!stopped){
       try{if(!await processNext(db,config))await delay(product.pollMs);}
@@ -44,5 +46,12 @@ export async function startRuntime(db:Db, transport:Transport, config:Config, lo
       for(let elapsed=0;elapsed<product.tickMs && !stopped;elapsed+=product.pollMs)await delay(product.pollMs);
     }
   })();
-  return async()=>{stopped=true;await Promise.all([task,sending,ticking,obligations]);await lock.query("SELECT pg_advisory_unlock(hashtext('botsky-app'))");lock.release();};
+  const minecraft=(async()=>{
+    while(!stopped){
+      try{await tickMinecraft(db,config);}
+      catch{log.error({where:'minecraft'},'Falló el control de Minecraft');}
+      for(let elapsed=0;elapsed<product.tickMs && !stopped;elapsed+=product.pollMs)await delay(product.pollMs);
+    }
+  })();
+  return async()=>{stopped=true;await Promise.all([task,sending,ticking,obligations,minecraft]);await lock.query("SELECT pg_advisory_unlock(hashtext('botsky-app'))");lock.release();};
 }

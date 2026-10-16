@@ -16,6 +16,7 @@ export async function actorFor(c:PoolClient,msg:Msg,config:Config):Promise<Actor
 }
 export function permitted(actor:Actor,chat:Chat,key:PermissionKey):boolean{
   if(!chat.enabled)return false;
+  if(key==='minecraft.read' && (!chat.isGroup || (actor.role!=='owner' && !actor.groupMember)))return false;
   if((key==='school.write' || key==='school.manage') && !chat.isGroup)return false;
   if(['games.use','xp.use','moderation.act'].includes(key) && !chat.isGroup)return false;
   if(actor.role==='owner')return true;
@@ -27,7 +28,7 @@ export function permitted(actor:Actor,chat:Chat,key:PermissionKey):boolean{
 }
 export function moduleEnabled(chat:Chat,module:string,config:Config):boolean{
   if(module==='core')return true;
-  if(['school','xp','games','moderation'].includes(module) && !chat.isGroup)return false;
+  if(['minecraft','school','xp','games','moderation'].includes(module) && !chat.isGroup)return false;
   return chat.settings.modules?.[module] ?? (!chat.isGroup || chat.id===config.LAB_CHAT_ID);
 }
 export async function privateEligible(c:PoolClient,actor:Actor):Promise<boolean>{

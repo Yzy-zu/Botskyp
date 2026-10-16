@@ -1,4 +1,9 @@
 export const product = {
+  minecraftTimeoutMs: 12_000,
+  minecraftWriteTimeoutMs: 180_000,
+  minecraftLogLines: 100,
+  minecraftOutputChars: 12_000,
+  minecraftMaxOutputBytes: 65_536,
   economyVersion: 'phase3-v1',
   xpActivity: 1,
   xpHappyActivity: 20,

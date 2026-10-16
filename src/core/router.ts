@@ -1,3 +1,4 @@
+import { EconomyError } from '../modules/xp/service.js';
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 import { DateTime } from 'luxon';
@@ -29,6 +30,7 @@ async function invoke(ctx:ToolCtx,name:string,args:unknown,source:'model'|'short
   catch(error){
     await ctx.c.query('ROLLBACK TO SAVEPOINT tool_execution');
     await ctx.c.query('RELEASE SAVEPOINT tool_execution');
+    if(error instanceof EconomyError)return error.message;
     await ctx.c.query("INSERT INTO error_log(where_,msg_id,detail) VALUES($1,$2,'Fallo sanitizado de herramienta')",[name,ctx.msg.id]);
     if(error instanceof LlmUnavailable)return llmError(error);
     return 'Falló la herramienta. No pude completar la operación.';
@@ -45,6 +47,9 @@ export function llmError(error:LlmUnavailable):string{
 export async function route(ctx:ToolCtx,llm?:Llm):Promise<string|undefined>{
   const text=commandText(ctx.msg.text);
   const session=await activeSession(ctx.c,ctx.actor.id,ctx.chat.id);
+  if(session?.kind==='game' && /^cancelar[.!]?$/iu.test(text))return invoke(ctx,'games.cancel',{});
+  if(session?.kind==='game' && /^(terminar|no)[.!]?$/iu.test(text))return 'La partida sigue activa. Usa carta, plantarse o doblar; un lobby se cancela con cancelar.';
+  if(session?.kind==='game' && /^estado[.!]?$/iu.test(text))return invoke(ctx,'games.status',{});
   if(session && /^(cancelar|terminar|no)[.!]?$/iu.test(text)){
     await closeSession(ctx.c,session,'cancelled');return 'Interacción cancelada.';
   }

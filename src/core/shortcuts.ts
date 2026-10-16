@@ -1,9 +1,10 @@
+import { economyShortcut } from '../modules/games/shortcuts.js';
 import { schoolShortcut } from '../modules/school/shortcuts.js';
 import { DateTime } from 'luxon';
 import { callWord } from './activation.js';
 import { searchRequest } from './search-context.js';
 export type Shortcut={name:string;args:Record<string,unknown>};
-const aliases:Record<string,string>={notas:'notes',recordatorios:'reminders',memoria:'memory','conversación':'conversation',conversacion:'conversation',web:'web','visión':'vision',vision:'vision',escuela:'school',school:'school'};
+const aliases:Record<string,string>={economía:'xp',economia:'xp',juegos:'games',moderación:'moderation',moderacion:'moderation',notas:'notes',recordatorios:'reminders',memoria:'memory','conversación':'conversation',conversacion:'conversation',web:'web','visión':'vision',vision:'vision',escuela:'school',school:'school'};
 export function commandText(text:string):string{return text.trim().replace(/^(?:@\d+\s*)+/u,'').replace(new RegExp(`^${callWord.source}[\\s,:;!]*`,'iu'),'').trim();}
 export function parseDate(text:string,zone:string,now:Date):string|undefined{
   const input=text.trim();
@@ -22,6 +23,7 @@ export function parseDate(text:string,zone:string,now:Date):string|undefined{
 }
 export function shortcut(text:string,zone:string,now:Date):Shortcut|undefined{
   const t=commandText(text);let m:RegExpExecArray|null;
+  const economy=economyShortcut(t);if(economy)return economy;
   const school=schoolShortcut(t);if(school)return school;
   const direct:Record<string,string>={'ping':'core.ping','apagado de emergencia':'control.emergency','reactiva':'control.reactivate','mantenimiento on':'control.maintenance_on','mantenimiento off':'control.maintenance_off','módulos':'control.modules','modulos':'control.modules','diag cuota':'diag.cuota','diag.cuota':'diag.cuota','diag errores':'diag.errores','diag.errores':'diag.errores','qué sabes de mí':'memory.list','que sabes de mi':'memory.list','olvídalo todo':'memory.forget','olvidalo todo':'memory.forget','recordatorios':'reminders.list','notas':'notes.list'};
   const name=direct[t.toLowerCase().replace(/[.!?]$/,'')];if(name)return {name,args:name==='memory.forget'?{target:'todo'}:{}};

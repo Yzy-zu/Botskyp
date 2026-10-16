@@ -1,3 +1,5 @@
+import { chatLock,lockChatWallets } from '../modules/games/state.js';
+import { activity } from '../modules/xp/service.js';
 import { createHash } from 'node:crypto';
 import { transaction, type Db } from '../db/client.js';
 import type { Config } from '../config.js';
@@ -62,6 +64,9 @@ export async function processNext(db: Db, config: Config):Promise<boolean> {
         const session=await activeSession(c,actor.id,msg.chatId);
         const text=commandText(msg.text);
         const accepts=sessionAccepts(session,text);
+        if(allowed && msg.isGroup){await chatLock(c,msg.chatId);await lockChatWallets(c,msg.chatId,actor.id);}
+        const xpCtx={actor,chat:{id:msg.chatId,isGroup:msg.isGroup,enabled:allowed,settings:saved?.settings ?? {}},msg,db,c,config,now:new Date(),search:async()=>''};
+        if(allowed && !maintenance)await activity(xpCtx);
         if(allowed && activated(msg,config.BOT_JIDS,Boolean(accepts))){
           if(maintenance && !owner)reply='Estoy en mantenimiento.';
           else {

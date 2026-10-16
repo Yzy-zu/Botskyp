@@ -7,7 +7,7 @@ export async function tickCore(db:Db,config:Config):Promise<void>{
   await transaction(db,async c=>{
     const locked=await c.query<{locked:boolean}>("SELECT pg_try_advisory_xact_lock(hashtext('botsky-tick')) AS locked");
     if(!locked.rows[0]?.locked)return;
-    await c.query("UPDATE sessions SET status='expired',version=version+1 WHERE status='active' AND expires_at<=clock_timestamp()");
+    await c.query("UPDATE sessions SET status='expired',version=version+1 WHERE status='active' AND kind<>'game' AND expires_at<=clock_timestamp()");
     await c.query("DELETE FROM context_msgs WHERE created_at<now()-$1::int*interval '1 day'",[product.contextRetentionDays]);
     const flags=await c.query<{key:string;value:unknown}>('SELECT key,value FROM system_flags');
     if(flags.rows.some(f=>f.key==='emergency' && f.value===true))return;

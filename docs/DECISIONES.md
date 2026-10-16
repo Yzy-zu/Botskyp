@@ -546,3 +546,104 @@ Solo cambia el criterio documental de aceptación. No se modifica código funcio
 ni se activan módulos en grupos reales. Se autoriza commit y push exclusivamente
 a `phase-2-escuela`; no se fusiona a `main` ni se inicia Fase 3. Tras registrar las
 verificaciones solicitadas, el agente se detiene.
+
+## 6. Decisiones de Fase 3 (aprobadas por el arquitecto sin correcciones de código)
+
+### DEC-035: Alcance autorizado y economía global
+
+El dueño declara Fases 0–2 cerradas y fusionadas en `6566f21` y autoriza únicamente
+Fase 3 en `phase-3-economia-juegos`, sin merge ni Fase 4. Prevalece sobre estados
+históricos de roadmap/DEC-034. Se conserva la barrera exclusiva de Botsky Lab.
+Se implementan §7, §8.1–8.3 y moderación mínima de §9.10. Hora Feliz sí pertenece
+a esta fase; cooperacha/packs y nuclear pertenecen a Fases 6 y 7 respectivamente.
+La cartera es global por usuario, como exige §7; el aislamiento por chat se aplica
+a partidas, actividad, warns, consecuencias y configuración. No se crea una segunda
+interpretación económica. Saldo actual determina nivel; Gemini no decide efectos.
+
+### DEC-036: Transacciones, reglas y límites de operación
+
+Migración aditiva `005_economy_games.sql`; sin tablas destruidas ni dependencias
+nuevas. Cartera global bloqueada con `FOR UPDATE`; ledger con referencia única,
+constraint no negativo, y todas las reservas/pagos/devoluciones en la transacción
+que cambia la partida. El inbox toma lock de chat y bloquea en orden las carteras
+de sus participantes antes de actividad/atajos; así una recompensa pasiva no invierte
+el orden de locks al liquidar una mesa. El tick usa lock de chat no bloqueante y
+carteras NOWAIT para no detener recordatorios por una conversación larga.
+Un lock no disponible pospone la partida al siguiente tick; no mueve XP parcialmente.
+
+Atajos de economía/juegos no son invocables por Gemini. Apuesta validada, actor/chat
+inyectados, mazo Fisher–Yates y azar `crypto.randomInt`; resultados económicos exactos.
+El nivel se calcula al consultar, nunca se almacena como XP histórico. Diario global
+cada 24 h, racha hasta 48 h y bono hasta 100 XP solo sobre premio positivo. Actividad
+usa referencias de chat/mensaje y cooldown por usuario/chat. Configuración `phase3-v1`
+registrada en partidas y ledger. Plazos persistidos, partidas versionadas y acciones
+idempotentes por chat/actor/mensaje. Las sesiones `game` continúan solo entradas
+previstas; su vencimiento lo resuelve la partida, para no perder el siguiente turno.
+Cancelar un lobby devuelve reservas; una partida ya iniciada termina por juego/plazo.
+
+Donde §8.3 no fija política de creación, se adopta airdrop manual owner/admin,
+60 segundos y máximo uno por hora/grupo, 500 XP fijos y sin pack. Se evita que
+cualquier miembro pueda emitir XP sin límite. Valores en `config/product.ts`.
+En esta fase las tools económicas/juegos/moderación se ofrecen en grupos; blackjack
+individual se juega también en el grupo. Sin servicios/costos nuevos.
+
+### DEC-037: Ruleta, evidencia externa y obligación de restitución
+
+Consecuencias apagadas hasta orden owner/admin (`bot ruleta consecuencias on`).
+Se comprueba administración del bot al abrir mediante roster real en Evolution;
+si falla se anuncia partida sin consecuencias. Antes de aplicar un warn automático
+se exige prueba de que el anuncio inicial con las condiciones llegó (`outbox.sent`).
+No se aplica una consecuencia cuyo anuncio quedó pendiente/incierto.
+
+Se verificaron las rutas, schemas y el código instalado de Evolution **2.3.7**:
+[router oficial](https://github.com/EvolutionAPI/evolution-api/blob/2.3.7/src/api/routes/group.router.ts),
+[schema oficial](https://github.com/EvolutionAPI/evolution-api/blob/2.3.7/src/validate/group.schema.ts)
+y [servicio Baileys](https://github.com/EvolutionAPI/evolution-api/blob/2.3.7/src/api/integrations/channel/whatsapp/whatsapp.baileys.service.ts).
+`GET group/findGroupInfos`, `POST group/updateParticipant` con action remove y un
+solo participante, y `GET group/inviteCode`. HTTP 201 por sí solo no prueba expulsión.
+Consulta real de solo lectura confirmó Lab, bot/owner admins y contrato válido de
+invitación. El enlace no se imprime, publica ni versiona. No se hizo expulsión real.
+
+Una sola obligación de expulsión sin resolver por persona/grupo. Se revisan warns,
+configuración y roster antes de escribir. Owner/admin/bot e identidad no verificable
+quedan protegidos. Se persiste `sending` ANTES del efecto y se confirma con ausencia
+en roster posterior. Se reinician warns y se crea reinvitación en una transacción.
+El castigo se cuenta desde el intento persistido, 15 minutos por defecto, configurable
+1–1440. Un intento ambiguo y participante presente pasa a `review`, sin segunda
+expulsión ciega. Rate limit inequívoco se reintenta con pausa, máximo tres intentos;
+fallos/ambigüedad conservan evidencia y avisan al owner. Quitar warns puede revocar
+un castigo aún no iniciado; los warns manuales nunca disparan expulsión por sí solos.
+
+La obligación de reingreso es independiente de la autoaprobación privada perdida al
+salir y sigue vigente aunque después se apague el módulo. Obtiene enlace válido al
+vencer, encola una entrega privada única y solo queda `done` tras `outbox.sent`.
+Fallo o incertidumbre agotada quedan `review` y avisan al owner; no se afirma envío.
+No se fuerza la incorporación del usuario: se facilita el enlace según §8.2.
+Obligaciones tienen bucle propio para que la latencia de Evolution no bloquee
+recordatorios. Emergencia/mantenimiento suspenden nuevos efectos; no borran deudas.
+
+### DEC-038: Aprobación arquitectónica y cierre técnico de Fase 3
+
+**Confirmación e instrucción expresa del dueño, 16-10-2026.** La auditoría
+arquitectónica de Fase 3 — Economía y Juegos fue **aprobada, sin correcciones de
+código requeridas**. La fase queda **aprobada y lista para cierre técnico**.
+
+La evidencia automática y de integración existente se considera suficiente para
+cerrar técnicamente la fase. La prueba física de expulsión, recepción privada del
+enlace y reingreso en Botsky Lab es **recomendable, opcional y no bloqueante**.
+Las pruebas físicas permanecen sin ejecución confirmada; no se presentan como
+realizadas ni como evidencia de un efecto externo. Se conserva su lista como
+referencia para validación voluntaria.
+
+**No se eliminan tests, fixtures ni cobertura automática o de integración.** Se
+mantienen las 318 pruebas existentes, incluidas las 206 regresiones originales y
+las 112 nuevas de Fase 3. Solo cambia el criterio documental de aceptación; no se
+modifica código funcional ni se requiere un nuevo despliegue.
+
+Esta instrucción directa prevalece sobre los pendientes anteriores de revisión o
+prueba física como condición de cierre de Fase 3. No altera las reglas económicas,
+permisos, idempotencia, inmunidad de owner/admin ni la obligación de reingreso.
+Se autoriza exclusivamente documentación de control, verificaciones y commit/push
+a `phase-3-economia-juegos`. **No se autoriza merge a `main`, inicio de Fase 4 ni
+activación de módulos fuera de Lab.** Al finalizar, el constructor se detiene sin
+esperar acciones físicas del dueño.

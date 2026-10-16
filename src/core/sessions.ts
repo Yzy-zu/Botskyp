@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { product } from '../../config/product.js';
-export type Session={id:string;chat_id:string;owner_id:string;kind:'confirm'|'clarify';state:unknown;version:number;accepted_inputs:string[]};
+export type Session={id:string;chat_id:string;owner_id:string;kind:'confirm'|'clarify'|'game';state:unknown;version:number;accepted_inputs:string[]};
 export function argumentHash(action:string,args:unknown):string{
   function canonical(value:unknown):unknown{
     if(Array.isArray(value))return value.map(canonical);
@@ -11,7 +11,7 @@ export function argumentHash(action:string,args:unknown):string{
   return createHash('sha256').update(JSON.stringify([action,canonical(args)])).digest('hex');
 }
 export async function activeSession(c:PoolClient,actor:string,chat:string):Promise<Session|undefined>{
-  await c.query("UPDATE sessions SET status='expired',version=version+1 WHERE status='active' AND expires_at<=clock_timestamp()");
+  await c.query("UPDATE sessions SET status='expired',version=version+1 WHERE status='active' AND kind<>'game' AND expires_at<=clock_timestamp()");
   return (await c.query<Session>("SELECT * FROM sessions WHERE owner_id=$1 AND chat_id=$2 AND status='active'",[actor,chat])).rows[0];
 }
 export async function openSession(c:PoolClient,actor:string,chat:string,kind:Session['kind'],state:unknown,inputs:string[]):Promise<void>{
@@ -27,6 +27,7 @@ export async function closeSession(c:PoolClient,session:Session,status:'done'|'c
 
 export function sessionAccepts(session:Session|undefined,text:string):boolean{
   if(!session)return false;
+  if(session.kind==='game')return /^(carta|plantarse|doblar|estado|partida|cancelar)[.!]?$/iu.test(text);
   if(session.kind==='clarify' && session.accepted_inputs.includes('contenido'))return text.trim().length>0;
   if(session.kind==='confirm')return /^(s[ií]|no|cancelar)[.!]?$/iu.test(text);
   return /^(?:cancelar$|(?:hoy|ma[ñn]ana|pasado ma[ñn]ana|(?:el )?(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo))\b|(?:a las?|de la|por la)\s|(?:en |dentro de )?\d+\s+(?:minutos?|horas?|d[ií]as?)|\d{4}-\d{2}-\d{2}T)/iu.test(text);

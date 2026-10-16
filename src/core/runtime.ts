@@ -1,3 +1,5 @@
+import { tickGames } from '../modules/games/tick.js';
+import { tickObligations } from '../modules/moderation/obligations.js';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Db } from '../db/client.js';
@@ -30,10 +32,17 @@ export async function startRuntime(db:Db, transport:Transport, config:Config, lo
   })();
   const ticking=(async()=>{
     while(!stopped){
-      try{await tickCore(db,config);await tickSchool(db,config); }
+      try{await tickCore(db,config);await tickSchool(db,config);await tickGames(db,config); }
       catch{log.error({where:'tick'},'Falló el ciclo de tiempo');}
       for(let elapsed=0;elapsed<product.tickMs && !stopped;elapsed+=product.pollMs)await delay(product.pollMs);
     }
   })();
-  return async()=>{stopped=true;await Promise.all([task,sending,ticking]);await lock.query("SELECT pg_advisory_unlock(hashtext('botsky-app'))");lock.release();};
+  const obligations=(async()=>{
+    while(!stopped){
+      try{await tickObligations(db,config);}
+      catch{log.error({where:'obligations'},'Falló la recuperación de obligaciones');}
+      for(let elapsed=0;elapsed<product.tickMs && !stopped;elapsed+=product.pollMs)await delay(product.pollMs);
+    }
+  })();
+  return async()=>{stopped=true;await Promise.all([task,sending,ticking,obligations]);await lock.query("SELECT pg_advisory_unlock(hashtext('botsky-app'))");lock.release();};
 }

@@ -17,7 +17,7 @@ flowchart TD
     f0 --> f1["Fase 1: Núcleo y Conversación<br/>(Router, LLM, Tools, Sesiones, Notas, Recordatorios)"]
     
     f1 --> f2["Fase 2: Escuela<br/>(Horarios, Tareas, Visión)"]
-    f1 --> f3["Fase 3: Economía y Juegos<br/>(XP, Ledger, Blackjack, Ruleta)"]
+    f1 --> f3["Fase 3: Economía y Juegos<br/>(Aprobada · lista para cierre)"]
     f1 --> f4["Fase 4: Minecraft<br/>(SSH Bedrock, Tailscale, mc-ctl)"]
     f1 --> f5["Fase 5: Multimedia y Worker<br/>(ffmpeg, PDF, OCR, Jobs)"]
     
@@ -128,20 +128,22 @@ En lugar de atar rígidamente herramientas específicas (como Antigravity o Code
 
 ## 6. Estado y siguiente paso inmediato
 
-La **Fase 0 fue aprobada, fusionada a `main` y cerrada** por instrucción del dueño.
-La Fase 1 está implementada y desplegada únicamente desde `phase-1-nucleo`; su
-última corrección de código es `38163f2` (DEC-027/028). Typecheck, lint, build y 153
-tests pasan; health HTTP 200 tras el despliegue a las 10:20 UTC del 16-10-2026.
-Las rondas manuales, fallos corregidos y evidencia de validación están en
-`docs/fases/FASE-1-PRUEBAS.md`.
+Las **Fases 0, 1 y 2 están cerradas y fusionadas a `main`**, según la confirmación
+del dueño. La base de Fase 3 es `6566f21fd631ea08886f56267e985c9e00d8e476`.
 
-**Fase 1 lista para cierre; siguiente paso: revisión final del arquitecto.** Por
-DEC-030 el dueño considera suficientes las validaciones automáticas y de integración
-existentes y omite voluntariamente todas las pruebas físicas adicionales pendientes,
-incluido el recordatorio con reinicio. Ninguna prueba manual adicional condiciona
-el cierre. Se conservan cobertura, evaluaciones y evidencia histórica, sin afirmar
-ejecuciones físicas que no ocurrieron.
-No se ha fusionado la rama a `main`, no se inicia Fase 2 y no se activan módulos en
-grupos reales. El constructor no espera más acciones físicas del dueño y se detiene
-para el arquitecto. Las reglas de dependencias, concurrencia y revisión crítica
-anteriores siguen vigentes.
+La **Fase 3 — Economía y Juegos está aprobada por el arquitecto y lista para
+cierre técnico**, sin correcciones de código requeridas. El dueño comunicó la
+aprobación el 16-10-2026; se registra en DEC-038. Está implementada y desplegada
+desde `f656b1c`, exclusivamente en la rama `phase-3-economia-juegos`.
+
+La evidencia automática y de integración existente es suficiente para cerrar
+técnicamente la fase. La prueba física de expulsión/enlace/reingreso en Botsky Lab
+es **recomendable, opcional y no bloqueante**. Las pruebas físicas conservan su
+estado de no ejecutadas, sin afirmar éxitos externos. Se mantienen todos los tests,
+fixtures y cobertura; la secuencia voluntaria sigue en `docs/fases/FASE-3-PRUEBAS.md`.
+
+El siguiente paso autorizado se limita a registrar esta aprobación y verificar
+typecheck, lint, tests, build y `/health`. **No se fusiona a `main`, no se inicia
+Fase 4 ni se activan módulos fuera de Lab.** Tras commit y push de la documentación
+a `phase-3-economia-juegos`, el constructor se detiene sin esperar pruebas físicas.
+Las reglas generales de dependencias y revisión de cambios críticos siguen vigentes.

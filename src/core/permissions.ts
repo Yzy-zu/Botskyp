@@ -2,7 +2,7 @@ import type { PoolClient } from 'pg';
 import type { Config } from '../config.js';
 import type { Msg } from '../wa/types.js';
 import { product } from '../../config/product.js';
-export type PermissionKey = 'chat.use'|'notes.manage_shared'|'chat.configure'|'config.global'|'jobs.diagnose'|'school.write'|'school.manage'|'minecraft.read'|'infra.minecraft';
+export type PermissionKey = 'chat.use'|'games.use'|'xp.use'|'moderation.act'|'notes.manage_shared'|'chat.configure'|'config.global'|'jobs.diagnose'|'school.write'|'school.manage'|'minecraft.read'|'infra.minecraft';
 export type Actor = {id:string; role:'owner'|'group_admin'|'member';groupMember?:boolean};
 export type Chat = {id:string;isGroup:boolean;enabled:boolean;settings:{modules?:Record<string,boolean>}};
 export async function actorFor(c:PoolClient,msg:Msg,config:Config):Promise<Actor>{
@@ -17,15 +17,17 @@ export async function actorFor(c:PoolClient,msg:Msg,config:Config):Promise<Actor
 export function permitted(actor:Actor,chat:Chat,key:PermissionKey):boolean{
   if(!chat.enabled)return false;
   if((key==='school.write' || key==='school.manage') && !chat.isGroup)return false;
+  if(['games.use','xp.use','moderation.act'].includes(key) && !chat.isGroup)return false;
   if(actor.role==='owner')return true;
+  if(['games.use','xp.use','moderation.act'].includes(key) && !actor.groupMember)return false;
   if((key==='school.write' || key==='school.manage') && !actor.groupMember)return false;
   if(key==='config.global' || key==='jobs.diagnose' || key==='infra.minecraft')return false;
-  if(key==='chat.configure' || key==='notes.manage_shared' || key==='school.manage')return chat.isGroup && actor.role==='group_admin';
+  if(key==='chat.configure' || key==='notes.manage_shared' || key==='school.manage' || key==='moderation.act')return chat.isGroup && actor.role==='group_admin';
   return true;
 }
 export function moduleEnabled(chat:Chat,module:string,config:Config):boolean{
   if(module==='core')return true;
-  if(module==='school' && !chat.isGroup)return false;
+  if(['school','xp','games','moderation'].includes(module) && !chat.isGroup)return false;
   return chat.settings.modules?.[module] ?? (!chat.isGroup || chat.id===config.LAB_CHAT_ID);
 }
 export async function privateEligible(c:PoolClient,actor:Actor):Promise<boolean>{

@@ -62,12 +62,18 @@ La inspección de contenedores (`docker ps -a`) detectó tres contenedores activ
   - `evolution_redis_data` (`/var/lib/docker/volumes/evolution_redis_data/_data`)
 
 ### 2.2 Estado de la Conexión de WhatsApp en Evolution
-- **Hallazgo crítico en logs de Evolution API:** A las `17:43:36` del 15 de octubre de 2026, la instancia `botsky` (WUID: `${BOT_JIDS}`) registró un evento `LOGOUT`, seguido a las `17:43:48` de `Instance "botsky" - REMOVED`.
-- **Estado actual de instancias:**
-  - La tabla `Instance` en `evolution_db` contiene 0 filas.
-  - La consulta autenticada a `GET /instance/fetchInstances` retorna una lista vacía `[]`.
-  - La base de datos Redis (`DB 1`) conserva 6 entradas de metadatos de grupos (`evolution:groups:*`) y una clave de protocolo Baileys previa.
-- **Acción requerida:** El dueño debe crear nuevamente la instancia y re-vincular el número mediante código QR antes de que se inicien las pruebas reales de la Fase 0.
+- **Estado de la instancia:** La instancia `botsky` fue recreada exitosamente por el dueño y su sesión se encuentra **abierta y conectada** (`connectionStatus: "open"`).
+- **Identidad del bot en WhatsApp:**
+  - `ownerJid`: `${BOT_JIDS}`
+  - `lid`: `${BOT_JIDS}`
+  - Nombre de perfil: `Botsky`
+- **Grupo oficial de pruebas (`Botsky Lab`):**
+  - **JID del grupo:** `${LAB_CHAT_ID}`
+  - **Nombre:** `Botsky Lab`
+  - **Visibilidad:** Verificado y accesible desde Evolution API (`group/fetchAllGroups` y `group/findGroupInfos`).
+  - **Rol del bot:** Participante verificado con privilegios de administrador (`admin: "admin"`).
+  - **Rol del dueño:** Participante verificado como creador y administrador (`admin: "superadmin"`).
+- **Acceso a Evolution Manager por Tailscale:** Tailscale Serve activo en `https://miroslav.mora-krait.ts.net/manager` (proxy hacia `http://127.0.0.1:8080`).
 
 ---
 

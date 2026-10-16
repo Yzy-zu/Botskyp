@@ -128,5 +128,9 @@ En lugar de atar rígidamente herramientas específicas (como Antigravity o Code
 
 ## 6. Siguiente Paso Inmediato
 
-El repositorio y la infraestructura se encuentran completamente preparados y documentados.  
-El siguiente paso es la ejecución de la **Fase 0 — Esqueleto**, la cual comenzará únicamente tras la confirmación explícita del dueño y la resolución de la re-vinculación de la instancia de WhatsApp en Evolution API.
+El repositorio, la infraestructura y los prerrequisitos se encuentran completamente listos:
+1. Instancia `botsky` de Evolution conectada a WhatsApp (`open`).
+2. Grupo de pruebas `Botsky Lab` verificado con el bot como administrador.
+3. Entorno, decisiones y roadmap documentados en `main`.
+
+El proyecto está **listo para iniciar la Fase 0 — Esqueleto** cuando el dueño envíe la instrucción correspondiente.

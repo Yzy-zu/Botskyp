@@ -67,18 +67,17 @@ En cumplimiento del punto 7 de las instrucciones del arquitecto, se detallan a c
 
 ---
 
-### CONTRADICCIÓN 2: Estado de Sesión e Instancia de Evolution API
+### CONTRADICCIÓN 2: Estado de Sesión e Instancia de Evolution API [RESUELTA]
 - **Documentos:**
   - `docs/owner-answers.md` B8, C4: Evolution "Ya funciona" y número "Ya está vinculado a Evolution API".
   - `docs/PLAN_MAESTRO.md` §0 (fila WhatsApp): "Un solo número, prepago, desechable, ya vinculado a Evolution."
-- **Entorno real observado:**
-  - Los contenedores de Evolution están encendidos, pero en los logs (`docker logs evolution_api`) se registró que a las `17:43:36` del 15 de octubre de 2026 la sesión sufrió un `LOGOUT`, y a las `17:43:48` la instancia `botsky` fue `REMOVED`.
-  - Actualmente `GET /instance/fetchInstances` retorna una lista vacía `[]`, y la tabla `Instance` de Postgres tiene 0 registros.
-- **Conflicto:** Se asumía que la instancia ya estaba lista para capturar eventos de prueba y recibir mensajes en la Fase 0, pero actualmente no existe instancia activa vinculada en Evolution.
-- **Recomendación y Mitigación:**
-  - En estricto respeto a la Regla de Oro #3 y la instrucción de solo lectura, el arquitecto **no intervino** ni alteró Evolution.
-  - Se reporta al dueño que, antes de iniciar las pruebas de la Fase 0 o la captura de fixtures reales, debe crear la instancia `botsky` y escanear el código QR desde el WhatsApp del bot.
-  - Para el desarrollo del constructor en la Fase 0, el mock de Evolution y los tests unitarios podrán comenzar utilizando la estructura estandarizada de eventos de Evolution v2.3.7, mientras el dueño realiza la re-vinculación manual.
+- **Entorno real observado inicialmente:**
+  - A las `17:43` del 15 de octubre de 2026 la sesión sufrió un `LOGOUT` y la instancia fue removida temporalmente.
+- **Resolución (16 de octubre de 2026):**
+  - El dueño recreó exitosamente la instancia `botsky` y completó la vinculación por QR con WhatsApp.
+  - Verificado en solo lectura: `connectionStatus: "open"`, `ownerJid: "${BOT_JIDS}"`.
+  - Grupo oficial de pruebas `Botsky Lab` (`${LAB_CHAT_ID}`) creado y verificado con el bot como administrador (`admin: "admin"`) y el dueño como `superadmin`.
+  - **Estado:** Bloqueo resuelto. El entorno cuenta con sesión de WhatsApp activa y grupo oficial de pruebas listo para la Fase 0.
 
 ---
 

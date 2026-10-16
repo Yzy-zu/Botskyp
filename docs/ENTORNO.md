@@ -361,3 +361,35 @@ QR/Piper y dos entregas simuladas con worker real en BD aislada; audio Gemini re
 correcto tras un primer error de proveedor no atribuido a código HTTP concreto.
 445/445 Vitest, wrapper 14/14; verificación posterior focalizada 82/82 y procesadores
 17/17. No hay pruebas físicas WhatsApp confirmadas de esta fase.
+
+## 14. Fase 6 — despliegue y biblioteca (constructor, 16-10-2026)
+
+- Rama `phase-6-biblioteca-packs-cooperacha`, base `03cffae`; código desplegado
+  **46aeb3a** mediante script oficial y respaldo verificado
+  `botsky-20261016T222921-2523998.dump`. Migraciones 001–008 presentes, checksum
+  008 verificado contra imagen. App/worker healthy; `/health` HTTP 200 con base
+  y Evolution conectados. Imágenes inmutables en FASE-6-PRUEBAS.md.
+- Evolution API/PostgreSQL/Redis conservan imagen y StartedAt previos, sin cambios
+  de base, vinculación, red o configuración. Datos previos conservados; cero grupos
+  habilitados fuera de Lab. Sin envíos físicos de biblioteca realizados por el agente.
+- Biblioteca persistente en PostgreSQL propio, blobs deduplicados por SHA-256;
+  catálogo por fuente/ruta, categorías del primer subdirectorio. Fuera de la
+  retención temporal de media. Tope histórico 128 MB, 4 MB/archivo, 500/snapshot.
+- Host: `.local/library/source` vacío, montado solo en worker como
+  `/run/botsky-library/source:ro`. Directorio privado de OAuth preparado en
+  `.local/library/rclone`, UID/GID 1000 y modo 700; sin `rclone.conf` todavía.
+  Montaje `/run/botsky-rclone` solo en worker, escribible para renovación de token;
+  app sin credenciales rclone. Ninguna de esas rutas se versiona.
+- Rclone solo en imagen worker (Debian ARM64, **v1.60.1-DEV**); copia unidireccional
+  readonly desde remoto fijo y raíz Drive configurada fuera de Git. Flags y timeout
+  comprobados con binario real sin red. No se instalaron binarios en el host.
+- `LIBRARY_DRIVE_ENABLED=false`: sin llamadas reales a Drive. Lluvia apagada;
+  catálogo, pedidos y cooperachas en cero. Falta contenido autorizado y OAuth
+  opcional del dueño. Guía exacta en FASE-6.md, usando imagen del snapshot de
+  despliegue para ejecutar rclone interactivo. Nunca pasar secretos por chat.
+- Worker conserva 768 MiB / 0,50 CPU / 64 PIDs, root filesystem read-only, sin llave
+  Minecraft. Sync asíncrono con lock/timeout y publicación transaccional; una caída
+  externa conserva el catálogo previo. No se añaden servicios ni redes nuevas.
+- 548/548 tests, multimedia 82/82, wrapper 14/14; typecheck/lint/build correctos.
+  Procesadores/rclone reales y límites de evidencia en FASE-6-PRUEBAS.md.
+  Revisión crítica pendiente. Sin merge a main, Fase 7 ni activación de grupos reales.

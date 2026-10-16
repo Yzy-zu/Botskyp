@@ -25,7 +25,7 @@ const base={permission:'school.manage',risk:'write',modelCallable:true} as const
 export const automationTools:Tool[]=[
   schoolTool({...base,name:'school.config',risk:'read',permission:'school.write',description:'Ver configuración de Escuela y del resumen del grupo.',examples:['bot escuela configuración'],args:z.strictObject({}),async run(ctx){
     const r=(await ctx.c.query<{target_group_id:string;summary_schedule:SummarySchedule|null}>('SELECT target_group_id,summary_schedule FROM school_config WHERE chat_id=$1',[ctx.chat.id])).rows[0];
-    const automation=(await ctx.c.query<{enabled:boolean;next_run_at:Date}>('SELECT enabled,next_run_at FROM automations WHERE chat_id=$1',[ctx.chat.id])).rows[0];
+    const automation=(await ctx.c.query<{enabled:boolean;next_run_at:Date}>("SELECT enabled,next_run_at FROM automations WHERE chat_id=$1 AND kind='school_summary'",[ctx.chat.id])).rows[0];
     return ok(`Zona: ${schoolZone}\nDestino: ${r?.target_group_id ?? ctx.chat.id}\nResumen: ${automation?.enabled && r?.summary_schedule?`${r.summary_schedule.days.map(d=>weekdays[d-1]).join(', ')} a las ${r.summary_schedule.time}; siguiente ${formatDue(automation.next_run_at,schoolZone)}`:'apagado'}`);
   }}),
   schoolTool({...base,name:'school.summary_configure',description:'Configurar resumen escolar por días (1=lunes a 7=domingo) y hora HH:mm en America/Mexico_City; puede apagarse. Solo owner/admin.',examples:['bot escuela resumen 07:00 lunes,martes,miércoles,jueves,viernes','bot escuela resumen off'],args:z.strictObject({enabled:z.boolean(),schedule:summarySchema.optional()}),async run(ctx,args){
@@ -34,7 +34,7 @@ export const automationTools:Tool[]=[
     const schedule=summarySchema.safeParse(args.schedule ?? saved.summary_schedule);
     if(args.enabled && !schedule.success)return fail('Indica los días y hora del resumen, por ejemplo «bot escuela resumen 07:00 lunes,martes,miércoles,jueves,viernes».');
     if(args.enabled && (!await schoolDestination(ctx.c,ctx.config,ctx.chat.id,ctx.actor.id) || !await schoolDestination(ctx.c,ctx.config,saved.target_group_id,ctx.actor.id)))return fail('El grupo de origen y el destino deben estar autorizados; las pruebas solo se entregan en Botsky Lab.');
-    if(!args.enabled){await ctx.c.query('UPDATE automations SET enabled=false WHERE chat_id=$1',[ctx.chat.id]);return ok('Resumen escolar apagado.');}
+    if(!args.enabled){await ctx.c.query("UPDATE automations SET enabled=false WHERE chat_id=$1 AND kind='school_summary'",[ctx.chat.id]);return ok('Resumen escolar apagado.');}
     const parsed=schedule.data!;const next=nextSummary(parsed,ctx.now);
     await ctx.c.query('UPDATE school_config SET summary_schedule=$2 WHERE chat_id=$1',[ctx.chat.id,JSON.stringify(parsed)]);
     await ctx.c.query(`INSERT INTO automations(chat_id,kind,owner_id,enabled,config,next_run_at) VALUES($1,'school_summary',$2,true,$3,$4)
@@ -61,7 +61,7 @@ export async function tickSchool(db:Db,config:Config):Promise<void>{
     if(flags.some(f=>f.key==='emergency' && f.value===true))return;
     const maintenance=flags.some(f=>f.key==='maintenance' && f.value===true);
     const rows=await c.query<Automation>(`SELECT a.*,s.target_group_id FROM automations a JOIN school_config s ON s.chat_id=a.chat_id
-      WHERE a.enabled AND (a.next_run_at<=clock_timestamp() OR a.outbox_id IS NOT NULL) ORDER BY a.next_run_at LIMIT $1 FOR UPDATE OF a SKIP LOCKED`,[product.schoolAutomationBatch]);
+      WHERE a.kind='school_summary' AND a.enabled AND (a.next_run_at<=clock_timestamp() OR a.outbox_id IS NOT NULL) ORDER BY a.next_run_at LIMIT $1 FOR UPDATE OF a SKIP LOCKED`,[product.schoolAutomationBatch]);
     for(const a of rows.rows){
       const schedule=summarySchema.safeParse(a.config);
       if(!schedule.success){await c.query('UPDATE automations SET enabled=false WHERE id=$1',[a.id]);continue;}

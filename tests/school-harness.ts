@@ -16,7 +16,7 @@ export const owner='100@s.whatsapp.net',admin='500@s.whatsapp.net',member='600@s
 export const message=(text:string,senderId=owner,chatId=config.LAB_CHAT_ID):Msg=>({id:randomUUID(),chatId,senderId,isGroup:chatId.endsWith('@g.us'),ts:new Date(),text,fromMe:false,mentions:[],attachments:[]});
 export async function initialize():Promise<void>{await migrate(db);}
 export async function resetSchool():Promise<void>{
-  await db.query('TRUNCATE inbox,seen_events,outbox,chats,users,user_aliases,group_memberships,system_flags,error_log,sessions,notes,reminders,user_memories,context_msgs,llm_usage,llm_cooldowns,audit_log CASCADE');
+  await db.query('TRUNCATE library_items,library_blobs,library_syncs,library_events,inbox,seen_events,outbox,chats,users,user_aliases,group_memberships,system_flags,error_log,sessions,notes,reminders,user_memories,context_msgs,llm_usage,llm_cooldowns,audit_log CASCADE');
   await db.query("INSERT INTO chats(id,is_group,enabled) VALUES('300@g.us',true,true),('400@g.us',true,true),('100@s.whatsapp.net',false,true)");
   await db.query("INSERT INTO users(id) VALUES('100@s.whatsapp.net'),('500@s.whatsapp.net'),('600@s.whatsapp.net'),('700@s.whatsapp.net')");
   await db.query("INSERT INTO group_memberships(chat_id,user_id,is_admin) VALUES('300@g.us','500@s.whatsapp.net',true),('400@g.us','500@s.whatsapp.net',false),('300@g.us','600@s.whatsapp.net',false)");

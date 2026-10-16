@@ -14,6 +14,10 @@ export type Game={id:string;chat_id:string;owner_id:string;kind:'blackjack'|'rou
 export async function chatLock(c:PoolClient,chat:string):Promise<void>{await c.query('SELECT pg_advisory_xact_lock(hashtext($1))',[`games:${chat}`]);}
 export async function lockChatWallets(c:PoolClient,chat:string,user?:string):Promise<void>{
   const ids=(await c.query<{user_id:string}>('SELECT DISTINCT user_id FROM game_players WHERE chat_id=$1 AND active',[chat])).rows.map(r=>r.user_id);
+  const co=(await c.query<{user_id:string}>(`SELECT DISTINCT p.user_id FROM cooperacha_contributions p
+    JOIN cooperachas co ON co.id=p.cooperacha_id WHERE co.chat_id=$1 AND co.status='open'`,[chat])).rows;
+  ids.push(...co.map(r=>r.user_id));
+  if((await c.query("SELECT 1 FROM cooperachas WHERE chat_id=$1 AND status='open'",[chat])).rowCount)ids.push('system:community');
   if(user)ids.push(user);
   for(const id of [...new Set(ids)].sort())await wallet(c,id);
 }

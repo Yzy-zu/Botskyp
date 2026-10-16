@@ -1,3 +1,4 @@
+import { libraryShortcut } from '../modules/library/shortcuts.js';
 import { mediaShortcut } from '../modules/media/shortcuts.js';
 import { minecraftShortcut } from '../modules/minecraft/shortcuts.js';
 import { economyShortcut } from '../modules/games/shortcuts.js';
@@ -6,7 +7,7 @@ import { DateTime } from 'luxon';
 import { callWord } from './activation.js';
 import { searchRequest } from './search-context.js';
 export type Shortcut={name:string;args:Record<string,unknown>};
-const aliases:Record<string,string>={multimedia:'media',documentos:'media',voz:'media',economía:'xp',economia:'xp',juegos:'games',moderación:'moderation',moderacion:'moderation',notas:'notes',recordatorios:'reminders',memoria:'memory','conversación':'conversation',conversacion:'conversation',web:'web','visión':'vision',vision:'vision',escuela:'school',school:'school'};
+const aliases:Record<string,string>={biblioteca:'library',packs:'library',cooperacha:'library',lluvia:'library',multimedia:'media',documentos:'media',voz:'media',economía:'xp',economia:'xp',juegos:'games',moderación:'moderation',moderacion:'moderation',notas:'notes',recordatorios:'reminders',memoria:'memory','conversación':'conversation',conversacion:'conversation',web:'web','visión':'vision',vision:'vision',escuela:'school',school:'school'};
 export function commandText(text:string):string{return text.trim().replace(/^(?:@\d+\s*)+/u,'').replace(new RegExp(`^${callWord.source}[\\s,:;!]*`,'iu'),'').trim();}
 export function parseDate(text:string,zone:string,now:Date):string|undefined{
   const input=text.trim();
@@ -25,6 +26,7 @@ export function parseDate(text:string,zone:string,now:Date):string|undefined{
 }
 export function shortcut(text:string,zone:string,now:Date):Shortcut|undefined{
   const t=commandText(text);let m:RegExpExecArray|null;
+  const library=libraryShortcut(t);if(library)return library;
   const media=mediaShortcut(t);if(media)return media;
   const mc=minecraftShortcut(t);if(mc)return mc;
   const economy=economyShortcut(t);if(economy)return economy;

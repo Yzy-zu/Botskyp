@@ -1,3 +1,4 @@
+import { libraryDelivery } from '../modules/packs/delivery.js';
 import { mediaDelivery } from '../modules/media/delivery.js';
 import { schoolDelivery } from '../modules/school/delivery.js';
 import { product } from '../../config/product.js';
@@ -57,6 +58,11 @@ export async function sendNext(db:Db, transport:Transport, config:Config):Promis
   if(row.kind==='media_result'){
     const media=await mediaDelivery(db,config,row);
     if(!media){await db.query("UPDATE outbox SET status='failed',last_error='media_delivery_not_allowed' WHERE id=$1 AND status='queued'",[row.id]);return true;}
+    delivery.media=media;
+  }
+  if(row.kind==='library_item'){
+    const media=await libraryDelivery(db,config,row);
+    if(!media){await db.query("UPDATE outbox SET status='failed',last_error='library_delivery_not_allowed' WHERE id=$1 AND status='queued'",[row.id]);return true;}
     delivery.media=media;
   }
   // Persist uncertainty BEFORE crossing the network boundary.

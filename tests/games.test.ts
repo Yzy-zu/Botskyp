@@ -1,3 +1,4 @@
+import { seedLibrary } from './library-harness.js';
 import { beforeAll,beforeEach,afterAll,expect,it } from 'vitest';
 import { transaction } from '../src/db/client.js';
 import { moveXp } from '../src/modules/xp/service.js';
@@ -7,7 +8,7 @@ import { tickGames } from '../src/modules/games/tick.js';
 import { tickCore } from '../src/modules/reminders/tick.js';
 import { createRegistry } from '../src/core/registry.js';
 import { db,config,owner,admin,member,message,initialize,resetSchool,context,command,execute } from './school-harness.js';
-beforeAll(initialize);beforeEach(async()=>{await resetSchool();await db.query('TRUNCATE wallets CASCADE');for(const user of [owner,admin,member])await transaction(db,c=>moveXp(c,user,1000,'seed',user,config.LAB_CHAT_ID));});afterAll(()=>db.end());
+beforeAll(initialize);beforeEach(async()=>{await resetSchool();await seedLibrary();await db.query('TRUNCATE wallets CASCADE');for(const user of [owner,admin,member])await transaction(db,c=>moveXp(c,user,1000,'seed',user,config.LAB_CHAT_ID));});afterAll(()=>db.end());
 const balance=async(user=owner)=>(await db.query<{balance:number}>('SELECT balance FROM wallets WHERE user_id=$1',[user])).rows[0]!.balance;
 const current=async()=>(await db.query<Game>('SELECT * FROM games ORDER BY created_at DESC LIMIT 1')).rows[0]!;
 const act=(action:Parameters<typeof gameCommand>[1],user=owner)=>context(message('bot juego',user),ctx=>gameCommand(ctx,action,max=>max-1));

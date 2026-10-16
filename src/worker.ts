@@ -1,3 +1,4 @@
+import { recoverLibrarySync,scheduleSync,syncLibrary } from './modules/library/sync.js';
 import { setTimeout as delay } from 'node:timers/promises';
 import { readConfig } from './config.js';
 import { createDb } from './db/client.js';
@@ -13,7 +14,7 @@ const lock=await db.connect();
 const held=await lock.query<{locked:boolean}>("SELECT pg_try_advisory_lock(hashtext('botsky-worker')) AS locked");
 if (!held.rows[0]?.locked) throw new Error('Another worker is active');
 lock.on('error',()=>process.exit(1));
-await recoverMedia(db);
+await recoverMedia(db);await recoverLibrarySync(db);
 await cleanOrphanTemporaries();
 let stop=false;
 process.on('SIGTERM',()=>{stop=true;});
@@ -21,6 +22,8 @@ process.on('SIGINT',()=>{stop=true;});
 const heartbeat=setInterval(()=>{void db.query('INSERT INTO worker_heartbeat(id) VALUES(true) ON CONFLICT(id) DO UPDATE SET at=now()').catch(()=>process.exit(1));},product.tickMs);
 while (!stop) {
   try{
+    await scheduleSync(db,config);
+    if(await syncLibrary(db,config))continue;
     await retainMedia(db);await reportMediaDeliveries(db);
     const job=await claimMedia(db);
     if(job)await processMedia(db,config,job);

@@ -1,3 +1,4 @@
+import { reserveAirdrop,claimAirdrop } from '../packs/airdrop.js';
 import { randomInt,randomUUID } from 'node:crypto';
 import { product } from '../../../config/product.js';
 import type { ToolCtx } from '../../core/tools.js';
@@ -69,10 +70,11 @@ export async function gameCommand(ctx:ToolCtx,args:GameCommand,random?:Random,gr
     const seconds=kind==='roulette'?product.rouletteLobbySeconds:kind==='airdrop'?product.airdropSeconds:args.action==='table'?product.blackjackLobbySeconds:product.blackjackSoloSeconds;
     g={id:randomUUID(),chat_id:ctx.chat.id,owner_id:ctx.actor.id,kind,status:kind==='airdrop'?'open':args.action==='solo'?'playing':'lobby',state,version:0,expires_at:new Date(ctx.now.getTime()+seconds*1000)};
     await ctx.c.query('INSERT INTO games(id,chat_id,owner_id,kind,status,state,source_id,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[g.id,g.chat_id,g.owner_id,g.kind,g.status,JSON.stringify(state),ctx.msg.id,g.expires_at]);
-    if(kind!=='airdrop')await addPlayer(ctx,g);
+    if(kind==='airdrop')await reserveAirdrop(ctx,g.id);
+    else await addPlayer(ctx,g);
     if(args.action==='solo'){beginBlackjack(g,ctx.now,random);await finishBlackjack(ctx.c,g);}
     await saveGame(ctx.c,g);
-    reply=kind==='blackjack'?describe(g):kind==='airdrop'?`Airdrop ${g.id}: ${product.airdropXp} XP al primero que diga bot yoo. Vence ${g.expires_at.toISOString()}. Un ganador; sin pack.`:
+    reply=kind==='blackjack'?describe(g):kind==='airdrop'?`Airdrop ${g.id}: ${product.airdropXp} XP al primero que diga bot yoo. Vence ${g.expires_at.toISOString()}. Un ganador y pack privado reservado.`:
       `Ruleta ${g.id}: apuesta ${bet} XP, lobby ${seconds} s. Entra con bot entro. ${state.consequences?`Quien pierda recibe un warn; al tercero, sale temporalmente ${state.punishmentMinutes} minutos. Owner/admin no se expulsan.`:'Sin consecuencias: deshabilitadas o bot sin administración comprobada.'}`;
   }else if(args.action==='claim'){
     g=(await ctx.c.query<Game>("SELECT * FROM games WHERE chat_id=$1 AND kind='airdrop' AND status='open' AND expires_at>clock_timestamp() FOR UPDATE",[ctx.chat.id])).rows[0];
@@ -80,7 +82,8 @@ export async function gameCommand(ctx:ToolCtx,args:GameCommand,random?:Random,gr
     g.state=initialState();g.state.winner=ctx.actor.id;
     const claimed=await ctx.c.query("UPDATE games SET status='claimed',state=$2,version=version+1 WHERE id=$1 AND status='open' RETURNING id",[g.id,JSON.stringify(g.state)]);
     if(!claimed.rowCount)throw new EconomyError('El airdrop ya fue reclamado.');
-    await moveXp(ctx.c,ctx.actor.id,product.airdropXp,'airdrop',g.id,g.chat_id);reply=`Ganaste ${product.airdropXp} XP del airdrop ${g.id}.`;
+    await claimAirdrop(ctx,g.id);
+    await moveXp(ctx.c,ctx.actor.id,product.airdropXp,'airdrop',g.id,g.chat_id);reply=`Ganaste ${product.airdropXp} XP del airdrop ${g.id}. Pack privado en cola; entrega aún no confirmada.`;
   }else{
     if(args.action==='join')g=(await ctx.c.query<Game>("SELECT * FROM games WHERE chat_id=$1 AND status='lobby' FOR UPDATE",[ctx.chat.id])).rows[0];
     else g=await loadGame(ctx.c,ctx.chat.id,undefined,ctx.actor.id);

@@ -837,3 +837,105 @@ Se autoriza exclusivamente documentación de control, verificaciones existentes 
 commit/push a `phase-5-multimedia-documentos`. **No se autoriza merge a `main`,
 inicio de Fase 6/7, cambios funcionales o de configuración ni un nuevo despliegue**.
 El constructor se detiene al terminar, sin esperar pruebas físicas del dueño.
+
+## 9. Decisiones de Fase 6 (aprobadas; véase DEC-050)
+
+### DEC-047: Alcance autorizado y biblioteca persistente local con Drive readonly
+
+El dueño confirma Fases 0–5 cerradas/fusionadas, base `03cffae779407102a030f95ecf759bdfaeda0438`,
+y autoriza únicamente Fase 6 en `phase-6-biblioteca-packs-cooperacha`, sin merge,
+Fase 7 ni activaciones fuera de Lab. Esa instrucción supera los bloqueos históricos
+de DEC-046/ROADMAP solo dentro de ese alcance. Un constructor, sin delegación.
+
+Se mantiene rclone, Drive fuente opcional y copia de servicio en PostgreSQL del
+VPS, separada de multimedia temporal y cubierta por backup. Límite 128 MB de bytes
+persistentes históricos, 4 MB/archivo y 500 archivos/snapshot. Identidad por
+fuente/ruta, bytes deduplicados por SHA-256, categorías del primer subdirectorio.
+Discovery por descriptores fijados/O_NOFOLLOW, sin enlaces/hard links/especiales,
+con firma/tamaño/hash y publicación transaccional. No hay categorías de producto
+hardcodeadas ni rutas elegidas por modelos/miembros.
+
+`rclone copy` solo Drive → staging, scope `drive.readonly`, remoto fijo y raíz
+explícita en configuración local 600. Sin sincronización bidireccional ni borrados
+remotos; el plan describe Drive como fuente, no exige escribirlo. Shortcuts omitidos,
+execFile/arrays, ambiente mínimo, límites y lock PostgreSQL durante copia. El worker
+publica solo snapshots completos; error/timeout deja vigente la copia anterior.
+OAuth del dueño y contenido real permanecen pendientes si no existen localmente;
+no se requiere ni solicita un secreto en el chat. Detalles y referencias oficiales
+en FASE-6.md. La rotación/copia externa de backups heredada sigue pendiente.
+
+### DEC-048: Reservas de packs, outbox y liquidación conservadora
+
+Migración aditiva 008 con ocho tablas propias y ampliación aislada de automations.
+Se conservan precios/cantidades de §9.9 y XP de Fase 3. Actor, origen, Hora Feliz,
+precio, selección y destino se resuelven en backend; solo la consulta de categorías
+se ofrece a Gemini. Herramientas de compra/aporte/administración deterministas.
+Verificar bytes y privado autorizado precede al débito. Reserva/pedido/snapshot/
+outbox se guardan en una transacción; índices y ledger impiden dobles efectos.
+
+Las reservas referencian copias inmutables ya verificadas: retirar el archivo de
+origen no rompe ni sustituye una compra reservada. No caducan a los 2/7 días de
+multimedia. Release vuelve a bloquear/leer el pedido, destinatario privado para
+compra/airdrop y grupal para cooperacha/lluvia, outbox única por posición.
+Solo todos sent confirman. Todos fallidos sin entrega: refund total idempotente.
+Cualquier incierto/parcial: pending_review, reserva retenida, detención de archivos
+restantes y aviso al owner; no reenvío/refund ciegos. No se crea una herramienta
+para declarar evidencia falsa al resolver manualmente un caso pendiente.
+
+### DEC-049: Cooperacha, lluvia y pack reservado del airdrop
+
+Una cooperacha abierta por grupo, 500 XP/10 minutos, meta 50–50.000, recompensa
+pack reservada antes de abrir. Lock del chat y carteras estables; se acepta solo
+el restante. Dos finalizadores se serializan: el segundo cubre lo restante o no
+es debitado si ya se completó. Una sola transición consume aportes a comunidad y
+libera el pack al grupo. Cancelación administrativa devuelve 100 %. Vencimiento
+aplica floor(80 %) **por aportación registrada**, anunciado antes de aportar;
+restos a comunidad. Registro por contribución y replay ligado a chat/actor/mensaje,
+incluso entre actividades; cancelación antigua tampoco afecta una actividad nueva.
+Reinicio/locks ocupados retoman sin perder fondos ni duplicar devolución/release.
+
+Lluvia expresa owner/admin con días/hora CDMX y 1–3 archivos. Como máximo una
+publicación por hora aun al reconfigurar; más de 30 s de atraso se omite. Escuela
+filtra su tipo de automation para no modificar la lluvia. Airdrop conserva XP,
+plazo/cooldown/ganador único; ahora reserva pack antes de abrir y lo entrega por
+privado al ganador en la transacción de reclamo. Sin biblioteca disponible no se
+abre prometiendo un pack inexistente; al vencer cancela su reserva.
+
+Cambios críticos de outbox, locks económicos, airdrop y biblioteca sometidos a
+revisión del arquitecto, aprobada en DEC-050. No se modifica el contrato Tool,
+router de conversación, identidad/@lid, llaves/servicios Minecraft ni Evolution.
+
+Evidencia final del constructor: código 46aeb3a desplegado mediante script oficial,
+respaldo verificado, 008 aplicada y health HTTP 200. 548/548 pruebas, multimedia
+82/82, procesadores reales 17/17 sobre imagen desplegada, wrapper 14/14 y rclone
+real (flags/timeout, sin red). Evolution conserva imagen/arranque y datos previos.
+Catálogo vacío, sin OAuth y Drive deshabilitado; cero grupos fuera de Lab.
+Al entregar la implementación quedaron pendientes configuración/pruebas físicas y
+revisión arquitectónica. La aprobación posterior se registra en DEC-050; no se
+atribuye sincronización Drive real. Sin merge ni Fase 7.
+
+### DEC-050: Aprobación arquitectónica de Fase 6 y cierre técnico sin bloqueo operativo
+
+El 16-10-2026 el dueño comunica que **la auditoría arquitectónica de Fase 6 —
+Biblioteca / Packs / Cooperacha fue aprobada**. No se requieren correcciones de
+código, migraciones, scripts ni configuración. Fase 6 queda **aprobada y lista para
+cierre técnico**, con DEC-047–049 y evidencia en FASE-6.md/FASE-6-PRUEBAS.md.
+
+**Contenido autorizado, OAuth/rclone y pruebas físicas no bloquean el cierre
+técnico.** Cargar contenido real autorizado es necesario antes de probar o activar
+Biblioteca fuera de Botsky Lab. **OAuth/Drive es opcional**: la biblioteca local
+puede funcionar sin él. Las pruebas físicas permanecen pendientes y son necesarias
+solo antes de activar el módulo fuera de Lab, con autorización expresa del dueño.
+No se afirma que esas pruebas ni una sincronización Drive real se hayan realizado.
+
+La instrucción directa actual prevalece sobre pendientes de revisión o prueba
+física como condición de cierre técnico de esta fase. **No se eliminan tests ni
+cobertura**: se conservan las 445 regresiones y 103 pruebas nuevas, además de las
+verificaciones multimedia, procesadores reales y wrapper Minecraft.
+
+Se autoriza únicamente actualizar documentación de control, repetir typecheck,
+lint, tests, build, multimedia, procesadores reales, wrapper Minecraft y `/health`,
+y hacer commit/push a `phase-6-biblioteca-packs-cooperacha`. Se mantiene el código
+desplegado desde `46aeb3a`, sin cambios funcionales/configuración ni nuevo despliegue.
+**Sin merge a `main`, Fase 7 ni activación fuera de Lab**. El constructor se detiene
+al terminar, sin esperar contenido, secretos, OAuth ni mensajes físicos del dueño.

@@ -28,6 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && mkdir -p /opt/voices && /opt/piper/bin/python -m piper.download_voices --data-dir /opt/voices es_MX-ald-medium \
     && rm -rf /var/lib/apt/lists/*
 FROM media-deps AS worker
+RUN apt-get update && apt-get install -y --no-install-recommends rclone && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build --chown=node:node /app/node_modules ./node_modules

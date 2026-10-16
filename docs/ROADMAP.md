@@ -21,7 +21,7 @@ flowchart TD
     f1 --> f4["Fase 4: Minecraft<br/>(Aprobada · lista para cierre)"]
     f1 --> f5["Fase 5: Multimedia y Documentos<br/>(Aprobada · lista para cierre técnico)"]
     
-    f3 --> f6["Fase 6: Biblioteca, Packs y Cooperacha<br/>(Drive, Sincronización, Cooperacha grupal)"]
+    f3 --> f6["Fase 6: Biblioteca, Packs y Cooperacha<br/>(Aprobada · lista para cierre técnico)"]
     f5 --> f6
     
     f1 --> f7["Fase 7: Mensajes Masivos y Nuclear<br/>(Difusión, Nuclear, Outbox masivo)"]
@@ -128,26 +128,24 @@ En lugar de atar rígidamente herramientas específicas (como Antigravity o Code
 
 ## 6. Estado y siguiente paso inmediato
 
-Las **Fases 0–4 están cerradas y fusionadas a `main`**, según la confirmación del
-dueño; base de Fase 5 `afe4b84a853308c02c7e52e650d15b00310083cc`.
+Las **Fases 0–5 están cerradas y fusionadas a `main`**, según la confirmación del
+dueño; base de Fase 6 `03cffae779407102a030f95ecf759bdfaeda0438`.
 
-La **Fase 5 — Multimedia y Documentos está aprobada por el arquitecto y lista para
-cierre técnico**, sin correcciones de código ni configuración requeridas. El dueño
-comunicó la aprobación el 16-10-2026; se registra en DEC-046. Se conserva el
-despliegue desde `7675380` en `phase-5-multimedia-documentos`.
+La **Fase 6 — Biblioteca / Packs / Cooperacha está aprobada por el arquitecto y
+lista para cierre técnico**, sin correcciones de código, migraciones, scripts ni
+configuración requeridas. La aprobación comunicada por el dueño el 16-10-2026
+queda registrada en DEC-050. Se conserva el despliegue desde `46aeb3a`.
 
-La evidencia automática, procesadores reales, worker, Gemini e integración
-existente se consideran suficientes para el cierre técnico. **Ninguna prueba
-física pendiente es bloqueante**. Piper/voz, sticker nativo y QR extremo a extremo
-quedan **recomendables antes de activar Multimedia fuera de Botsky Lab**. Se
-conservan su estado de pendientes y todos los tests, fixtures y cobertura; no se
-atribuyen entregas físicas a simulaciones.
+Contenido autorizado, OAuth/rclone y pruebas físicas **no bloquean el cierre
+técnico**. La biblioteca local funciona sin OAuth/Drive, que es opcional. Antes de
+probar o activar Biblioteca fuera de Botsky Lab se necesita cargar contenido real
+autorizado; las pruebas físicas siguen pendientes y son necesarias solo antes de
+activar fuera de Lab. Se conservan todos los tests y la cobertura.
 
-El trabajo autorizado se limita a registrar la aprobación, ejecutar las
-verificaciones existentes y hacer commit/push de la documentación a
-`phase-5-multimedia-documentos`. **Sin cambios funcionales ni de configuración,
-nuevo despliegue, merge a `main`, Fase 6/7 ni activaciones fuera de Lab**. El
-constructor se detiene al terminar, sin esperar pruebas físicas.
+El trabajo autorizado se limita a registrar la aprobación, repetir verificaciones
+y hacer commit/push de documentación a `phase-6-biblioteca-packs-cooperacha`.
+**Sin cambios funcionales ni de configuración, nuevo despliegue, merge a `main`,
+Fase 7 ni activaciones fuera de Lab**. El constructor se detiene al terminar.
 
 ## 7. Autorización y aprobación de Fase 5 — 16-10-2026
 
@@ -169,3 +167,31 @@ HTTP 200. QR/Piper y audio Gemini comprobados en integración aislada, sin enví
 reales. Pruebas físicas siguen pendientes, recomendables y no bloqueantes para el
 cierre técnico. Estado: **aprobada y lista para cierre técnico**; sin merge,
 Fase 6/7 ni activaciones fuera de Lab.
+
+## 8. Autorización y aprobación de Fase 6 — 16-10-2026
+
+La instrucción directa del dueño confirma Fases **0–5 cerradas y fusionadas** en
+`main=03cffae779407102a030f95ecf759bdfaeda0438` y autoriza únicamente Fase 6 en
+`phase-6-biblioteca-packs-cooperacha`. Prevalece sobre los bloqueos históricos de
+los apartados 6/7 y DEC-046 dentro de ese alcance. Un constructor, sin delegación
+ni paralelización. **Sin merge a main, Fase 7 ni activación fuera de Lab**.
+
+Alcance: catálogo híbrido persistente local/Drive readonly con discovery dinámico,
+reservas XP/packs privados, cooperacha con devolución/recompensa grupal, lluvia
+expresa y pack del airdrop. DEC-047–049 y documentación de Fase 6 quedan aprobadas
+sin correcciones; DEC-050 registra la aprobación arquitectónica. Contenido real,
+OAuth/rclone y pruebas físicas no bloquean el cierre técnico. OAuth/Drive es
+opcional: la biblioteca puede operar solo con contenido local autorizado.
+La carga de contenido real es necesaria antes de probar/activar fuera de Lab;
+las pruebas físicas son necesarias solo antes de activar fuera de Lab. No se
+declara sincronización Drive ni entrega WhatsApp real sin evidencia.
+
+
+Fase 6 **implementada y desplegada desde 46aeb3a** por el script oficial, respaldo
+verificado y health HTTP 200 con base/Evolution conectados. 548/548 pruebas,
+multimedia 82/82, wrapper Minecraft 14/14, typecheck/lint/build correctos. Evidencia
+de procesadores/rclone y pendientes en FASE-6-PRUEBAS.md. Sin contenido real de
+biblioteca ni OAuth; Drive deshabilitado, lluvia apagada, cero grupos fuera de Lab.
+**Estado: aprobada y lista para cierre técnico.** Siguiente paso autorizado:
+registrar la aprobación, repetir verificaciones y hacer commit/push documental;
+después detenerse. Sin merge ni Fase 7, sin eliminar tests ni cobertura.

@@ -1,3 +1,4 @@
+import { expireAirdrop } from '../packs/airdrop.js';
 import { transaction,type Db } from '../../db/client.js';
 import type { Config } from '../../config.js';
 import { moduleEnabled,type Chat } from '../../core/permissions.js';
@@ -18,10 +19,10 @@ export async function tickGames(db:Db,config:Config):Promise<void>{
     if(flags.rowCount)return;
     const allowed=ch?.enabled && g.chat_id===config.LAB_CHAT_ID && moduleEnabled({id:g.chat_id,isGroup:true,...ch},'games',config);
     if(!allowed){
-      if(g.kind==='airdrop'){g.status='expired';await saveGame(c,g);}else await cancelGame({c},g);
+      if(g.kind==='airdrop'){await expireAirdrop(c,g.id);g.status='expired';await saveGame(c,g);}else await cancelGame({c},g);
       return;
     }
-    if(g.kind==='airdrop'){g.status='expired';await saveGame(c,g);await gameNotice({c},g,`Airdrop ${g.id} vencido sin ganador.`);return;}
+    if(g.kind==='airdrop'){await expireAirdrop(c,g.id);g.status='expired';await saveGame(c,g);await gameNotice({c},g,`Airdrop ${g.id} vencido sin ganador.`);return;}
     if(g.kind==='roulette'){await gameNotice({c},g,await resolveRoulette({c},g));return;}
     const now=new Date();
     if(g.status==='lobby')beginBlackjack(g,now);

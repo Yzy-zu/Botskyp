@@ -17,6 +17,7 @@ it('listens with Evolution unavailable, reports degraded health and later syncs 
   const app=makeApp(db,config,transport,()=>null);
   const warning=vi.spyOn(app.log,'warn');
   let stop:(()=>void)|undefined;
+  let refreshWork:Promise<void>|undefined;
   vi.useFakeTimers({toFake:['setInterval','clearInterval']});
   try {
     await migrate(db);
@@ -24,7 +25,8 @@ it('listens with Evolution unavailable, reports degraded health and later syncs 
     const snapshot:unknown=JSON.parse(readFileSync('tests/fixtures/participants.json','utf8'));
     stop=await startMembershipRefresh(async()=>{
       if(!transport.connected)throw new Error('Provider unavailable');
-      await syncLabMembers(db,config.LAB_CHAT_ID,snapshot);
+      refreshWork=syncLabMembers(db,config.LAB_CHAT_ID,snapshot);
+      await refreshWork;
     },app.log);
     expect(warning).toHaveBeenCalledOnce();
     const address=await app.listen({host:'127.0.0.1',port:0});
@@ -33,6 +35,8 @@ it('listens with Evolution unavailable, reports degraded health and later syncs 
     expect(await degraded.json()).toEqual({ok:false,database:true,evolution:false,transport:'evolution'});
     transport.connected=true;
     await vi.advanceTimersByTimeAsync(product.membershipRefreshMs);
+    expect(refreshWork).toBeDefined();
+    await refreshWork;
     const memberships=await db.query('SELECT user_id FROM group_memberships WHERE active=true');
     expect(memberships.rowCount).toBe(2);
     const recovered=await fetch(`${address}/health`);

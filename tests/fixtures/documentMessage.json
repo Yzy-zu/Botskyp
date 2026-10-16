@@ -1,0 +1,31 @@
+{
+  "event": "messages.upsert",
+  "instance": "botsky",
+  "date_time": "2026-10-15T21:39:12.530Z",
+  "data": {
+    "messageType": "documentMessage",
+    "messageTimestamp": 1792111152,
+    "source": "android",
+    "status": "DELIVERY_ACK",
+    "key": {
+      "remoteJid": "300@g.us",
+      "fromMe": false,
+      "id": "msg-a401473a6063",
+      "participant": "111@lid",
+      "participantAlt": "100@s.whatsapp.net",
+      "addressingMode": "lid"
+    },
+    "message": {
+      "documentMessage": {
+        "mimetype": "application/pdf",
+        "fileName": "ejemplo.pdf",
+        "contextInfo": {
+          "mentionedJid": []
+        }
+      }
+    },
+    "contextInfo": {
+      "mentionedJid": []
+    }
+  }
+}

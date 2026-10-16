@@ -1,0 +1,24 @@
+{
+  "id": "300@g.us",
+  "subject": "Botsky Lab",
+  "subjectTime": 1792100019,
+  "size": 2,
+  "creation": 1792099785,
+  "owner": "111@lid",
+  "restrict": false,
+  "announce": false,
+  "participants": [
+    {
+      "id": "222@lid",
+      "phoneNumber": "200@s.whatsapp.net",
+      "admin": "admin"
+    },
+    {
+      "id": "111@lid",
+      "phoneNumber": "100@s.whatsapp.net",
+      "admin": "superadmin"
+    }
+  ],
+  "isCommunity": false,
+  "isCommunityAnnounce": false
+}

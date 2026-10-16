@@ -109,3 +109,112 @@ En cumplimiento del punto 7 de las instrucciones del arquitecto, se detallan a c
   - `evolution_postgres` corre PostgreSQL versión 15.19, no 17.
 - **Conflicto:** Reutilizar el Postgres existente implicaría degradar la especificación a PostgreSQL 15 y someter a Botsky a los límites de memoria de Evolution (512 MB).
 - **Recomendación:** Seguir la directriz de mayor jerarquía técnica del Plan Maestro (DEC-002): desplegar PostgreSQL 17 dedicado para Botsky.
+
+## 3. Decisiones de implementación de Fase 0 (pendientes de revisión)
+
+### DEC-006: Inbox persistente y procesamiento serial
+El webhook confirma solo después de insertar `seen_events` e `inbox` en la misma
+transacción. Dedupe usa hash de instancia, chat e ID del proveedor. La app procesa
+la recepción en orden, de uno en uno; la transición a outbox y el cierre del inbox
+son atómicos. Locks de PostgreSQL impiden dos emisores o dos workers simultáneos.
+Los eventos viejos se rechazan al recibirlos; un evento aceptado antes de caer
+conserva su derecho a procesarse después del reinicio.
+
+### DEC-007: Incertidumbre de entrega conservadora
+Un timeout, una excepción de red o una caída en estado `sending` pasa a `uncertain`.
+Solo evidencia positiva del proveedor confirma la entrega. La ausencia de un
+mensaje en una página de historial no demuestra que no salió: si no puede
+comprobarse, permanece incierto y se notifica al dueño sin reenvío ciego.
+El mock puede demostrar ausencia porque controla íntegramente sus entregas.
+
+### DEC-008: Alcance de laboratorio y recuperación de imágenes
+En Fase 0 hay una barrera explícita para grupos distintos de Botsky Lab, incluso
+ante un comando del dueño. Los privados requieren dueño o pertenencia/aprobación
+persistida. No se infieren alias por nombres. El despliegue conserva la configuración
+resuelta privada y la imagen anterior por ID inmutable. El rollback revierte app y
+worker; nunca restaura automáticamente datos sobre producción. La migración inicial
+es aditiva/transaccional. La restauración se prueba en una BD nueva aislada.
+
+### DEC-009: Entorno local y límites de implementación
+Node 24 se descargó del sitio oficial y se verificó por SHA-256 dentro de `.local/`;
+no se reemplazó Node 20 del host. El `.env` heredado tenía separadores inválidos para
+Compose: se respaldó completo de forma privada y el activo usa solo Fase 0.
+Gemini y las capacidades de fases futuras no se inicializan. El worker rechaza tipos
+de trabajo desconocidos; ninguna herramienta multimedia queda habilitada.
+
+### DEC-010: DNS exclusivo de la base y alcance del healthcheck simulado
+El alias `postgres` existe también en la red de Evolution. Botsky utiliza
+`botsky-db` solo en su red privada; modo Evolution exige ese host, usuario y base
+propios. El incidente de autenticación fallida no ejecutó ninguna migración sobre
+Evolution. `/health` en mock devuelve `evolution:null` para evitar atribuir al
+proveedor real un resultado simulado. El capturador se verificó desde Evolution
+antes de considerarlo accesible y permanece separado de app/worker.
+
+### DEC-011: Respaldo diario local y pendientes externos explícitos
+El despliegue programa una única entrada cron local sin sobrescribir las otras del
+dueño. No se instala/configura Drive sin credenciales locales comprobadas. Se
+mantienen todas las copias por ahora: la copia externa, retención de siete copias
+y restauración en un VPS de pruebas siguen pendientes y no se declaran realizadas.
+
+### DEC-012: Fixtures originales con procedencia y reconciliación por cita
+Se recuperaron cinco webhooks originales mediante los reintentos de Evolution.
+Los textos iniciales de grupo/cita/mención habían agotado reintentos y se capturaron
+por `chat/findMessages` como respuesta REST real separada (`history.json`). No se
+fabrican envelopes de webhook; el normalizador de datos acepta las claves originales
+comunes a ambas fuentes. Un manifiesto registra origen y SHA-256 del archivo local.
+Se eliminan metadatos criptográficos y se anonimizan JIDs/IDs antes de Git.
+
+El envío cita el ID de la solicitud. La reconciliación solo confirma por ID conocido
+o por una única coincidencia de chat, mensaje propio, texto exacto y cita al ID de
+solicitud. Una página de historial sin coincidencia devuelve `unknown`, nunca prueba
+ausencia. Las reacciones se normalizan por separado y no producen efectos en Fase 0.
+
+### DEC-013: Despliegue real sin tráfico durante promoción
+El primer despliegue Evolution se verifica mientras su webhook aún apunta al
+capturador y no hay inbox/outbox pendientes del simulador. Solo tras quedar sano se
+cambia el webhook a la app. Así un rollback inicial al simulador no puede consumir
+entregas reales. Después de promoverse, los siguientes rollbacks conservan una imagen
+y configuración reales. Participantes/alias se verifican por API al iniciar y se
+refrescan periódicamente; no se convierten `participantAlt` o nombres en privilegios.
+
+### DEC-014: Revocación conservadora ante conflictos de identidad
+Si una actualización autenticada del roster contradice un alias ya verificado,
+se conserva su vínculo anterior y se marca la evidencia `conflict:`. El resolvedor
+excluye esa asociación de privilegios hasta volver a disponer de evidencia coherente.
+No se borra ni reasigna automáticamente una identidad. La actualización de roster
+se serializa por lock transaccional y no aplica snapshots parcialmente contradictorios.
+
+### DEC-015: Resultado real y alcance del simulacro de reinicio
+El dueño confirmó `pong`. Un simulacro encoló tres respuestas de diagnóstico a tres
+mensajes reales distintos de Botsky Lab y reinició solo la app después de la primera.
+Las tres se verificaron por estado/ID en outbox y por una coincidencia exacta por cita
+en Evolution. Se realizó inicio explícito tras `docker kill`, porque Docker considera
+esa acción una parada manual; no se modificó `unless-stopped` para ocultar esa semántica.
+La evidencia de inbox/réplicas HTTP con caída abrupta se verifica además en tests aislados.
+
+### DEC-016: Identidades operativas fuera del árbol versionado
+Los scripts cargan `OWNER_JIDS`, `BOT_JIDS`, `LAB_CHAT_ID` e `INSTANCE` desde
+`.env` o el entorno. El exportador usa `.local/fixture-identities.json`, sustituible
+por `FIXTURE_IDENTITIES_FILE` o `--identities`; rechaza identidades largas sin mapa.
+Los valores reales y el mapa se conservan solo localmente; las fixtures siguen siendo
+las capturas reales anonimizadas. Se revisaron archivos actuales y cambios de la rama,
+sin imprimir valores. Los commits históricos previos no se reescriben; sus versiones
+antiguas todavía contienen las identidades retiradas del árbol actual.
+
+### DEC-017: Disponibilidad al arrancar y avance de la outbox
+Un error del refresco inicial de miembros genera advertencia y permite iniciar
+Fastify. `/health` sigue consultando al proveedor y responde 503 mientras esté
+caído; el refresco periódico puede recuperar la sincronización sin reiniciar.
+La outbox conserva los envíos `uncertain` agotados para auditoría, pero solo
+bloquean FIFO mientras queden intentos de reconciliación. Los pendientes con
+intentos disponibles siguen respetando el orden del chat.
+
+### DEC-018: Ciclo de vida seguro de las bases de tests
+El setup identifica explícitamente el servicio Compose `botsky/postgres`, su red
+privada, PostgreSQL 17, usuario `botsky` y propiedad de la base `botsky` antes de
+crear o limpiar. El teardown elimina la base de esa ejecución tras cerrar pools.
+Un setup posterior recoge bases inactivas de más de 24 horas si una ejecución
+fue interrumpida. Solo admite `^botsky_test_\d{13}_[1-9]\d{0,9}$`, comprueba
+propiedad y ausencia de conexiones; no usa `FORCE` ni termina sesiones.
+Una base activa queda intacta, incluso si hay una conexión concurrente al borrado.
+Las bases de producción y nombres no coincidentes se rechazan antes del DROP.

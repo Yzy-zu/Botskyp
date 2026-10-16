@@ -158,3 +158,40 @@ scripts/deploy.sh    # Despliegue con respaldo previo, healthcheck y rollback au
 scripts/backup.sh    # Respaldo de base de datos con pg_dump
 scripts/panic.sh     # Apagado de emergencia inmediato desde consola
 ```
+
+## 6. Ejecución parcial de Fase 0 (constructor, 16/10/2026)
+
+- Rama de trabajo: `phase-0-esqueleto`; todavía sin fusionar ni cerrar la fase.
+- Servicios propios: `botsky-app`, `botsky-worker`, `botsky-postgres-1` y capturador
+  diagnóstico `botsky-capture`. PostgreSQL 17 propio; volumen `botsky_botsky_pgdata`.
+- Red privada `botsky_internal`, alias de base exclusivo `botsky-db`. El alias
+  genérico `postgres` es ambiguo al compartir red con Evolution y no debe utilizarse.
+- App y worker usan Node 24 ARM64. Para comandos locales:
+  `export PATH="$PWD/.local/node/bin:$PATH"` (Node 24 verificado, sin cambiar el host).
+- `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` desde el repo.
+  Los tests crean una BD con prefijo `botsky_test_`; nunca reinician tablas de producción.
+- `npm run migrate` usa la imagen/configuración del último despliegue sano.
+- `npm run dev` carga `.env`; usar solo un entorno de desarrollo con proveedor mock
+  y BD/puerto propios. No ejecutarlo sobre el `.env` de producción. Los nombres
+  Docker de la BD son resolubles dentro de las redes correspondientes.
+- Despliegues únicamente con `scripts/deploy.sh`; para esta ejecución pendiente
+  de fixtures se usó `TRANSPORT=mock scripts/deploy.sh`.
+- Estado completo, pruebas y límites en `docs/fases/FASE-0.md` y
+  `docs/fases/FASE-0-PRUEBAS.md`. `/health` mock no acredita conexión de WhatsApp.
+- Capturador: webhook `http://botsky-capture:3001/webhook`, secreto en cabecera,
+  limitado al laboratorio/privado del dueño y sin bytes o claves multimedia.
+  Configuración anterior y credenciales solo bajo `.local/` y `.env` (600).
+- No hay `rclone` instalado ni remoto Drive confirmado. Respaldos locales verificados;
+  quedan pendientes copia externa, retención y restauración en otro VPS autorizado.
+
+### 6.1 Actualización tras capturas y comprobación real
+
+- Adaptador y normalizador reales desplegados; instancia `botsky` sigue `open`.
+- El dueño confirmó `bot ping` → `pong` en Botsky Lab; tres respuestas adicionales
+  de diagnóstico sobrevivieron al reinicio de la app, una entrega por cita.
+- Webhook final: `http://botsky-app:3000/webhook`, secreto en cabecera. Capturador
+  detenido; no hay puerto diagnóstico publicado ni excepción temporal de firewall.
+- `/health` ahora devuelve `transport=evolution`, `database=true`, `evolution=true`.
+- Fixtures originales y procedencia en `tests/fixtures`; 61 pruebas automáticas.
+- Sigue pendiente revisión del arquitecto y copia/restauración externa. SSH al
+  candidato `jssi-1` se rechazó por clave de host desconocida; no se aceptó sin verificar.

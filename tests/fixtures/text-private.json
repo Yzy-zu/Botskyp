@@ -1,0 +1,25 @@
+{
+  "event": "messages.upsert",
+  "instance": "botsky",
+  "date_time": "2026-10-15T21:39:35.122Z",
+  "data": {
+    "messageType": "conversation",
+    "messageTimestamp": 1792111174,
+    "source": "android",
+    "status": "DELIVERY_ACK",
+    "key": {
+      "remoteJid": "100@s.whatsapp.net",
+      "remoteJidAlt": "100@s.whatsapp.net",
+      "fromMe": false,
+      "id": "msg-a6bd9ed91b2d",
+      "participant": "",
+      "addressingMode": "lid"
+    },
+    "message": {
+      "conversation": "bot ping privado"
+    },
+    "contextInfo": {
+      "mentionedJid": []
+    }
+  }
+}

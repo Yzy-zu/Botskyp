@@ -1,10 +1,11 @@
+import { schoolDelivery } from '../modules/school/delivery.js';
 import { product } from '../../config/product.js';
 import type { Db } from '../db/client.js';
 import type { Config } from '../config.js';
 import type { Delivery, Transport } from './types.js';
 import { z } from 'zod';
-const payloadSchema = z.object({text:z.string(),sourceId:z.string()});
-type Row = {id:string;chat_id:string;payload:unknown;status:string;attempts:number;reconcile_attempts:number;provider_msg_id:string|null;dedupe_key:string};
+const payloadSchema = z.object({text:z.string(),sourceId:z.string(),attachmentId:z.uuid().optional()});
+type Row = {id:string;chat_id:string;payload:unknown;kind:string;status:string;attempts:number;reconcile_attempts:number;provider_msg_id:string|null;dedupe_key:string};
 export async function recoverSending(db:Db):Promise<void> {
   await db.query("UPDATE outbox SET status='uncertain',last_error='interrupted',next_try_at=now() WHERE status='sending'");
 }
@@ -19,7 +20,7 @@ export async function sendNext(db:Db, transport:Transport, config:Config):Promis
   const row=result.rows[0];
   if (!row) return false;
   const payload=payloadSchema.parse(row.payload);
-  const delivery:Delivery={id:row.id,chatId:row.chat_id,...payload};
+  const delivery:Delivery={id:row.id,chatId:row.chat_id,text:payload.text,sourceId:payload.sourceId,...(payload.attachmentId?{attachmentId:payload.attachmentId}:{})};
   if (row.status==='uncertain') {
     let resolution;
     try { resolution=await transport.reconcile(delivery,row.provider_msg_id ?? undefined); }
@@ -42,6 +43,15 @@ export async function sendNext(db:Db, transport:Transport, config:Config):Promis
       }
     }
     return true;
+  }
+  if(row.kind==='school_attachment' || row.kind==='school_summary'){
+    const school=await schoolDelivery(db,config,row);
+    if(!school.allowed){
+      await db.query("UPDATE outbox SET status='failed',last_error='school_delivery_not_allowed' WHERE id=$1 AND status='queued'",[row.id]);
+      await db.query("INSERT INTO error_log(where_,msg_id,detail) VALUES('school.delivery',$1,'Entrega escolar cancelada por permisos, configuración o retención')",[row.id]);
+      return true;
+    }
+    if(school.media)delivery.media=school.media;
   }
   // Persist uncertainty BEFORE crossing the network boundary.
   const claimed=await db.query("UPDATE outbox SET status='sending',sending_at=now(),attempts=attempts+1 WHERE id=$1 AND status='queued' RETURNING id",[row.id]);

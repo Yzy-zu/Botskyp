@@ -15,7 +15,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "eval:phase1": "tsx tests/phase1-vision-search.eval.ts",
-    "migrate": "bash scripts/migrate.sh"
+    "migrate": "bash scripts/migrate.sh",
+    "eval:phase2": "tsx tests/phase2-school.eval.ts"
   },
   "dependencies": {
     "fastify": "^5.12.7",

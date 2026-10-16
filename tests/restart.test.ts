@@ -75,3 +75,27 @@ it('a reminder survives SIGKILL before its deadline and is delivered once within
     expect((await db.query('SELECT * FROM mock_deliveries WHERE count<>1')).rowCount).toBe(0);
   }finally{if(child){const exited=once(child,'exit');child.kill('SIGTERM');await exited;}await db.end();}
 },30_000);
+it('a school summary survives process death and sends one catch-up after several missed days',async()=>{
+  if(!new URL(url).pathname.startsWith('/botsky_test_'))throw new Error('Unsafe test database');
+  const db=createDb(url);let child:ChildProcess|undefined;
+  try{
+    await migrate(db);
+    await db.query('TRUNCATE inbox,seen_events,outbox,chats,group_memberships,system_flags,reminders,sessions CASCADE');
+    await db.query('CREATE TABLE IF NOT EXISTS mock_deliveries(id text PRIMARY KEY,count int NOT NULL)');
+    await db.query('CREATE TABLE IF NOT EXISTS mock_control(pause boolean)');
+    await db.query('TRUNCATE mock_deliveries,mock_control');await db.query('INSERT INTO mock_control VALUES(false)');
+    await db.query("INSERT INTO chats(id,is_group,enabled) VALUES('300@g.us',true,true)");
+    await db.query("INSERT INTO school_config(chat_id,target_group_id,summary_schedule) VALUES('300@g.us','300@g.us','{\"days\":[1,2,3,4,5,6,7],\"time\":\"07:00\"}')");
+    await db.query("INSERT INTO automations(chat_id,kind,owner_id,enabled,config,next_run_at) VALUES('300@g.us','school_summary','100@s.whatsapp.net',true,'{\"days\":[1,2,3,4,5,6,7],\"time\":\"07:00\"}',now()+interval '1 day')");
+    writeFileSync('.local/runtime-test.json',JSON.stringify({DATABASE_URL:url,EVOLUTION_URL:'http://mock',EVOLUTION_APIKEY:'test',INSTANCE:'test',WEBHOOK_SECRET:'x'.repeat(32),OWNER_JIDS:'100@s.whatsapp.net',BOT_JIDS:'200@s.whatsapp.net',LAB_CHAT_ID:'300@g.us',TRANSPORT:'mock'}),{mode:0o600});
+    child=(await start()).child;
+    const exited=once(child,'exit');child.kill('SIGKILL');await exited;child=undefined;
+    await db.query("UPDATE automations SET next_run_at=now()-interval '3 days'");
+    child=(await start()).child;
+    await until(async()=>(await db.query("SELECT * FROM outbox WHERE kind='school_summary' AND status='sent'")).rowCount===1,15_000);
+    await until(async()=>(await db.query('SELECT * FROM automations WHERE outbox_id IS NULL AND next_run_at>now()')).rowCount===1,15_000);
+    expect((await db.query('SELECT * FROM mock_deliveries')).rowCount).toBe(1);
+    expect((await db.query('SELECT * FROM mock_deliveries WHERE count<>1')).rowCount).toBe(0);
+    expect((await db.query<{payload:{text:string}}>("SELECT payload FROM outbox WHERE kind='school_summary'")).rows[0]?.payload.text).toContain('retraso');
+  }finally{if(child){const exited=once(child,'exit');child.kill('SIGTERM');await exited;}await db.end();}
+},30_000);

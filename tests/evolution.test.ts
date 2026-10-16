@@ -58,3 +58,18 @@ it('reconciles the original pong recorded by the real provider using its quoted 
   if(!outgoing?.contextInfo?.stanzaId)throw new Error('Original quoted pong missing');
   expect(await adapter.reconcile({...delivery,sourceId:outgoing.contextInfo.stanzaId})).toEqual({status:'found',id:outgoing.key.id});
 });
+it('sends school originals via the installed media contract without altering the text or bytes',async()=>{
+  let body:Record<string,unknown>|undefined;
+  vi.spyOn(globalThis,'fetch').mockImplementationOnce(async(url,init)=>{
+    expect(String(url)).toContain('/message/sendMedia/botsky');
+    body=JSON.parse(String(init?.body)) as Record<string,unknown>;
+    return Response.json({key:{id:'media-1',remoteJid:'300@g.us',fromMe:true}},{status:201});
+  });
+  const media={kind:'document' as const,mime:'application/pdf',base64:Buffer.from('%PDF-original').toString('base64')};
+  expect(await adapter.send({...delivery,media})).toEqual({status:'sent',id:'media-1'});
+  expect(body).toMatchObject({number:'300@g.us',mediatype:'document',mimetype:'application/pdf',media:media.base64,caption:'pong',fileName:'adjunto-1.pdf',quoted:{key:{id:'inbound-1',remoteJid:'300@g.us'}}});
+});
+it('an uncertain media send cannot be reconciled by a caption-only text match',async()=>{
+  rows=[{key:{id:'text-only',remoteJid:'300@g.us',fromMe:true},message:{conversation:'pong'},contextInfo:{stanzaId:'inbound-1'}}];
+  expect(await adapter.reconcile({...delivery,attachmentId:'f7b4b074-d968-444b-969c-7b31c3c12a96'})).toEqual({status:'unknown'});
+});

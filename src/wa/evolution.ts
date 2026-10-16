@@ -33,10 +33,12 @@ export class Evolution implements Transport {
     if(!/^\d+@(g\.us|s\.whatsapp\.net)$/.test(delivery.chatId))return {status:'failed',reason:'unresolved_destination'};
     if(delivery.chatId.endsWith('@g.us') && delivery.chatId!==this.config.LAB_CHAT_ID)return {status:'failed',reason:'outside_lab'};
     try{
-      const response=z.object({key}).parse(await this.request(`/message/sendText/${this.config.INSTANCE}`,{
-        number:delivery.chatId,text:delivery.text,linkPreview:false,
-        ...(delivery.sourceId?{quoted:{key:{id:delivery.sourceId,remoteJid:delivery.chatId}}}:{}),
-      }));
+      const quote=delivery.sourceId?{quoted:{key:{id:delivery.sourceId,remoteJid:delivery.chatId}}}:{};
+      const media=delivery.media;
+      const response=z.object({key}).parse(await this.request(`/message/${media?'sendMedia':'sendText'}/${this.config.INSTANCE}`,
+        media?{number:delivery.chatId,mediatype:media.kind,mimetype:media.mime,media:media.base64,caption:delivery.text,
+          fileName:`adjunto-${delivery.id}.${media.mime==='application/pdf'?'pdf':media.mime.split('/')[1]}`,...quote}
+          :{number:delivery.chatId,text:delivery.text,linkPreview:false,...quote}));
       if(!response.key.fromMe || response.key.remoteJid!==delivery.chatId)return {status:'uncertain',reason:'unexpected_send_response'};
       return {status:'sent',id:response.key.id};
     }catch(error){
@@ -55,6 +57,8 @@ export class Evolution implements Transport {
       const matches=result.messages.records.filter(r=>{
         if(!r.key.fromMe || r.key.remoteJid!==delivery.chatId)return false;
         if(providerId)return r.key.id===providerId;
+        // Media without a known provider ID stays uncertain; text matching cannot prove file identity.
+        if(delivery.media || delivery.attachmentId)return false;
         // A quote links a particular response to its exact inbound request.
         const extended=z.object({text:z.string().optional(),contextInfo:z.object({stanzaId:z.string().optional()}).optional()}).safeParse(r.message['extendedTextMessage']);
         const text=r.message['conversation'] ?? (extended.success?extended.data.text:undefined);

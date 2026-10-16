@@ -1,8 +1,9 @@
+import { schoolShortcut } from '../modules/school/shortcuts.js';
 import { DateTime } from 'luxon';
 import { callWord } from './activation.js';
 import { searchRequest } from './search-context.js';
 export type Shortcut={name:string;args:Record<string,unknown>};
-const aliases:Record<string,string>={notas:'notes',recordatorios:'reminders',memoria:'memory','conversación':'conversation',conversacion:'conversation',web:'web','visión':'vision',vision:'vision'};
+const aliases:Record<string,string>={notas:'notes',recordatorios:'reminders',memoria:'memory','conversación':'conversation',conversacion:'conversation',web:'web','visión':'vision',vision:'vision',escuela:'school',school:'school'};
 export function commandText(text:string):string{return text.trim().replace(/^(?:@\d+\s*)+/u,'').replace(new RegExp(`^${callWord.source}[\\s,:;!]*`,'iu'),'').trim();}
 export function parseDate(text:string,zone:string,now:Date):string|undefined{
   const input=text.trim();
@@ -21,9 +22,10 @@ export function parseDate(text:string,zone:string,now:Date):string|undefined{
 }
 export function shortcut(text:string,zone:string,now:Date):Shortcut|undefined{
   const t=commandText(text);let m:RegExpExecArray|null;
+  const school=schoolShortcut(t);if(school)return school;
   const direct:Record<string,string>={'ping':'core.ping','apagado de emergencia':'control.emergency','reactiva':'control.reactivate','mantenimiento on':'control.maintenance_on','mantenimiento off':'control.maintenance_off','módulos':'control.modules','modulos':'control.modules','diag cuota':'diag.cuota','diag.cuota':'diag.cuota','diag errores':'diag.errores','diag.errores':'diag.errores','qué sabes de mí':'memory.list','que sabes de mi':'memory.list','olvídalo todo':'memory.forget','olvidalo todo':'memory.forget','recordatorios':'reminders.list','notas':'notes.list'};
   const name=direct[t.toLowerCase().replace(/[.!?]$/,'')];if(name)return {name,args:name==='memory.forget'?{target:'todo'}:{}};
-  if((m=/^ayuda(?:\s+(.*))?$/iu.exec(t)))return {name:'core.help',args:{topic:m[1] ?? ''}};
+  if((m=/^ayuda(?:\s+(.*))?$/iu.exec(t)))return {name:'core.help',args:{topic:aliases[m[1]?.toLowerCase() ?? ''] ?? m[1] ?? ''}};
   if((m=/^(activa|desactiva)\s+(\S+)\s+aqu[ií]$/iu.exec(t)))return {name:'control.modules',args:{module:aliases[m[2]!.toLowerCase()] ?? m[2],enabled:m[1]!.toLowerCase()==='activa'}};
   if((m=/^(?:nota guarda|guarda(?: que)?)\s+(.+)$/isu.exec(t)))return {name:'notes.create',args:{body:m[1]}};
   if((m=/^notas busca\s+(.+)$/isu.exec(t)))return {name:'notes.list',args:{query:m[1]}};

@@ -1,4 +1,13 @@
 export const product = {
+  schoolSubjectChars: 80,
+  schoolSubjectLimit: 30,
+  schoolLessonLimit: 60,
+  schoolTaskChars: 1_000,
+  schoolResults: 30,
+  schoolAttachmentLimit: 1,
+  schoolAttachmentBytes: 4_000_000,
+  schoolOriginalDays: 7,
+  schoolAutomationBatch: 20,
   llmModel: 'gemini-3.5-flash-lite',
   llmLegacySearchModel: 'gemini-2.5-flash-lite',
   llmUserRpm: 8,

@@ -5,6 +5,7 @@ import type { Config } from '../config.js';
 import type { Transport } from '../wa/types.js';
 import { processNext } from './inbox.js';
 import { recoverSending, sendNext } from '../wa/outbox.js';
+import { tickSchool } from '../modules/school/automation.js';
 import { tickCore } from '../modules/reminders/tick.js';
 import { product } from '../../config/product.js';
 export async function startRuntime(db:Db, transport:Transport, config:Config, log:FastifyBaseLogger):Promise<()=>Promise<void>> {
@@ -29,7 +30,7 @@ export async function startRuntime(db:Db, transport:Transport, config:Config, lo
   })();
   const ticking=(async()=>{
     while(!stopped){
-      try{await tickCore(db,config);}
+      try{await tickCore(db,config);await tickSchool(db,config); }
       catch{log.error({where:'tick'},'Falló el ciclo de tiempo');}
       for(let elapsed=0;elapsed<product.tickMs && !stopped;elapsed+=product.pollMs)await delay(product.pollMs);
     }

@@ -1,7 +1,7 @@
 # Botsky — Registro de Decisiones Técnicas y Arquitectónicas
 
 **Archivo:** `docs/DECISIONES.md`  
-**Última actualización:** 15 de octubre de 2026  
+**Última actualización:** 16 de octubre de 2026
 **Responsable:** Arquitecto / Revisor de Botsky
 
 Este documento registra las decisiones técnicas tomadas durante la ejecución del proyecto, su justificación y el tratamiento formal de contradicciones documentales o discrepancias con el entorno real.
@@ -442,3 +442,107 @@ disponibilidad externa ya observados siguen registrados.
 Solo cambia el criterio documental de aceptación de Fase 1. La revisión del
 arquitecto previa al merge sigue vigente; no se autoriza fusionar a `main`, iniciar
 Fase 2 ni activar módulos en grupos reales.
+
+## 5. Decisiones de Fase 2 (aprobadas por el arquitecto sin correcciones de código)
+
+### DEC-031: Inicio autorizado de Escuela y límites operativos
+
+El dueño declara Fases 0/1 cerradas y fusionadas, con `main=28b252d`, y autoriza
+únicamente Fase 2 en una rama nueva, sin merge ni Fase 3. Esa instrucción directa
+prevalece sobre los estados históricos de DEC-029/030 y ROADMAP. Se trabaja en
+`phase-2-escuela`, un solo constructor. No se cambian las reglas de identidad ni
+se habilitan grupos reales: la barrera existente de inbox/transporte sigue en Lab.
+Escuela solo opera en grupos; queda apagada en privados y por defecto fuera de Lab.
+El resumen queda apagado incluso en Lab hasta configurarlo explícitamente.
+
+Se añaden checks de membresía vigente a permisos school y a la ayuda; al ejecutar
+se vuelve a verificar membresía/administración en el chat. Las entregas programadas
+y los originales en cola comprueban otra vez la autorización antes de enviarse.
+El destino es configurable desde comando determinista; Gemini no recibe ese ID.
+Por la barrera de producción vigente, actualmente solo se acepta Botsky Lab como
+destino. Abrir otros grupos exige la aprobación del dueño y el trabajo explícito
+para retirar la barrera anterior, no una activación implícita de esta fase.
+
+### DEC-032: Horario como propuesta validada y confirmación versionada
+
+Migración aditiva `004_school.sql`, sin modificar tablas/datos de Fases 0/1.
+Schemas Zod estrictos para materias, horario, fechas y configuración. Horario semanal
+CDMX, días 1–7, horas HH:mm, fin posterior al inicio, sin duplicados/superposiciones.
+No se inventan periodos escolares ni festivos. Fechas de tareas UTC; sin fecha se
+calcula la siguiente clase real del horario semanal o se conserva NULL.
+
+Toda carga/corrección de horario propone un reemplazo semanal completo. El preview
+incluye todas las clases y explica el reemplazo; materias/tareas previas se conservan.
+`school_imports` guarda el borrador, hash y revisión base, sin crear materias/clases.
+Solo «sí» del actor/chat autorizado, dentro de dos minutos y con sesión consumida,
+permite el commit interno (no invocable por el modelo). Se comprueban hash del
+preview, versión de configuración y permisos otra vez; un cambio concurrente pide
+una propuesta nueva. Cancelación, caducidad, manipulación o replay no guardan clases.
+
+La importación determinista hace una llamada de visión usando el adaptador/cuota
+de Fase 1, una única función de extracción y ningún efecto de Gemini. Los datos son
+propuesta, también si parecen plausibles. Se consultaron de nuevo [visión](https://ai.google.dev/gemini-api/docs/image-understanding),
+[function calling](https://ai.google.dev/gemini-api/docs/function-calling) y
+[precios](https://ai.google.dev/gemini-api/docs/pricing). Se conserva modelo y
+confirmación local de nivel gratuito existentes; sin nuevas claves ni facturación.
+
+### DEC-033: Originales escolares acotados, tareas y recuperación de resúmenes
+
+Una tarea por mensaje de alta, UNIQUE(chat,autor canónico,mensaje); el backend
+atribuye autor y adjuntos. Cualquier miembro vigente crea/consulta y edita sus
+propias tareas. Solo owner/admin borra (lógico, confirmado), edita tareas ajenas,
+administra materias/horario/configuración. Desactivar una materia conserva tareas.
+
+En esta fase se conservan originales de **imagen o PDF**, uno por tarea, máximo
+4 MB y siete días. No hay conversión/OCR/PDF ni otras herramientas de Fase 5.
+Bytes en `school_attachments.data` de la base propia, cubiertos por el backup
+existente; no se añaden volúmenes ni servicios. El tick vacía únicamente bytes
+caducados, manteniendo metadatos y tareas. Los backups existentes pueden contener
+esos bytes hasta su propia retención (pendiente externa heredada de Fase 0).
+Resolución: archivo actual, cita validada del mismo chat, o archivo propio reciente
+(10 minutos) cuando se solicita adjunto; sin selección de IDs/URLs desde Gemini.
+Una cita puede señalar un original compartido de otro miembro del mismo grupo;
+su propietario se resuelve con evidencia del backend, separado del autor de tarea.
+
+La entrega de originales usa una referencia de ámbito en outbox, nunca base64 en
+el payload persistido. Se verificó en solo lectura el código instalado de Evolution
+2.3.7: `getBase64FromMediaMessage`, router `sendMedia`, esquema y HTTP 201.
+El [esquema oficial de esa versión](https://github.com/EvolutionAPI/evolution-api/blob/2.3.7/src/validate/message.schema.ts)
+confirma media/base64, MIME, mediatype y cita. No se modificó Evolution. Un timeout
+sin ID confirmado queda incierto: una coincidencia de caption no prueba entrega
+del archivo y no autoriza un reenvío ciego. La entrega física de archivo queda
+pendiente de prueba manual; el contrato HTTP se comprueba con proveedor simulado.
+
+`automations` implementa exclusivamente school_summary, con días/hora CDMX, actor
+configurador, destino y próximo vencimiento persistidos. Reclamo + outbox se hacen
+en la misma transacción con lock y clave única por ejecución. Solo tras entrega
+sent o fallo definitivo avanza a la siguiente fecha futura; uncertain no se repite.
+Varios días perdidos se condensan en un resumen con retraso explícito. Conserva
+la entrega ya en curso al reconfigurar, evitando duplicación. Desactivar el resumen,
+revocar permisos o apagar el módulo impide entregas escolares aún no iniciadas.
+No se añaden avisos individuales automáticos por cada tarea: el alcance es resumen
+programado; recordatorios personales siguen en su módulo de Fase 1.
+
+### DEC-034: Evidencia suficiente y pruebas físicas opcionales para cerrar Fase 2
+
+**Decisión expresa del dueño, 16-10-2026.** El arquitecto aprobó Fase 2 — Escuela
+sin correcciones de código. La evidencia automática, de integración y la auditoría
+arquitectónica se consideran suficientes para cerrar la fase, que queda **lista
+para cierre**.
+
+El dueño decide no realizar como condición de cierre la importación de horario
+con foto real, la entrega física de un adjunto PDF/imagen ni la recepción real del
+resumen escolar programado. Estas tres pruebas pasan a ser **opcionales y no
+bloqueantes**; permanecen no ejecutadas, sin afirmar éxito físico ni sustituir su
+alcance por el de un proveedor simulado. La lista de WhatsApp queda disponible
+como referencia para validaciones voluntarias en Botsky Lab.
+
+Esta instrucción directa prevalece sobre las exigencias documentales anteriores
+de evidencia física para el cierre de Fase 2, incluidas las de DEC-033. **No se
+eliminan tests automáticos, integraciones ni cobertura existente**: se conservan
+tests, fixtures, evaluaciones y evidencias, con sus límites documentados.
+
+Solo cambia el criterio documental de aceptación. No se modifica código funcional
+ni se activan módulos en grupos reales. Se autoriza commit y push exclusivamente
+a `phase-2-escuela`; no se fusiona a `main` ni se inicia Fase 3. Tras registrar las
+verificaciones solicitadas, el agente se detiene.

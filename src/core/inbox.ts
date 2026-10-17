@@ -33,13 +33,15 @@ export async function receive(db: Db, config: Config, input: Msg, now = new Date
 
 export async function processNext(db: Db, config: Config):Promise<boolean> {
   return transaction(db, async c => {
-    const result = await c.query<{id:string;payload:unknown;provider_msg_id:string}>("SELECT id,payload,provider_msg_id FROM inbox WHERE status='queued' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED");
+    const result = await c.query<{id:string;payload:unknown;provider_msg_id:string;turn_id:string;chat_id:string}>("SELECT id,payload,provider_msg_id,turn_id,chat_id FROM inbox WHERE status='queued' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED");
     const row = result.rows[0];
     if (!row) return false;
     const msg = msgSchema.parse(row.payload);
     const actor=await actorFor(c,msg,config);
     const owner=actor.role==='owner';
     if (!msg.isGroup && msg.chatId===msg.senderId) msg.chatId=actor.id;
+    // Preserve the raw envelope key while following v1's authenticated private-chat canonicalization.
+    if (row.chat_id!==msg.chatId) await c.query('UPDATE message_turns SET resolved_chat_id=$2 WHERE id=$1 AND resolved_chat_id<>$2',[row.turn_id,msg.chatId]);
     if (msg.quoted) {
       const sent = await c.query('SELECT id FROM outbox WHERE provider_msg_id=$1 AND chat_id=$2 AND status=\'sent\'',[msg.quoted.id,msg.chatId]);
       msg.quoted.fromBot = Boolean(sent.rowCount);
@@ -77,14 +79,14 @@ export async function processNext(db: Db, config: Config):Promise<boolean> {
         const text=commandText(msg.text);
         const accepts=sessionAccepts(session,text,msg.attachments.length>0);
         if(allowed && msg.isGroup){await chatLock(c,msg.chatId);await lockChatWallets(c,msg.chatId,actor.id);}
-        const xpCtx={actor,chat:{id:msg.chatId,isGroup:msg.isGroup,enabled:allowed,settings:saved?.settings ?? {}},msg,db,c,config,now:new Date(),search:async()=>''};
+        const xpCtx={turnId:row.turn_id,actor,chat:{id:msg.chatId,isGroup:msg.isGroup,enabled:allowed,settings:saved?.settings ?? {}},msg,db,c,config,now:new Date(),search:async()=>''};
         if(allowed && !maintenance)await activity(xpCtx);
         if(allowed && activated(msg,config.BOT_JIDS,Boolean(accepts))){
           if(msg.isGroup && !owner && !actor.groupMember)reply='No.';
           else if(maintenance && !owner)reply='Estoy en mantenimiento.';
           else {
             const gemini=new Gemini(db,config,actor.id);
-            const ctx={actor,chat:{id:msg.chatId,isGroup:msg.isGroup,enabled:true,settings:saved?.settings ?? {}},msg,db,c,config,now:new Date(),search:(query:string)=>config.WEB_SEARCH_PROVIDER==='gemini'?gemini.search(query):searxSearch(config,query)};
+            const ctx={turnId:row.turn_id,actor,chat:{id:msg.chatId,isGroup:msg.isGroup,enabled:true,settings:saved?.settings ?? {}},msg,db,c,config,now:new Date(),search:(query:string)=>config.WEB_SEARCH_PROVIDER==='gemini'?gemini.search(query):searxSearch(config,query)};
             reply=await route(ctx,config.GEMINI_API_KEY && config.GEMINI_FREE_TIER_CONFIRMED?gemini:undefined);
             if(commandText(msg.text).toLowerCase()==='apagado de emergencia' && owner)reply=undefined;
             if(reply)await rememberContext(ctx,reply);

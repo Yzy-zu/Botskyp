@@ -468,3 +468,22 @@ BD temporal, identidades ficticias y MockEvolution; SearXNG existente, consultas
 Minecraft con llave restringida y procesadores reales del worker vía su /tmp.
 Sin despliegue, cambios a Evolution, cuotas productivas ni activación de chats.
 Resultados y consumo en [R5-GEMINI-REAL](v1.1/R5-GEMINI-REAL.md).
+
+
+## Canary WhatsApp v1.1 — Botsky Lab (17-10-2026)
+
+Desplegado e09863f (base aprobada da4e6d3) por `scripts/deploy.sh`, migraciones
+011–014 aditivas. Backup previo verificado botsky-20261017T231024-228253.dump.
+App/worker recreados y saludables; PostgreSQL propio/SearXNG/Evolution/PG/Redis
+ajenos conservaron contenedores. Health ok/database/evolution=true y webhook real
+con entrada/salida comprobada. Un pool con 1 key válida, daily/RPM locales 0 y
+concurrencia 4. Allowlist de un grupo sólo en .env: Lab v1.1; default/resto v1.
+
+Smoke humano cerrado por el dueño: 25 mensajes, 24 llamadas, 0 failovers/429.
+Informe [CANARY-LAB](v1.1/CANARY-LAB.md), con cobertura pendiente aceptada y bugs B/C
+sin parche. DOCX sigue en timeout conocido. Mensajería masiva deshabilitada sólo en
+Lab tras previews Nuclear; 0 operaciones Nuclear/Minecraft de escritura. Un
+recordatorio sigue pending hoy 20:00 CDMX porque cancelación está cerrada; informado.
+Main 0c1a19e sin merge y snapshot v1 privado disponible; rollback del selector
+probado, sin reversión real de producción. Fuente desplegada e09863f; el commit de
+cierre siguiente modifica sólo documentación. Detenerse tras push a la misma rama.

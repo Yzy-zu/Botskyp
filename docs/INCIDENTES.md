@@ -201,3 +201,24 @@ Historial operativo de fallos, causas, impacto y soluciones aplicadas en producc
 - **Fallo del montaje de prueba:** docker cp falló por rootfs readonly del worker.
   Se usó stdin/stdout y su /tmp ya existente para ejecutar el mismo procesador;
   sin alterar el contenedor ni scripts productivos. QR/lectura/sticker completados.
+
+
+### [INC-20261017-CANARY] DOCX y fricciones de UX en primer Lab real
+
+- **Entorno:** sólo Lab v1.1, código e09863f; smoke humano cerrado por el dueño.
+- **DOCX conocido (B):** `media.process` encoló `office_pdf`, worker terminó
+  `process_timeout`. Mensaje final honesto a los 74,173 s; no PDF entregado, ni
+  segunda ejecución. No se reinvestigó LibreOffice ni se afirma una causa más
+  específica que el timeout observado; workstream aplazado por instrucción.
+- **Otros B/C:** alias Minecraft sin exposición, estado media genérico, tono,
+  búsqueda sustituida por broma, 8pm interpretado ambiguo y cancelación de
+  recordatorio no disponible. Recordatorio creado una vez sigue pending hoy
+  20:00 CDMX; informado al dueño. Evidencia completa en CANARY-LAB.md y transcript
+  privado. Ningún parche funcional durante el smoke ni caída de app/worker.
+- **Resguardo operativo:** ante previews Nuclear enviados por el dueño fuera
+  del smoke, flag existente messaging=false sólo Lab; confirmación invalidada y
+  sesión cancelada bajo lock. Cero operaciones Nuclear y cero escrituras
+  Minecraft. No se cambió permisos ni se ejecutó la acción masiva.
+- **Cierre:** sin A observados; no rollback activado. Canary se mantiene sólo Lab,
+  main intacto y rollback v1 disponible. Dueño cierra con pendientes documentados;
+  sin ampliación de pruebas ni arreglo de puentes.

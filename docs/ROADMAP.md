@@ -345,3 +345,11 @@ Revisar sólo los dos fallos previos; validar el selector y fronteras afectadas,
 desplegar por script oficial con backup y observar un smoke humano pequeño.
 Ante crash, duplicación o selección errónea repetida, volver Lab a v1. Después de
 la entrega, detenerse para que el dueño pruebe y decida.
+
+
+Canary desplegado **e09863f**, migraciones 011–014, sólo Lab v1.1/default v1.
+Cierre humano solicitado por el dueño: 25 mensajes/24 llamadas Gemini, 0 failovers
+ni 429; pendientes aceptados en CANARY-LAB.md. Sin bugs A observados ni parches
+funcionales durante el smoke. Mensajería masiva Lab OFF; recordatorio pendiente
+informado. Checks focalizados y salud correctos. Main intacto, sin merge ni nuevas
+activaciones; conservar rollback y detenerse después del push documental.

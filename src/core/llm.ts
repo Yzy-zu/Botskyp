@@ -42,7 +42,7 @@ export class Gemini implements Llm {
       const hasImage=JSON.stringify(input.contents,(key,value:unknown)=>key==='data'?'[bytes]':value).includes('"inlineData"');
       const id=await reserveCall(this.db,this.actor,model,search?'web':hasImage?'vision':'router',estimateInputTokens(input),{
         userRpm:this.config.GEMINI_USER_RPM, globalRpm:this.config.GEMINI_GLOBAL_RPM,
-        dailyLimit:this.config.GEMINI_DAILY_LIMIT, inputTokensPerMinute:this.config.GEMINI_INPUT_TPM,
+        dailyLimit:this.config.GEMINI_DAILY_LIMIT, inputTokensPerMinute:this.config.GEMINI_INPUT_TPM, reservedInputTokens:this.config.LLM_RESERVED_INPUT_TOKENS,
       });this.budget.used++;
       const signal=AbortSignal.any([AbortSignal.timeout(hasImage?product.llmVisionTimeoutMs:product.llmTimeoutMs),...(this.parentSignal?[this.parentSignal]:[])]);
       let response:Response;

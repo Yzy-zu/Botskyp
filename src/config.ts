@@ -4,10 +4,15 @@ const jid = z.string().regex(/^\d+@(s\.whatsapp\.net|lid)$/);
 const list = z.string().transform(s => s.split(',').map(x => x.trim()).filter(Boolean)).pipe(z.array(jid).min(1));
 const schema = z.object({
   ROUTER_MODE: z.enum(['v1','v1_1_shadow','v1_1']).default('v1'),
-  GEMINI_USER_RPM: z.coerce.number().int().min(1).max(product.llmUserRpm).default(product.llmUserRpm),
-  GEMINI_GLOBAL_RPM: z.coerce.number().int().min(1).max(product.llmGlobalRpm).default(product.llmGlobalRpm),
-  GEMINI_DAILY_LIMIT: z.coerce.number().int().min(1).max(product.llmDailyLimit).default(product.llmDailyLimit),
-  GEMINI_INPUT_TPM: z.coerce.number().int().min(1).max(product.llmInputTokensPerMinute).default(product.llmInputTokensPerMinute),
+  GEMINI_USER_RPM: z.coerce.number().int().min(1).max(product.llmMaxConfiguredRpm).default(product.llmUserRpm),
+  GEMINI_GLOBAL_RPM: z.coerce.number().int().min(1).max(product.llmMaxConfiguredRpm).default(product.llmGlobalRpm),
+  GEMINI_DAILY_LIMIT: z.coerce.number().int().min(1).max(product.llmMaxConfiguredDaily).default(product.llmDailyLimit),
+  GEMINI_INPUT_TPM: z.coerce.number().int().min(1).max(product.llmMaxConfiguredTokens).default(product.llmInputTokensPerMinute),
+  LLM_USER_RPM: z.coerce.number().int().min(1).max(product.llmMaxConfiguredRpm).default(product.llmUserRpm),
+  LLM_GLOBAL_RPM: z.coerce.number().int().min(1).max(product.llmMaxConfiguredRpm).default(product.llmGlobalRpm),
+  LLM_DAILY_LIMIT: z.coerce.number().int().min(1).max(product.llmMaxConfiguredDaily).default(product.llmDailyLimit),
+  LLM_INPUT_TOKENS_PER_MINUTE: z.coerce.number().int().min(1).max(product.llmMaxConfiguredTokens).default(product.llmInputTokensPerMinute),
+  LLM_RESERVED_INPUT_TOKENS: z.coerce.number().int().min(1).max(product.llmMaxConfiguredTokens).default(product.llmReservedInputTokens),
   DRIVE_ENABLED: z.enum(['true','false']).default('false').transform(s => s === 'true'),
   LIBRARY_DRIVE_ENABLED: z.enum(['true','false']).default('false').transform(s => s === 'true'),
   MINECRAFT_ENABLED: z.enum(['true','false']).default('false').transform(s => s === 'true'),
@@ -29,7 +34,13 @@ const schema = z.object({
 });
 export type Config = z.infer<typeof schema>;
 export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const result = schema.safeParse(env);
+  const result = schema.safeParse({
+    ...env,
+    LLM_USER_RPM: env.LLM_USER_RPM ?? env.GEMINI_USER_RPM,
+    LLM_GLOBAL_RPM: env.LLM_GLOBAL_RPM ?? env.GEMINI_GLOBAL_RPM,
+    LLM_DAILY_LIMIT: env.LLM_DAILY_LIMIT ?? env.GEMINI_DAILY_LIMIT,
+    LLM_INPUT_TOKENS_PER_MINUTE: env.LLM_INPUT_TOKENS_PER_MINUTE ?? env.GEMINI_INPUT_TPM,
+  });
   if (!result.success) throw new Error(`Invalid configuration: ${result.error.issues.map(i => i.path.join('.')).join(', ')}`);
   if (result.data.TRANSPORT === 'evolution') {
     const db = new URL(result.data.DATABASE_URL);
@@ -37,5 +48,9 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
       throw new Error('Evolution mode requires the dedicated Botsky database');
     }
   }
-  return result.data;
+  // Preserve legacy Config consumers while giving the explicit LLM_* names precedence.
+  return { ...result.data,
+    GEMINI_USER_RPM: result.data.LLM_USER_RPM, GEMINI_GLOBAL_RPM: result.data.LLM_GLOBAL_RPM,
+    GEMINI_DAILY_LIMIT: result.data.LLM_DAILY_LIMIT, GEMINI_INPUT_TPM: result.data.LLM_INPUT_TOKENS_PER_MINUTE,
+  };
 }

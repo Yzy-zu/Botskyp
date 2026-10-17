@@ -14,10 +14,17 @@ it('defaults to v1 and validates the three inert router modes',()=>{
   for(const mode of ['v1','v1_1_shadow','v1_1'])expect(readConfig({...valid,ROUTER_MODE:mode}).ROUTER_MODE).toBe(mode);
   expect(()=>readConfig({...valid,ROUTER_MODE:'v2'})).toThrow('ROUTER_MODE');
 });
-it('keeps current local quota defaults and only accepts safe reductions in R1',()=>{
-  expect(readConfig(valid)).toMatchObject({GEMINI_USER_RPM:8,GEMINI_GLOBAL_RPM:5,GEMINI_DAILY_LIMIT:20,GEMINI_INPUT_TPM:65536});
-  for(const [key,limit] of Object.entries({GEMINI_USER_RPM:8,GEMINI_GLOBAL_RPM:5,GEMINI_DAILY_LIMIT:20,GEMINI_INPUT_TPM:65536})){
+it('keeps exact v1 quota defaults and supports explicit bounded increases and reductions',()=>{
+  expect(readConfig(valid)).toMatchObject({GEMINI_USER_RPM:8,GEMINI_GLOBAL_RPM:5,GEMINI_DAILY_LIMIT:20,GEMINI_INPUT_TPM:65536,LLM_USER_RPM:8,LLM_GLOBAL_RPM:5,LLM_DAILY_LIMIT:20,LLM_INPUT_TOKENS_PER_MINUTE:65536,LLM_RESERVED_INPUT_TOKENS:32768});
+  const limits={LLM_USER_RPM:10000,LLM_GLOBAL_RPM:10000,LLM_DAILY_LIMIT:1000000,LLM_INPUT_TOKENS_PER_MINUTE:10000000,LLM_RESERVED_INPUT_TOKENS:10000000,GEMINI_USER_RPM:10000,GEMINI_GLOBAL_RPM:10000,GEMINI_DAILY_LIMIT:1000000,GEMINI_INPUT_TPM:10000000};
+  for(const [key,limit] of Object.entries(limits)){
     expect(readConfig({...valid,[key]:'1'})).toHaveProperty(key,1);
-    for(const value of ['0','-1','1.5','NaN',String(limit+1)])expect(()=>readConfig({...valid,[key]:value})).toThrow(key);
+    expect(readConfig({...valid,[key]:String(limit)})).toHaveProperty(key,limit);
+    for(const value of ['0','-1','1.5','NaN','Infinity','',String(limit+1)])expect(()=>readConfig({...valid,[key]:value})).toThrow(key);
   }
+});
+it('keeps GEMINI aliases and gives explicit LLM values precedence without ignoring invalid aliases',()=>{
+  expect(readConfig({...valid,GEMINI_GLOBAL_RPM:'6'})).toMatchObject({GEMINI_GLOBAL_RPM:6,LLM_GLOBAL_RPM:6});
+  expect(readConfig({...valid,GEMINI_GLOBAL_RPM:'6',LLM_GLOBAL_RPM:'10'})).toMatchObject({GEMINI_GLOBAL_RPM:10,LLM_GLOBAL_RPM:10});
+  expect(()=>readConfig({...valid,GEMINI_GLOBAL_RPM:'bad',LLM_GLOBAL_RPM:'10'})).toThrow('GEMINI_GLOBAL_RPM');
 });

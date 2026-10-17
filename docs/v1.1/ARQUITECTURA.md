@@ -12,10 +12,12 @@ propiedad, dinero, fechas, confirmaciones y efectos. Gemini recibe referencias
 opacas y semántica; nunca necesita JIDs reales. El resultado debe demostrar
 qué ocurrió en el turno actual antes de afirmar un efecto al usuario.
 
-R1 solo introduce persistencia y contratos. No implementa Natural Router,
-Policy Engine nuevo, executor nuevo, presenter nuevo, loop v2 ni migración de
-las 98 herramientas. El router y resultados v1 siguen operando. Los helpers
-nuevos de referencias, artifacts y tiempo no son llamados por producción.
+R1 introduce persistencia y contratos. R2 añade un catálogo v2 declarativo de
+las 98 tools, 96 visibles/dos internas, más `core.load_capability`, selección
+dinámica con máximo 20 schemas, Fast Path exacto independiente y shadow sin
+ejecución. El router y resultados visibles siguen siendo v1. No hay Policy
+Engine nuevo, ejecución natural v2, loop ni presenter nuevo. Detalle y pruebas
+en [R2-TOOL-REGISTRY](R2-TOOL-REGISTRY.md).
 
 ## Identidad y veracidad
 
@@ -104,19 +106,40 @@ capturada; no se afirma validación del loop por Google ni nuevas llamadas reale
 
 ## Configuración y activación
 
-`ROUTER_MODE` valida `v1 | v1_1_shadow | v1_1`, default `v1`. Ninguna rama de
-routing consulta ese flag en R1: todos los valores mantienen ejecución v1.
-Shadow/activación tendrán trabajo y validación posteriores; el nombre del flag
-no implica implementación.
+`ROUTER_MODE` valida `v1 | v1_1_shadow | v1_1`, default `v1`.
+En R2, `v1` usa exclusivamente los shortcuts, declaraciones y ejecución legacy.
+`v1_1_shadow` observa Fast Path v2, dominios, schemas y tamaño aproximado sin
+consultas adicionales ni llamadas Gemini/efectos nuevos; la respuesta y ejecución
+visibles continúan por v1. `v1_1` está reservado y no se activa: también conserva
+v1 hasta autorización posterior. Los shortcuts legacy no se modifican.
 
-Cuotas por entorno: `GEMINI_USER_RPM=8`, `GEMINI_GLOBAL_RPM=5`,
-`GEMINI_DAILY_LIMIT=20`, `GEMINI_INPUT_TPM=65536`. Son los límites locales
-históricos de `config/product.ts`, no afirmaciones del Free Tier. En R1 solo
-se aceptan enteros positivos hasta esos topes. El anchor de entorno de Compose
-reenvía estas variables y ROUTER_MODE; no se aplica a servicios durante R1. Se conserva la confirmación de
-proyecto sin facturación y la contabilidad existente. Canary posterior podrá
-revisar valores con cuotas reales de la cuenta y `usageMetadata`; R1 no gasta
-cuota real, activa facturación ni aumenta límites.
+Cuotas configurables con defaults históricos: `LLM_USER_RPM=8`,
+`LLM_GLOBAL_RPM=5`, `LLM_DAILY_LIMIT=20`, `LLM_INPUT_TOKENS_PER_MINUTE=65536`
+y `LLM_RESERVED_INPUT_TOKENS=32768`. R2 acepta enteros positivos acotados hacia
+arriba o abajo; falla rápido si son inválidos. Los aliases `GEMINI_*` de R1 se
+conservan y `LLM_*` explícito prevalece. Reserva es fallback; el adapter v1 sigue
+reservando según estimación, como antes. No se alteran valores reales de `.env`,
+servicios ni cuota de proveedor. Compose versionado se prepara sin aplicarlo.
+
+El catálogo v2 conserva todos los PermissionKey históricos (snapshot R1 en
+`tests/fixtures/v1.1/permissions-r1.json`). Los dominios agrupan schemas, nunca
+conceden permisos. Las tools restringidas relevantes pueden ser visibles para
+members con metadata de restricción; admin irrelevante se omite por tokens.
+La autorización final sigue siendo backend; R3 aún no se implementa.
+
+La base definitiva contiene ayuda, crear nota, crear recordatorio, recordar
+memoria, buscar web, saldo y daily, más la meta-tool. Se filtran módulos/scope,
+excepto la meta-tool. Los dominios priorizan sesión, artifact, entidad activa,
+señal léxica y admin; un representante por dominio evita monopolios, luego se
+completan en prioridad hasta 20. `ToolExposureTurn` permite una expansión válida
+por turno sin efectos y con el mismo tope. Los schemas explícitos usan SafeRefs
+y SemanticTime; el traductor bloquea campos internos incluso anidados.
+
+El Fast Path v2 solo devuelve propuestas de comandos exactos con vocativo.
+Cualquier frase natural/parcial devuelve undefined. Memoria y notas compartidas
+se distinguen en descripciones/pistas semánticas; v2 nunca ejecuta notes.create
+por una frase de memoria en R2. El bug legacy permanece visible en v1/shadow
+por la compatibilidad exigida. La decisión natural final corresponde a R5.
 
 ## Artifact chain
 

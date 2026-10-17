@@ -234,3 +234,17 @@ El router visible continúa v1 con cualquiera de los tres modos configurables.
 Al completar checks, documentación y commit/push a la rama autorizada, detenerse.
 Esta instrucción prevalece sobre los flujos históricos de deploy/avance por fase;
 la historia de Fases 0–8 permanece intacta.
+
+## 12. Autorización vigente de v1.1 — R2 (17-10-2026)
+
+El dueño aprueba R1 `92cde7e7f559e172664c76bc0143b73ff5657478` y autoriza
+exclusivamente R2 en `feat/v1.1-natural-router`: catálogo v2, schemas, selector,
+Fast Path separado, cuotas configurables con defaults v1 y shadow sin efectos.
+Un constructor sin delegación. DEC-059 y docs/v1.1/R2-TOOL-REGISTRY.md describen
+alcance y límites. El bloqueo «sin R2» del apartado anterior queda superado por
+esta instrucción. **Sin R3, deploy, merge, activación v1_1 ni conexión de Gemini
+a ejecución natural v2.** Al completar verificaciones y commit/push, detenerse.
+
+R2 implementada y verificada: 187/187 pruebas focalizadas y typecheck/lint/build
+en verde; snapshot de permisos intacto. Entrega para revisión en la misma rama,
+sin despliegue ni activación. R3 no está autorizada; detenerse tras el push.

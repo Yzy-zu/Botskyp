@@ -1,3 +1,4 @@
+import { geminiKeyPool } from './core/gemini-key-pool.js';
 import { readConfig } from './config.js';
 import { createDb } from './db/client.js';
 import { migrate } from './db/migrate.js';
@@ -18,6 +19,7 @@ async function refreshMembers():Promise<void>{
   if(transport instanceof Evolution)await syncEnabledGroups(db,id=>transport.participants(id));
 }
 const app=makeApp(db,config,transport,input=>config.TRANSPORT==='evolution'?normalizeMessage(input,config.INSTANCE):msgSchema.parse(input));
+app.log.info({geminiKeys:geminiKeyPool(config).snapshot().configured,maxConcurrent:config.LLM_MAX_CONCURRENT_CALLS,routerCanaryChats:config.ROUTER_V1_1_CHAT_IDS?.length ?? 0,routerDefault:config.ROUTER_MODE},'Gemini pool and router configured');
 const stopMembershipRefresh=await startMembershipRefresh(refreshMembers,app.log);
 const stopRuntime=await startRuntime(db,transport,config,app.log);
 await app.listen({host:'0.0.0.0',port:config.PORT});

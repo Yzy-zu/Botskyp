@@ -6,7 +6,7 @@ import { chatLock,lockChatWallets } from '../modules/games/state.js';
 import { activity } from '../modules/xp/service.js';
 import { createHash } from 'node:crypto';
 import { transaction, type Db } from '../db/client.js';
-import type { Config } from '../config.js';
+import { configForChat, type Config } from '../config.js';
 import { product } from '../../config/product.js';
 import { msgSchema, type Msg } from '../wa/types.js';
 import { actorFor,privateEligible,type Chat } from './permissions.js';
@@ -34,12 +34,13 @@ export async function receive(db: Db, config: Config, input: Msg, now = new Date
   });
 }
 
-export async function processNext(db: Db, config: Config):Promise<boolean> {
+export async function processNext(db: Db, baseConfig: Config):Promise<boolean> {
   return transaction(db, async c => {
     const result = await c.query<{id:string;payload:unknown;provider_msg_id:string;turn_id:string;chat_id:string}>("SELECT id,payload,provider_msg_id,turn_id,chat_id FROM inbox WHERE status='queued' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED");
     const row = result.rows[0];
     if (!row) return false;
     const msg = msgSchema.parse(row.payload);
+    const config=configForChat(baseConfig,msg.chatId);
     const actor=await actorFor(c,msg,config);
     const owner=actor.role==='owner';
     if (!msg.isGroup && msg.chatId===msg.senderId) msg.chatId=actor.id;

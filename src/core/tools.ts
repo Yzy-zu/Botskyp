@@ -9,7 +9,7 @@ import type { Actor,Chat,PermissionKey } from './permissions.js';
 import { actorFor,moduleEnabled,permitted } from './permissions.js';
 import { argumentHash,openSession } from './sessions.js';
 import type { Declaration } from './llm.js';
-const log=pino({level:'info'});
+const log=pino({level:'info',redact:['chatId']});
 export type ToolResult={ok:true;facts:Record<string,unknown>;reply:string;stylable?:boolean}|{ok:false;kind:'user'|'transient'|'bug';message:string};
 export type ToolCtx={inboxTransaction?:true;turnId?:string;actor:Actor;chat:Chat;msg:Msg;db:Db;c:PoolClient;config:Config;now:Date;search:(query:string)=>Promise<string>};
 export interface Tool<A extends z.ZodType=z.ZodType> {

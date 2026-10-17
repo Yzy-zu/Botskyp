@@ -10,7 +10,7 @@ import { mediaDelivery } from '../modules/media/delivery.js';
 import { schoolDelivery } from '../modules/school/delivery.js';
 import { product } from '../../config/product.js';
 import type { Db } from '../db/client.js';
-import type { Config } from '../config.js';
+import { configForChat, type Config } from '../config.js';
 import type { Delivery, Transport } from './types.js';
 import { z } from 'zod';
 const payloadSchema = z.object({text:z.string(),sourceId:z.string(),attachmentId:z.uuid().optional()});
@@ -30,6 +30,7 @@ export async function sendNext(db:Db, transport:Transport, config:Config):Promis
     ORDER BY o.id LIMIT 1`,[product.maxReconcileAttempts,product.outboxGapMs]);
   const row=result.rows[0];
   if (!row) return false;
+  config=configForChat(config,row.chat_id);
   const payload=payloadSchema.parse(row.payload);
   const delivery:Delivery={id:row.id,chatId:row.chat_id,text:payload.text,sourceId:payload.sourceId,...(payload.attachmentId?{attachmentId:payload.attachmentId}:{}),...(['bulk_text','drive_file','drive_link'].includes(row.kind)?{requireReceipt:true}:{})};
   if (row.status==='uncertain') {

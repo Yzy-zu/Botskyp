@@ -1,3 +1,4 @@
+import { configForChat } from '../config.js';
 import { routeNaturalV2 } from './router-v2.js';
 import { continueMedia } from '../modules/media/service.js';
 import { EconomyError } from '../modules/xp/service.js';
@@ -49,6 +50,7 @@ export function llmError(error:LlmUnavailable):string{
   return 'Gemini no está disponible. Los comandos directos siguen funcionando.';
 }
 export async function route(ctx:ToolCtx,llm?:Llm):Promise<string|undefined>{
+  ctx={...ctx,config:configForChat(ctx.config,ctx.chat.id)};
   if(ctx.config.ROUTER_MODE==='v1_1')return routeNaturalV2(ctx,llm);
   const text=commandText(ctx.msg.text);
   const session=await activeSession(ctx.c,ctx.actor.id,ctx.chat.id);

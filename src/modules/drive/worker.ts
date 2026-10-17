@@ -2,7 +2,7 @@ import { registerArtifactV2 } from '../../core/artifact-registration-v2.js';
 import type { PoolClient } from 'pg';
 import { product } from '../../../config/product.js';
 import { transaction,type Db } from '../../db/client.js';
-import type { Config } from '../../config.js';
+import { configForChat, type Config } from '../../config.js';
 import { privateEligible } from '../../core/permissions.js';
 import { capacity,digest,fetchAttachment } from '../media/storage.js';
 import { validateBytes,extension,safeName } from '../media/catalog.js';
@@ -39,6 +39,7 @@ function verifyFile(file:DriveFile,folder:string):void{
   extension(file.mimeType);
 }
 export async function processDrive(db:Db,config:Config,job:DriveJob,deps:DriveDeps=defaults):Promise<void>{
+  config=configForChat(config,job.chat_id);
   let writing=false;
   try{
     const input=driveRequest.parse(job.payload);await allowed(db,config,job);

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { product } from '../../../config/product.js';
 import { transaction,type Db } from '../../db/client.js';
-import type { Config } from '../../config.js';
+import { configForChat, type Config } from '../../config.js';
 import { msgSchema } from '../../wa/types.js';
 import { Gemini } from '../../core/llm.js';
 import { payloadSchema,extension,validateBytes,conversions } from './catalog.js';
@@ -22,10 +22,11 @@ async function notify(c:import('pg').PoolClient,job:MediaJob,text:string,mode:Co
   return (await c.query<{id:string}>(`INSERT INTO outbox(chat_id,payload,dedupe_key) VALUES($1,$2,$3)
     ON CONFLICT(dedupe_key) DO UPDATE SET dedupe_key=excluded.dedupe_key RETURNING id`,[job.chat_id,JSON.stringify({text:mode==='v1_1'?text:`Trabajo #${job.id}: ${text}`,sourceId:job.source_message_id}),`media:result:${job.id}:error`])).rows[0]!.id;
 }
-export async function recoverMedia(db:Db,mode:Config['ROUTER_MODE']='v1'):Promise<void>{
+export async function recoverMedia(db:Db,routing:Config|Config['ROUTER_MODE']='v1'):Promise<void>{
   await transaction(db,async c=>{
     const rows=(await c.query<MediaJob>("SELECT * FROM jobs WHERE kind='media' AND status='running' FOR UPDATE")).rows;
     for(const job of rows){
+      const mode=typeof routing==='string'?routing:configForChat(routing,job.chat_id).ROUTER_MODE;
       const failed=job.attempts>=product.mediaMaxAttempts;
       let outboxId:string|null=null;if(failed)outboxId=await notify(c,job,mediaFailure('interrupted'),mode);
       await c.query("UPDATE jobs SET status=$2,error='interrupted',outbox_id=$3,updated_at=now() WHERE id=$1",[job.id,failed?'failed':'queued',outboxId]);
@@ -109,6 +110,7 @@ async function finish(db:Db,config:Config,job:MediaJob,artifacts:Artifact[],sour
   });
 }
 export async function processMedia(db:Db,config:Config,job:MediaJob,deps:WorkerDeps=defaults):Promise<void>{
+  config=configForChat(config,job.chat_id);
   if(config.ROUTER_MODE==='v1_1' && (await db.query<{status:string}>('SELECT status FROM jobs WHERE id=$1',[job.id])).rows[0]?.status!=='running')return;
   let cwd:string|undefined;
   let operation:string|undefined;

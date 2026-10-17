@@ -334,3 +334,14 @@ checks estáticos, auditoría de secretos y Compose correctos. La tanda previa
 337/339 se cerró repitiendo los casos afectados sobre código congelado, sin
 cambiar Policy. Evidencia y límites en el informe R5.1. Tras commit/push a la
 misma rama, detenerse; no autoriza deploy, merge ni activación.
+
+
+## 18. Canary Lab autorizado (17-10-2026)
+
+El dueño autoriza desplegar la base da4e6d3 con la integración mínima de Canary
+por chat que faltaba. Sólo Lab en v1.1; cualquier otro chat en v1. Un constructor,
+sin delegación, sin merge ni nuevos bridges/DOCX. DEC-065 e informe CANARY-LAB.md.
+Revisar sólo los dos fallos previos; validar el selector y fronteras afectadas,
+desplegar por script oficial con backup y observar un smoke humano pequeño.
+Ante crash, duplicación o selección errónea repetida, volver Lab a v1. Después de
+la entrega, detenerse para que el dueño pruebe y decida.

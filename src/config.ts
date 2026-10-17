@@ -6,6 +6,7 @@ export function validGeminiApiKey(key:string):boolean{return /^[\x21-\x2B\x2D-\x
 const localLimit = (max:number, fallback:number) => z.string().trim().min(1).transform(Number).pipe(z.number().int().min(0).max(max)).default(fallback);
 const schema = z.object({
   ROUTER_MODE: z.enum(['v1','v1_1_shadow','v1_1']).default('v1'),
+  ROUTER_V1_1_CHAT_IDS: z.string().optional().transform(s => s===undefined ? undefined : [...new Set(s.split(',').map(id=>id.trim()).filter(Boolean))]).pipe(z.array(z.string().regex(/^\d+@g\.us$/)).optional()),
   GEMINI_USER_RPM: localLimit(product.llmMaxConfiguredRpm, product.llmUserRpm),
   GEMINI_GLOBAL_RPM: localLimit(product.llmMaxConfiguredRpm, product.llmGlobalRpm),
   GEMINI_DAILY_LIMIT: localLimit(product.llmMaxConfiguredDaily, product.llmDailyLimit),
@@ -63,4 +64,22 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
     GEMINI_GLOBAL_RPM: result.data.LLM_LOCAL_GLOBAL_RPM, LLM_GLOBAL_RPM: result.data.LLM_LOCAL_GLOBAL_RPM,
     GEMINI_DAILY_LIMIT: result.data.LLM_LOCAL_DAILY_LIMIT, LLM_DAILY_LIMIT: result.data.LLM_LOCAL_DAILY_LIMIT, GEMINI_INPUT_TPM: result.data.LLM_INPUT_TOKENS_PER_MINUTE,
   };
+}
+
+// Cache at most one view per mode; never create credentials/pools per message.
+const configRoots=new WeakMap<Config,Config>();
+const chatConfigs=new WeakMap<Config,Map<Config['ROUTER_MODE'],Config>>();
+export function baseRuntimeConfig(config:Config):Config{return configRoots.get(config) ?? config;}
+export function routerModeForChat(config:Config,chatId:string):Config['ROUTER_MODE']{
+  const root=baseRuntimeConfig(config);
+  return root.ROUTER_V1_1_CHAT_IDS===undefined ? root.ROUTER_MODE : root.ROUTER_V1_1_CHAT_IDS.includes(chatId)?'v1_1':'v1';
+}
+export function configForChat(config:Config,chatId:string):Config{
+  const root=baseRuntimeConfig(config),mode=routerModeForChat(root,chatId);
+  if(mode===root.ROUTER_MODE)return root;
+  let views=chatConfigs.get(root);
+  if(!views){views=new Map();chatConfigs.set(root,views);}
+  let view=views.get(mode);
+  if(!view){view={...root,ROUTER_MODE:mode};views.set(mode,view);configRoots.set(view,root);}
+  return view;
 }

@@ -1422,3 +1422,21 @@ TPM local también es opcional (cero), conservando accounting/reservas. Concurre
 cuentan HTTP reales. Keys nunca en PostgreSQL; métricas por key son índices y
 estado del proceso. Google limita por proyecto, no por key; no se promete cuota
 adicional si comparten proyecto. Detalles y evidencia en R5.1-GEMINI-KEY-POOL.md.
+
+
+## 19. Canary Lab (17-10-2026)
+
+### DEC-065: Allowlist mínima por chat, sin cambiar permisos ni R5
+
+El dueño autoriza el primer despliegue desde da4e6d3, sólo Botsky Lab y sin merge.
+No existía selector por chat. `ROUTER_V1_1_CHAT_IDS` limita v1.1 a la lista y fuerza
+v1 para cualquier otro chat. Lista explícita vacía es rollback a v1 para todos;
+variable ausente conserva compatibilidad con tests/configuración global histórica.
+Producción fija ROUTER_MODE=v1 y una sola entrada de Lab, únicamente en `.env`.
+
+Se resuelve Config al entrar al inbox/router y por job/entrega en worker/outbox;
+se cachean vistas por modo y comparten el mismo pool Gemini y semáforo del root.
+No cambian actor, permisos, Registry, tool loop, ledger ni confirmaciones. Se
+redacta chatId en los dos loggers que lo emitían; nunca se loggea la allowlist.
+No se cierran bridges ni se interviene DOCX. Migraciones aditivas 011–014.
+El smoke es entrada física del dueño, no eventos fabricados; informe CANARY-LAB.md.

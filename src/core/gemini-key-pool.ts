@@ -1,5 +1,5 @@
 import pino from 'pino';
-import { validGeminiApiKey, type Config } from '../config.js';
+import { baseRuntimeConfig, validGeminiApiKey, type Config } from '../config.js';
 import { product } from '../../config/product.js';
 import { LlmUnavailable } from './quota.js';
 
@@ -146,6 +146,7 @@ export class GeminiKeyPool {
 // One runtime Config is shared by all actors/adapters. No credentials enter public state or DB.
 const pools=new WeakMap<Config,GeminiKeyPool>();
 export function geminiKeyPool(config:Config):GeminiKeyPool{
+  config=baseRuntimeConfig(config);
   let pool=pools.get(config);
   if(!pool){pool=new GeminiKeyPool(config.GEMINI_API_KEYS,{maxConcurrent:config.LLM_MAX_CONCURRENT_CALLS});pools.set(config,pool);}
   return pool;

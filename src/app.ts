@@ -1,14 +1,14 @@
 import { checkConnection } from './wa/connection.js';
 import Fastify, { LogController } from 'fastify';
 import { timingSafeEqual } from 'node:crypto';
-import type { Config } from './config.js';
+import { configForChat, type Config } from './config.js';
 import type { Db } from './db/client.js';
 import type { Msg, Transport } from './wa/types.js';
 import { receive } from './core/inbox.js';
 import { product } from '../config/product.js';
 export type Normalize=(input:unknown)=>Msg|null;
 export function makeApp(db:Db,config:Config,transport:Transport,normalize:Normalize) {
-  const app=Fastify({logger:{level:'info',redact:['req.headers','body','err','error']},logController:new LogController({disableRequestLogging:true}),bodyLimit:product.maxBodyBytes});
+  const app=Fastify({logger:{level:'info',redact:['req.headers','body','err','error','chatId']},logController:new LogController({disableRequestLogging:true}),bodyLimit:product.maxBodyBytes});
   app.setErrorHandler((error,_request,reply)=>{
     const candidate=typeof error==='object' && error!==null && 'statusCode' in error ? error.statusCode:undefined;
     const status=typeof candidate==='number' && candidate>=400 && candidate<500 ? candidate : 500;
@@ -31,7 +31,7 @@ export function makeApp(db:Db,config:Config,transport:Transport,normalize:Normal
     if (!msg) return {status:'ignored'};
     const start=performance.now();
     const status=await receive(db,config,msg);
-    app.log.info({msgId:msg.id,chatId:msg.chatId,tool:'inbox',ms:Math.round(performance.now()-start),status},'Evento recibido');
+    app.log.info({msgId:msg.id,chatId:msg.chatId,tool:'inbox',routerMode:configForChat(config,msg.chatId).ROUTER_MODE,ms:Math.round(performance.now()-start),status},'Evento recibido');
     return {status};
   });
   return app;

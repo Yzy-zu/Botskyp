@@ -15,9 +15,11 @@ qué ocurrió en el turno actual antes de afirmar un efecto al usuario.
 R1 introduce persistencia y contratos. R2 añade un catálogo v2 declarativo de
 las 98 tools, 96 visibles/dos internas, más `core.load_capability`, selección
 dinámica con máximo 20 schemas, Fast Path exacto independiente y shadow sin
-ejecución. El router y resultados visibles siguen siendo v1. No hay Policy
-Engine nuevo, ejecución natural v2, loop ni presenter nuevo. Detalle y pruebas
-en [R2-TOOL-REGISTRY](R2-TOOL-REGISTRY.md).
+ejecución. R3 añade Policy Engine read-only, executor aislado, confirmaciones con dos
+turnos y ledger real. El router y resultados visibles siguen siendo v1; Gemini
+no tiene conexión a ejecución v2. No hay Session v2, loop ni presenter nuevo.
+Detalle en [R2-TOOL-REGISTRY](R2-TOOL-REGISTRY.md) y
+[R3-POLICY-ENGINE](R3-POLICY-ENGINE.md).
 
 ## Identidad y veracidad
 
@@ -50,9 +52,8 @@ el efecto del turno 2. Los estados terminales son inmutables; `queued` y
 `uncertain` permiten registrar resolución sin alterar la identidad.
 
 Estas constraints reservan identidad y evitan duplicar registros. El executor
-futuro deberá reclamar antes de efectos, persistir resultados y reconciliar
-incertidumbre; el esquema por sí solo no promete exactly-once para servicios
-externos. `queued` demuestra encolado, nunca entrega. R1 no ejecuta ni registra
+R3 reclama antes de efectos, persiste resultados y conserva la incertidumbre;
+el esquema por sí solo no promete exactly-once para servicios externos. `queued` demuestra encolado, nunca entrega. R1 no ejecuta ni registra
 las herramientas v1 en este ledger.
 
 ## Contratos
@@ -125,7 +126,7 @@ El catálogo v2 conserva todos los PermissionKey históricos (snapshot R1 en
 `tests/fixtures/v1.1/permissions-r1.json`). Los dominios agrupan schemas, nunca
 conceden permisos. Las tools restringidas relevantes pueden ser visibles para
 members con metadata de restricción; admin irrelevante se omite por tokens.
-La autorización final sigue siendo backend; R3 aún no se implementa.
+La autorización final se implementa en R3 usando permitted() histórico.
 
 La base definitiva contiene ayuda, crear nota, crear recordatorio, recordar
 memoria, buscar web, saldo y daily, más la meta-tool. Se filtran módulos/scope,
@@ -155,3 +156,49 @@ No hay predicado de índice dependiente del reloj; el índice B-tree normal
 soporta búsqueda por chat/actor y orden reciente. PostgreSQL exige funciones
 inmutables en índices, por lo que la expiración se consulta en runtime.
 [Referencia PostgreSQL 17 CREATE INDEX](https://www.postgresql.org/docs/17/sql-createindex.html).
+
+
+## Policy y executor R3
+
+`policy-v2/executor.ts` mantiene privado el registry de negocio. La evaluación
+pública reconstruye contexto desde inbox y no ejecuta handlers. La ejecución
+pública reevalúa dentro de su propia transacción; no acepta decisiones anteriores
+como credencial. Los callers v2 no reciben un handler ni un dispatch sin policy.
+El executor solo es invocado por tests; router/llm/sessions/worker permanecen sin
+imports de ejecución v2. v1/v1_1_shadow rechazan efectos incluso si un caller
+invocara esa entrada; el valor reservado v1_1 no conecta el router por sí mismo.
+
+Orden: system → chat → module → identidad/membresía → permitted(PermissionKey)
+→ SafeRefs vivas/scoped → ownership → business → economic → cooldown
+→ confirmation decision → replay/admisión → confirmation gate → handler
+→ normalización ToolResult → resultado durable en tool_executions.
+Evaluación usa SELECT sin crear wallets ni reservar recursos; handlers conservan
+sus transacciones/locks/colas como autoridad final de atomicidad.
+
+La migración 012 añade request_hash (inmutable) e índice de propuesta para
+replays después de un cambio de estado, unicidad de hija efectiva por acción y
+un store tool_confirmations_v2 independiente de sessions. No se modifica 011 ni
+el contrato visible legacy. La hija confirmada nace en un turno distinto con
+el padre y logical_action_id de A; se revalidan identidad, permiso, módulo,
+controles, recursos y cooldown y se recalcula hash canónico con ámbito/versiones.
+Una fila needs_confirmation nunca se convierte retrospectivamente en éxito.
+
+El ledger reclama uncertain/EXECUTION_IN_PROGRESS en la misma transacción que
+la mutación DB o el encolado y el resultado. No añade status new a R1. Un lock
+de admisión global evita carreras entre claves de dedupe; un savepoint revierte
+mutaciones parciales al fallar el handler. No hay exactly-once universal externo:
+los workers conservan outbox uncertain, Minecraft review y reconciliación
+histórica; queued solo significa encolado y no se actualiza a ok por suposición.
+
+La traducción v2 valida schemas de modelo y legacy, convierte refs y fechas
+semánticas a argumentos backend y ofrece resultados estructurados del conjunto
+representativo. Hay 89 contratos adaptados; los nueve puentes de previews,
+sesiones o archivos pendientes se deniegan explícitamente. Los otros resultados
+habilitados usan normalización legacy provisional sin texto libre sensible. Nuclear prepara/encola con servicios históricos
+solo después de confirmar en B y sin abrir una sesión legacy. El nuevo parámetro
+de draft conserva su comportamiento anterior por default.
+
+Logs de policy: solo nombres estáticos, decisiones/códigos, confirmación requerida,
+conteo de exposición y origen. Sin args, identidades, contenido ni hashes. Shadow
+R2 sigue usando su observer sin consultas; evaluación explícita R3 también es
+read-only. Límites y evidencia en [R3-POLICY-ENGINE](R3-POLICY-ENGINE.md).

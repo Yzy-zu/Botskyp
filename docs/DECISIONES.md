@@ -1232,3 +1232,46 @@ servicios. Documentación detallada y evidencia en docs/v1.1/R2-TOOL-REGISTRY.md
 Verificación final R2: 187/187 pruebas focalizadas en nueve archivos,
 typecheck/lint/build, auditoría de secretos y validación Compose correctos.
 Sin llamadas reales Gemini, ejecución v2, deploy, merge ni cambios a Evolution.
+
+
+## 14. Botsky v1.1 — R3 (17-10-2026)
+
+### DEC-060: Policy read-only, ejecución transaccional aislada y confirmaciones con linaje
+
+El dueño aprueba R1/R2 y autoriza R3 exclusivamente sobre
+`28d0a7e2f8aefe6a9a3a4e91a3acd03dd7265757` en
+`feat/v1.1-natural-router`. Prevalece sobre el bloqueo de R3 de DEC-059/roadmap.
+Sin merge, deploy, R4/R5, activación de grupos ni conexión de Gemini a tools v2.
+Un constructor; no se delega. La revisión crítica previa a main sigue pendiente.
+
+Se separan evaluateToolPolicy (solo SELECT) y executeToolV2 (registry privado,
+reevaluación obligatoria, anti-replay, confirmation gate, handler, ToolResult,
+ledger). Identidad se reconstruye desde inbox y actorFor; autorización usa
+permitted() sin alterar PermissionKey. SafeRefs se revalidan contra datos vivos,
+con scope/ownership. Fechas semánticas se serializan con offset CDMX para cumplir
+el validador histórico. Los handlers y sus garantías de dominio se reutilizan.
+
+Migración 012 aditiva, sin editar 011 ni tocar BD real: confirmaciones separadas
+de sessions, request_hash inmutable para replay aunque cambie el estado, unicidad
+de hija efectiva por acción lógica. Se usa uncertain/EXECUTION_IN_PROGRESS como
+claim transaccional no visible antes del commit; no se inventa un estado new ni
+se cambia la máquina de estados aprobada en R1. La admisión v2 se serializa con
+advisory lock global para cubrir todas las claves independientes de dedupe.
+
+Confirmación exige mensaje autenticado «sí», segundo turno y origen session;
+revalida todos los gates, rol/permiso y hash con ámbito/versiones de recursos.
+Una hija conserva padre/acción; A permanece needs_confirmation. Confirmaciones
+consumidas reproducen su resultado. Los estados inciertos no se promueven a éxito
+por inferencia. DB/cola/ledger comparten commit y savepoint ante fallos parciales;
+los efectos externos siguen sujetos a idempotencia/reconciliación histórica.
+No se promete exactly-once universal ni reconciliador nuevo para jobs.
+
+Nuclear conserva implementación y límites históricos. draft añade una opción
+backend con default true para preservar sesiones v1; v2 usa false únicamente
+después de su confirmación y luego confirm histórico, todo en la misma transacción.
+No se ejecutan envíos ni reinicios reales. Los 89 adapters v2 son explícitos;
+los nueve contratos de puentes todavía no adaptados fallan con DENIED_ADAPTER_UNAVAILABLE.
+No se reescriben los 98 handlers ni se habilita fallback que ignore referencias.
+
+Resultado y evidencia final en docs/v1.1/R3-POLICY-ENGINE.md; no se declara
+validación manual WhatsApp ni despliegue/health de este cambio.

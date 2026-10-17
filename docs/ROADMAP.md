@@ -248,3 +248,20 @@ a ejecución natural v2.** Al completar verificaciones y commit/push, detenerse.
 R2 implementada y verificada: 187/187 pruebas focalizadas y typecheck/lint/build
 en verde; snapshot de permisos intacto. Entrega para revisión en la misma rama,
 sin despliegue ni activación. R3 no está autorizada; detenerse tras el push.
+
+
+## 13. Autorización vigente de v1.1 — R3 (17-10-2026)
+
+R1/R2 aprobadas por el dueño; R2 HEAD
+`28d0a7e2f8aefe6a9a3a4e91a3acd03dd7265757`. Solo R3 en
+`feat/v1.1-natural-router`: Policy, resolución segura, ejecución/ledger,
+confirmaciones con dos turnos y adapters históricos. DEC-060 y
+[R3-POLICY-ENGINE](v1.1/R3-POLICY-ENGINE.md) fijan alcance y garantías.
+Un constructor sin delegación; pruebas en BD efímera/mocks. Esta autorización
+sustituye exclusivamente el bloqueo de R3 anterior. **Sin deploy, merge a main,
+R4/R5 ni ejecución v2 desde Gemini/tráfico real.** Push a la rama indicada y detenerse.
+
+R3 implementada para revisión: 467 pruebas únicas focalizadas, typecheck/lint/build
+y auditoría de secretos verdes. 89 adapters explícitos; nueve puentes todavía
+se deniegan de forma segura y están enumerados en el informe R3. No hay despliegue
+ni conexión de ejecución real. Tras el push, constructor detenido; no avanzar a R4.

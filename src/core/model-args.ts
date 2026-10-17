@@ -35,7 +35,7 @@ export const modelArgsSchemas = {
   'reminders.list': empty,
   'reminders.edit': object({ reminderRef: ref('reminderRef'), ...reminder }),
   'reminders.cancel': object({ reminderRef: ref('reminderRef') }),
-  'memory.remember': object({ body: text.max(product.memoryChars) }),
+  'memory.remember': object({ body: text.max(product.memoryChars).optional(), fact: text.max(product.memoryChars).optional() }).refine(a => (a.body !== undefined) !== (a.fact !== undefined)),
   'memory.list': empty,
   'memory.forget': object({ target: z.union([ref('memoryRef'), z.literal('all'), text.max(product.memoryChars)]) }),
   'web.search': object({ query: text.max(product.searchQueryChars) }),

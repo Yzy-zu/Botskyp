@@ -10,7 +10,7 @@ export function preview(op:BulkOperation):string{
   const p=paramsSchema.parse(op.params);
   return `Operación ${op.id} (${op.kind}).\nContenido exacto: ${p.text}\n${op.kind==='nuclear'?`Cada mensaje añade [n/${p.count}].\n`:''}Destinos: ${p.targets.map(t=>t.label).join(', ')}.\n${p.count} mensajes; mínimo ${p.gapMs/1000} s entre envíos${op.kind==='nuclear'?'':` + jitter de hasta ${product.bulkJitterMs/1000} s`}. Menciones: ${p.mentions.length}.\nTodavía no se ha enviado. ¿Sí o no? Vence en ${product.confirmMinutes} minutos.`;
 }
-export async function draft(ctx:ToolCtx,kind:BulkOperation['kind'],text:string,tokens:string[]=[],count=1):Promise<ToolResult>{
+export async function draft(ctx:ToolCtx,kind:BulkOperation['kind'],text:string,tokens:string[]=[],count=1,openLegacyConfirmation=true):Promise<ToolResult>{
   if(!await messagingAllowed(ctx.c,ctx.config,ctx.chat.id,ctx.actor.id) || (kind==='nuclear' && !ctx.chat.isGroup))return fail('No.');
   await ctx.c.query("SELECT pg_advisory_xact_lock(hashtext('bulk-admission'))");
   const previous=(await ctx.c.query<BulkOperation>('SELECT * FROM bulk_ops WHERE chat_id=$1 AND actor_id=$2 AND source_id=$3 AND kind=$4',[ctx.chat.id,ctx.actor.id,ctx.msg.id,kind])).rows[0];
@@ -23,7 +23,7 @@ export async function draft(ctx:ToolCtx,kind:BulkOperation['kind'],text:string,t
   if(Number(busy.n)>=product.bulkMaxActive)return fail('Ya hay demasiadas operaciones pendientes. Cancela o termina una.');
   const hash=argumentHash(kind,params);
   const op=(await ctx.c.query<BulkOperation>(`INSERT INTO bulk_ops(kind,chat_id,actor_id,source_id,params,args_hash,expires_at) VALUES($1,$2,$3,$4,$5,$6,clock_timestamp()+$7::int*interval '1 minute') RETURNING *`,[kind,ctx.chat.id,ctx.actor.id,ctx.msg.id,JSON.stringify(params),hash,product.confirmMinutes])).rows[0]!;
-  const args={id:op.id,hash};await openSession(ctx.c,ctx.actor.id,ctx.chat.id,'confirm',{action:'bulk.confirm',args,hash:argumentHash('bulk.confirm',args)},['sí','no','cancelar']);
+  const args={id:op.id,hash};if(openLegacyConfirmation)await openSession(ctx.c,ctx.actor.id,ctx.chat.id,'confirm',{action:'bulk.confirm',args,hash:argumentHash('bulk.confirm',args)},['sí','no','cancelar']);
   await bulkAudit(ctx,'bulk.draft',op.id,'draft');return ok(preview(op),{id:op.id});
 }
 export async function confirm(ctx:ToolCtx,id:string,hash:string):Promise<ToolResult>{

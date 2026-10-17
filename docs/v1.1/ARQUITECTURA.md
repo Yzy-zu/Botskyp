@@ -16,9 +16,9 @@ R1 introduce persistencia y contratos. R2 añade un catálogo v2 declarativo de
 las 98 tools, 96 visibles/dos internas, más `core.load_capability`, selección
 dinámica con máximo 20 schemas, Fast Path exacto independiente y shadow sin
 ejecución. R3 añade Policy Engine read-only, executor aislado, confirmaciones con dos
-turnos y ledger real. El router y resultados visibles siguen siendo v1; Gemini
-no tiene conexión a ejecución v2. R4 añade contexto estructurado, Artifact Chain integrada y Session v2 aislada.
-No hay loop ni presenter nuevo; Gemini continúa sin ejecución v2.
+turnos y ledger real. R4 añade contexto estructurado, Artifact Chain y Session v2. R5 conecta esos
+componentes con Gemini function calling y Composer v2 exclusivamente cuando
+ROUTER_MODE=v1_1. La producción conserva su configuración; no hay despliegue R5.
 Detalle en [R2-TOOL-REGISTRY](R2-TOOL-REGISTRY.md) y
 [R3-POLICY-ENGINE](R3-POLICY-ENGINE.md).
 
@@ -112,8 +112,9 @@ capturada; no se afirma validación del loop por Google ni nuevas llamadas reale
 En R2, `v1` usa exclusivamente los shortcuts, declaraciones y ejecución legacy.
 `v1_1_shadow` observa Fast Path v2, dominios, schemas y tamaño aproximado con
 lecturas acotadas de contexto en R4, sin llamadas Gemini/efectos nuevos; la respuesta y ejecución
-visibles continúan por v1. `v1_1` está reservado y no se activa: también conserva
-v1 hasta autorización posterior. Los shortcuts legacy no se modifican.
+visibles continúan por v1. Desde R5, `v1_1` selecciona el router natural completo
+en entornos controlados. No se activa en producción ni cambia `.env`. Los
+shortcuts legacy no se modifican.
 
 Cuotas configurables con defaults históricos: `LLM_USER_RPM=8`,
 `LLM_GLOBAL_RPM=5`, `LLM_DAILY_LIMIT=20`, `LLM_INPUT_TOKENS_PER_MINUTE=65536`
@@ -141,7 +142,7 @@ El Fast Path v2 solo devuelve propuestas de comandos exactos con vocativo.
 Cualquier frase natural/parcial devuelve undefined. Memoria y notas compartidas
 se distinguen en descripciones/pistas semánticas; v2 nunca ejecuta notes.create
 por una frase de memoria en R2. El bug legacy permanece visible en v1/shadow
-por la compatibilidad exigida. La decisión natural final corresponde a R5.
+por la compatibilidad exigida. La decisión natural final se conecta en R5.
 
 ## Artifact chain
 
@@ -163,12 +164,13 @@ inmutables en índices, por lo que la expiración se consulta en runtime.
 
 `policy-v2/executor.ts` mantiene privado el registry de negocio. La evaluación
 pública reconstruye contexto desde inbox y no ejecuta handlers. La ejecución
-pública reevalúa dentro de su propia transacción; no acepta decisiones anteriores
+pública reevalúa dentro de una transacción (la de inbox en R5 o una propia
+para callers aislados); no acepta decisiones anteriores
 como credencial. Los callers v2 no reciben un handler ni un dispatch sin policy.
 El executor se invoca explícitamente en tests y desde el puente backend de
-confirmaciones Session v2 R4. Router/llm/worker permanecen sin conexión de ejecución
-v2; el puente tampoco se llama desde tráfico real. v1/v1_1_shadow rechazan efectos incluso si un caller
-invocara esa entrada; el valor reservado v1_1 no conecta el router por sí mismo.
+confirmaciones Session v2 R4 y el router natural R5. v1/v1_1_shadow rechazan
+efectos aunque un caller invoque esa entrada. Solo v1_1 conecta Gemini a esa
+autoridad; no habilita módulos, chats ni proveedores por sí mismo.
 
 Orden: system → chat → module → identidad/membresía → permitted(PermissionKey)
 → SafeRefs vivas/scoped → ownership → business → economic → cooldown
@@ -194,8 +196,8 @@ histórica; queued solo significa encolado y no se actualiza a ok por suposició
 
 La traducción v2 valida schemas de modelo y legacy, convierte refs y fechas
 semánticas a argumentos backend y ofrece resultados estructurados del conjunto
-representativo. Hay 89 contratos adaptados; los nueve puentes de previews,
-sesiones o archivos pendientes se deniegan explícitamente. Los otros resultados
+representativo. R3 dejó 89 contratos adaptados y nueve puentes cerrados.
+R5 integra media.process y conserva ocho cerrados, como se detalla abajo. Los otros resultados
 habilitados usan normalización legacy provisional sin texto libre sensible. Nuclear prepara/encola con servicios históricos
 solo después de confirmar en B y sin abrir una sesión legacy. El nuevo parámetro
 de draft conserva su comportamiento anterior por default.
@@ -246,3 +248,47 @@ construye y mide mediante lecturas, aísla errores y conserva respuestas/calls v
 No hay consumo de sesiones, artifacts, jobs, confirmaciones, respuestas ni
 llamadas Gemini adicionales. R5, deploy, merge y activaciones siguen fuera de
 esta autorización.
+
+
+## Integración Natural Router R5
+
+Orden: ingreso/activación vigente → SessionV2 inequívoca → Exact Fast Path →
+ContextBuilderV2 → selectToolsForTurn → Gemini → expansión o Policy/executor →
+ToolResult del turno actual → Composer → sanitizer → outbox. No se añaden regex
+que traduzcan paráfrasis a tools: las señales léxicas solo seleccionan dominios.
+Las confirmaciones y AM/PM tienen gramática deliberadamente exacta.
+
+El inbox toma el lock de admisión antes de locks de chat/wallets. Los efectos,
+ledger y outbox comparten su transacción. Los callers aislados mantienen la
+transacción propia del executor. Ningún flag de transacción viene del modelo.
+
+Hasta tres propuestas de funciones (incluidas meta/denegadas), una expansión y
+un retry por acción sin tool. Hasta tres generaciones, respetando además las
+reservas/cuotas históricas. El content completo con partes/firmas opacas se
+conserva dentro del turno; functionResponse mantiene ID/name correspondientes.
+No se importan function calls históricas. Migración 014 agrega llm_usage.turn_id
+para vincular cada petición REST del router con su turno durable.
+
+Composer usa familias locales para datos deterministas y mutaciones: no permite
+que Gemini reescriba el recibo de una acción. La conversación exige un outcome
+JSON estricto sin efectos; resultados ok/queued se contrastan con el ledger del
+turno actual. El detector textual adicional es diagnóstico conservador, no prueba
+de persistencia. Web y varias lecturas pueden usar síntesis, exclusivamente con
+proyección visible de datos y sin ejecutar tools devueltas durante síntesis.
+Cualquier fallo posterior a un ToolResult conserva la presentación local.
+
+Media.process incorpora selección autenticada de artifacts, fuentes almacenadas
+media/escolares y resend. La confirmación escolar, colecciones/selecciones y
+subida Drive permanecen bloqueadas: ocho de los nueve puentes R3, detallados en
+[R5-NATURAL-ROUTER](R5-NATURAL-ROUTER.md). No se altera LibreOffice ni DOCX.
+La entrega de textos cortos usa chat con revalidación de backing/retención;
+textos largos usan preview y .txt. Progreso diferido a 2,5 segundos y cancelado
+si ya hay resultado. No se muestran job IDs ni estados técnicos.
+
+
+La admisión R5 también respeta los contratos legacy que deduplican por mensaje:
+una segunda acción distinta de esa familia no puede reutilizar el primer recibo.
+Los replays exactos conservan su resultado; la identidad del artifact entra al hash.
+Importes de XP/juegos/biblioteca se presentan localmente incluso en respuestas
+con varias herramientas. Mensaje y datos de functionResponse pasan por el mismo
+saneamiento antes de llegar al proveedor. Evidencia de cierre y límites en R5.

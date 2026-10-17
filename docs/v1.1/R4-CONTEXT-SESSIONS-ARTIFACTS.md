@@ -351,3 +351,16 @@ Implementación y pruebas: `bdcadfd426d6d02992a5c5e1f482ae15e41b8c8a`.
 Este informe y los documentos de arquitectura/control se entregan en el commit
 posterior de la misma rama. Revisión del dueño pendiente; constructor detenido
 tras el push, sin R5, deploy ni merge.
+
+
+## Nota de integración R5
+
+R5 reutiliza el builder y la máquina de sesiones; la confirmación desde inbox
+comparte la transacción del ingreso para evitar locks cruzados del executor.
+La aclaración AM/PM congela el día local del turno inicial. SafeRefs permite
+incorporar otro snapshot backend durante la única expansión, conservando tokens
+ya entregados en el mismo turno. No se aceptan mapas desde el modelo.
+El router v1_1 captura adjuntos de mensajes autenticados antes del builder y puede
+leer una imagen citada explícitamente en el mismo grupo con su ownership original.
+Las transformaciones de archivos ajenos continúan denegadas. Esta nota no altera
+la evidencia histórica de R4 ni supone un despliegue.

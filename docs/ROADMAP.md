@@ -282,3 +282,21 @@ R4 implementada para revisión: 337 pruebas únicas focalizadas en 12 archivos,
 typecheck/lint/build, auditoría de secretos y diff check correctos. Contexto y
 sesiones v2 siguen aislados de Gemini real. Sin deploy ni merge; tras el push a
 la rama indicada el constructor se detiene, sin avanzar a R5.
+
+
+## 15. Autorización vigente de v1.1 — R5 (17-10-2026)
+
+R1–R4 aprobadas; HEAD R4 3721a6a215218d42f41b275bb9ca948874e73322.
+Solo integración Natural Router en feat/v1.1-natural-router, un constructor sin
+delegación. Se supera únicamente el bloqueo histórico de R5. DEC-062 e informe
+R5 describen el cambio. No deploy, merge, Canary, grupos reales, Nuclear real,
+reinicio Minecraft real, OAuth ni cambios de cuota productiva. Sin WS-MEDIA/DOCX.
+Pruebas focalizadas y luego suite completa una vez; commit/push y detenerse.
+
+
+R5 entregada para revisión local: suite completa 1125/1125 en 51 archivos,
+focalizadas de cierre 284/284 y composición/privacidad final 10/10, con solapamientos
+explícitos. Cinco pruebas de procesadores reales aislados y checks estáticos,
+secretos y Compose correctos. Código final 2de275e; informe de cierre en
+R5-NATURAL-ROUTER.md. Ocho puentes siguen cerrados. Tras el push, detenerse;
+no autoriza despliegue, Canary ni merge.

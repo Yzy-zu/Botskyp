@@ -1314,3 +1314,47 @@ revalidan siempre en executor y cancelan/expiran sin efectos; cancelación y
 preview comparten el orden de locks de admisión R3. Shadow solo SELECT con
 savepoint y métricas sin contenido; v1 y Gemini conservan su ruta visible.
 Detalles, pruebas y limitaciones: docs/v1.1/R4-CONTEXT-SESSIONS-ARTIFACTS.md.
+
+
+## 16. Botsky v1.1 — R5 (17-10-2026)
+
+### DEC-062: Integración natural, transacción compartida y evidencia de respuesta
+
+El dueño aprueba R1–R4 y autoriza R5 solo en feat/v1.1-natural-router desde
+3721a6a215218d42f41b275bb9ca948874e73322. Prevalece sobre los bloqueos históricos
+de R5: sin deploy, merge, Canary, grupos reales, Nuclear ni reinicios Minecraft.
+No se cambian cuotas productivas, procesadores DOCX/LibreOffice ni OAuth.
+
+SessionV2 → atajo exacto → contexto/exposición → Gemini → Policy/executor es el
+único flujo v1_1. v1 intacto, shadow conserva respuesta legacy sin efectos extra.
+El inbox adquiere admisión antes de locks de chat/wallets y comparte transacción
+con ejecución, ledger y outbox. Invocaciones aisladas siguen con transacción propia.
+Esto resuelve el bloqueo que habría causado abrir otra transacción desde inbox.
+
+El loop conserva content/parts, firmas, ID literal y functionResponse correlativa;
+solo usa partes del turno actual. Límite conservador: tres propuestas de funciones
+incluyendo meta/denegadas, una expansión, tres generaciones y un mutation retry.
+Synthesis no ejecuta funciones adicionales. Migración 014 agrega referencia
+opcional llm_usage.turn_id; no se guardan prompts ni datos personales en métricas.
+
+Los efectos se presentan localmente desde recibos ok/queued del turno actual.
+Conversación/síntesis exigen outcome JSON estricto con effects vacío; prosa sin
+contrato no autoriza un éxito. Detector léxico adicional solo diagnostica violación
+del contrato. No se afirma que una declaración del modelo pruebe persistencia.
+Los resultados visibles son proyecciones, nunca JSON interno completo.
+
+Se abre media.process con artifacts scoped y backing validado; resend reutiliza
+outbox. Ocho puentes R3 permanecen cerrados (lista y motivos en informe R5).
+Textos cortos van al chat, largos con preview + .txt y retención vigente.
+Progreso diferido, mensajes de resultado naturales, persona útil primero.
+La evaluación de lenguaje en tests usa respuestas Gemini simuladas; no se declara
+calidad medida de selección de un modelo vivo ni se consume cuota real.
+
+
+El cierre de integración añade admisión read-only para contratos legacy cuyo
+idempotency key es el mensaje, no los argumentos de cada call. Una segunda acción
+distinta de esa familia se deniega; replay exacto conserva el recibo. Evita que
+un voto, tarea, juego o job existente acredite falsamente otra acción propuesta.
+La selección de artifact entra al hash y polls.vote presenta el voto real en BD.
+Los cambios de mensajes de errores/progreso se limitan a v1_1. Una conversación
+malformada no induce el retry de acción si no hay intención/afirmación de efecto.

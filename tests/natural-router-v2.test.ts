@@ -432,3 +432,8 @@ it('multiple results never send authoritative XP or wagers back for model rewrit
   expect(text).toContain('1000 XP');expect(text).toContain('Argentina ganó');expect(text).not.toContain('999999');
   expect(llm.generate).toHaveBeenCalledOnce();
 });
+
+it.each([owner,'123e4567-e89b-12d3-a456-426614174000','/home/private/file','GEMINI_API_KEY','{"actorId":"internal"}'])('function response message and data both sanitize user content: %s',value=>{
+  const visible=visibleToolResultV2({status:'ok',toolName:'notes.list',domain:'productivity',code:'NOTES_LIST',data:{notes:[{id:'1',body:`Dato: ${value}`}]}});
+  expect(JSON.stringify(visible)).not.toContain(value);
+});

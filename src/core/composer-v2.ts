@@ -70,7 +70,7 @@ export function visibleToolResultV2(result: ToolResult): Record<string, unknown>
     if(value && typeof value==='object')return Object.fromEntries(Object.entries(value).filter(([key])=>allowed.has(key)).map(([key,v])=>[key,project(v)]));
     return typeof value==='string'?sanitizeOutputV2(value):value;
   }
-  return {status:result.status,message:localPresenterV2(result),data:project(result.data)};
+  return {status:result.status,message:sanitizeOutputV2(localPresenterV2(result)),data:project(result.data)};
 }
 
 export const conversationalOutcomeV2=z.strictObject({

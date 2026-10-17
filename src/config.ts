@@ -3,6 +3,7 @@ import { product } from '../config/product.js';
 const jid = z.string().regex(/^\d+@(s\.whatsapp\.net|lid)$/);
 const list = z.string().transform(s => s.split(',').map(x => x.trim()).filter(Boolean)).pipe(z.array(jid).min(1));
 const schema = z.object({
+  DRIVE_ENABLED: z.enum(['true','false']).default('false').transform(s => s === 'true'),
   LIBRARY_DRIVE_ENABLED: z.enum(['true','false']).default('false').transform(s => s === 'true'),
   MINECRAFT_ENABLED: z.enum(['true','false']).default('false').transform(s => s === 'true'),
   GEMINI_API_KEY: z.string().default(''),

@@ -13,6 +13,7 @@ x-runtime: &runtime
     driver: json-file
     options: {max-size: 5m, max-file: '3'}
   environment: &environment
+    DRIVE_ENABLED: ${DRIVE_ENABLED:-false}
     LIBRARY_DRIVE_ENABLED: ${LIBRARY_DRIVE_ENABLED:-false}
     GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash-lite}
@@ -130,7 +131,7 @@ services:
     environment:
       <<: *environment
       CAPTURE_ENABLED: 'false'
-    volumes: ['./.local/library/source:/run/botsky-library/source:ro', './.local/library/rclone:/run/botsky-rclone']
+    volumes: ['./.local/library/source:/run/botsky-library/source:ro', './.local/library/rclone:/run/botsky-rclone', './.local/drive:/run/botsky-drive:ro']
     networks: [internal, media-egress, evolution]
     mem_limit: 768m
     cpus: '0.50'

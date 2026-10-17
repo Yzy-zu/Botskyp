@@ -1,0 +1,11 @@
+import { z } from 'zod';
+import { product } from '../../../config/product.js';
+export const destinationToken=z.string().regex(/^d[1-9]\d{0,9}$/);
+export const textSchema=z.string().trim().min(1).max(product.bulkTextChars).refine(t=>!/[\p{C}]/u.test(t.replace(/[\n\t]/g,'')) && !/@(?:\d|everyone|all|todos)/iu.test(t),'No mentions in ordinary message text');
+export const draftSchema=z.strictObject({destinations:z.array(destinationToken).min(1).max(product.bulkMaxTargets).refine(a=>new Set(a).size===a.length),text:textSchema});
+export const nuclearSchema=z.strictObject({count:z.number().int().min(product.nuclearMinMessages).max(product.nuclearMaxMessages).default(product.nuclearMessages),text:textSchema});
+export const operationSchema=z.strictObject({id:z.uuid()});
+export const confirmSchema=z.strictObject({id:z.uuid(),hash:z.string().regex(/^[a-f0-9]{64}$/)});
+export const paramsSchema=z.strictObject({version:z.literal(product.bulkVersion),text:textSchema,count:z.number().int().min(1).max(product.bulkMaxTargets),gapMs:z.number().int().min(product.nuclearGapMs),targets:z.array(z.strictObject({target:z.string(),label:z.string()})).min(1).max(product.bulkMaxTargets),mentions:z.array(z.string()).max(product.nuclearMaxMentions)});
+export type Params=z.infer<typeof paramsSchema>;
+export type BulkOperation={id:string;kind:'message'|'broadcast'|'nuclear';chat_id:string;actor_id:string;source_id:string;status:string;params:Params;args_hash:string;job_id:string|null;reason:string|null};

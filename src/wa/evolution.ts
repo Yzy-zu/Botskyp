@@ -5,10 +5,12 @@ import type { Delivery,ReconcileResult,SendResult,Transport } from './types.js';
 const key=z.object({id:z.string().min(1),remoteJid:z.string(),fromMe:z.boolean()});
 const record=z.object({
   key,message:z.record(z.string(),z.unknown()),contextInfo:z.object({stanzaId:z.string().optional()}).nullish(),
+  status:z.string().optional(),MessageUpdate:z.array(z.object({status:z.string()})).optional(),
 });
+const receipt=(status:string|undefined):boolean=>['SERVER_ACK','DELIVERY_ACK','READ','PLAYED'].includes(status ?? '');
 const history=z.object({messages:z.object({records:z.array(record)})});
 class ProviderError extends Error {
-  constructor(readonly status:number){super(`Evolution HTTP ${status}`);}
+  constructor(readonly status:number,readonly retryAfterMs?:number){super(`Evolution HTTP ${status}`);}
 }
 export class Evolution implements Transport {
   private readonly base:URL;
@@ -18,7 +20,7 @@ export class Evolution implements Transport {
       method:body===undefined?'GET':'POST',headers:{apikey:this.config.EVOLUTION_APIKEY,'content-type':'application/json'},
       ...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(product.requestTimeoutMs),redirect:'error',
     });
-    if(!response.ok){await response.body?.cancel();throw new ProviderError(response.status);}
+    if(!response.ok){const header=response.headers.get('retry-after');const delay=header && /^\d+$/.test(header)?Number(header)*1000:header?Date.parse(header)-Date.now():undefined;await response.body?.cancel();throw new ProviderError(response.status,delay!==undefined && Number.isFinite(delay)?Math.min(product.providerMaxRetryMs,Math.max(0,delay)):undefined);}
     return response.json();
   }
   async state():Promise<boolean>{
@@ -40,12 +42,13 @@ export class Evolution implements Transport {
         {number:delivery.chatId,mediatype:media.kind,mimetype:media.mime,media:media.base64,caption:delivery.text,
           fileName:media.fileName ?? `adjunto-${delivery.id}.${media.mime==='application/pdf'?'pdf':media.mime.split('/')[1]}`,...quote}:
         {number:delivery.chatId,text:delivery.text,linkPreview:false,...quote};
-      const response=z.object({key}).parse(await this.request(`/message/${path}/${this.config.INSTANCE}`,body));
+      const response=z.object({key,status:z.string().optional()}).parse(await this.request(`/message/${path}/${this.config.INSTANCE}`,body));
       if(!response.key.fromMe || response.key.remoteJid!==delivery.chatId)return {status:'uncertain',reason:'unexpected_send_response'};
+      if(delivery.requireReceipt && !receipt(response.status))return {status:'uncertain',reason:'provider_accepted_pending_receipt',id:response.key.id};
       return {status:'sent',id:response.key.id};
     }catch(error){
       if(error instanceof ProviderError){
-        if(error.status===429)return {status:'retry',reason:'provider_rate_limit'};
+        if(error.status===429)return {status:'retry',reason:'provider_rate_limit',...(error.retryAfterMs!==undefined?{retryAfterMs:error.retryAfterMs}:{})};
         if(error.status>=400 && error.status<500 && error.status!==408)return {status:'failed',reason:`provider_${error.status}`};
       }
       return {status:'uncertain',reason:'ambiguous_send'};
@@ -58,6 +61,7 @@ export class Evolution implements Transport {
       }));
       const matches=result.messages.records.filter(r=>{
         if(!r.key.fromMe || r.key.remoteJid!==delivery.chatId)return false;
+        if(delivery.requireReceipt && !receipt(r.status) && !r.MessageUpdate?.some(u=>receipt(u.status)))return false;
         if(providerId)return r.key.id===providerId;
         // Media without a known provider ID stays uncertain; text matching cannot prove file identity.
         if(delivery.media || delivery.attachmentId)return false;

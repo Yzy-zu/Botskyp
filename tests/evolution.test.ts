@@ -74,6 +74,29 @@ it('an uncertain media send cannot be reconciled by a caption-only text match',a
   expect(await adapter.reconcile({...delivery,attachmentId:'f7b4b074-d968-444b-969c-7b31c3c12a96'})).toEqual({status:'unknown'});
 });
 
+it('Phase 7 treats HTTP 201 with PENDING as acceptance and retains its provider ID',async()=>{
+  vi.spyOn(globalThis,'fetch').mockResolvedValueOnce(Response.json({key:{id:'pending-7',remoteJid:'300@g.us',fromMe:true},status:'PENDING'},{status:201}));
+  expect(await adapter.send({...delivery,requireReceipt:true})).toEqual({status:'uncertain',reason:'provider_accepted_pending_receipt',id:'pending-7'});
+});
+it('preserves Retry-After from Evolution without retrying a bulk effect itself',async()=>{
+  vi.spyOn(globalThis,'fetch').mockResolvedValueOnce(Response.json({error:'rate_limit'},{status:429,headers:{'retry-after':'120'}}));
+  expect(await adapter.send({...delivery,requireReceipt:true})).toEqual({status:'retry',reason:'provider_rate_limit',retryAfterMs:120000});
+});
+it('Phase 7 confirms only a provider acknowledgement and never pending history',async()=>{
+  vi.spyOn(globalThis,'fetch').mockResolvedValueOnce(Response.json({key:{id:'ack-7',remoteJid:'300@g.us',fromMe:true},status:'SERVER_ACK'},{status:201}));
+  expect(await adapter.send({...delivery,requireReceipt:true})).toEqual({status:'sent',id:'ack-7'});
+  rows=[{key:{id:'ack-7',remoteJid:'300@g.us',fromMe:true},message:{conversation:'pong'},MessageUpdate:[{status:'PENDING'}]}];
+  expect(await adapter.reconcile({...delivery,requireReceipt:true},'ack-7')).toEqual({status:'unknown'});
+  rows=[{key:{id:'ack-7',remoteJid:'300@g.us',fromMe:true},message:{conversation:'pong'},MessageUpdate:[{status:'SERVER_ACK'}]}];
+  expect(await adapter.reconcile({...delivery,requireReceipt:true},'ack-7')).toEqual({status:'found',id:'ack-7'});
+});
+it('Phase 7 does not confirm identical content in the wrong chat or an unquoted Nuclear send',async()=>{
+  rows=[{key:{id:'other-chat',remoteJid:'400@g.us',fromMe:true},message:{conversation:'pong'},MessageUpdate:[{status:'SERVER_ACK'}]}];
+  expect(await adapter.reconcile({...delivery,requireReceipt:true},'other-chat')).toEqual({status:'unknown'});
+  rows=[{key:{id:'unquoted',remoteJid:'300@g.us',fromMe:true},message:{conversation:'pong'},MessageUpdate:[{status:'SERVER_ACK'}]}];
+  expect(await adapter.reconcile({...delivery,requireReceipt:true})).toEqual({status:'unknown'});
+});
+
 it.each(['audio','video','sticker'] as const)('sends Phase 5 %s through its verified contract and preserves ambiguous sends',async kind=>{
   const media={kind,mime:kind==='audio'?'audio/ogg':kind==='video'?'video/mp4':'image/webp',base64:'dGVzdA==',fileName:'botsky-1.ogg'};
   vi.spyOn(globalThis,'fetch').mockImplementationOnce(async(url,init)=>{

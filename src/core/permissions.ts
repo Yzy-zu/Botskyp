@@ -2,7 +2,7 @@ import type { PoolClient } from 'pg';
 import type { Config } from '../config.js';
 import type { Msg } from '../wa/types.js';
 import { product } from '../../config/product.js';
-export type PermissionKey = 'chat.use'|'games.use'|'xp.use'|'moderation.act'|'notes.manage_shared'|'chat.configure'|'config.global'|'jobs.diagnose'|'school.write'|'school.manage'|'minecraft.read'|'infra.minecraft';
+export type PermissionKey = 'bulk.broadcast'|'bulk.nuclear'|'drive.use'|'chat.use'|'games.use'|'xp.use'|'moderation.act'|'notes.manage_shared'|'chat.configure'|'config.global'|'jobs.diagnose'|'school.write'|'school.manage'|'minecraft.read'|'infra.minecraft';
 export type Actor = {id:string; role:'owner'|'group_admin'|'member';groupMember?:boolean};
 export type Chat = {id:string;isGroup:boolean;enabled:boolean;settings:{modules?:Record<string,boolean>}};
 export async function actorFor(c:PoolClient,msg:Msg,config:Config):Promise<Actor>{
@@ -16,10 +16,13 @@ export async function actorFor(c:PoolClient,msg:Msg,config:Config):Promise<Actor
 }
 export function permitted(actor:Actor,chat:Chat,key:PermissionKey):boolean{
   if(!chat.enabled)return false;
+  if(key==='drive.use' && chat.isGroup && actor.role!=='owner' && !actor.groupMember)return false;
   if(key==='minecraft.read' && (!chat.isGroup || (actor.role!=='owner' && !actor.groupMember)))return false;
   if((key==='school.write' || key==='school.manage') && !chat.isGroup)return false;
   if(['games.use','xp.use','moderation.act'].includes(key) && !chat.isGroup)return false;
+  if(key==='bulk.nuclear' && !chat.isGroup)return false;
   if(actor.role==='owner')return true;
+  if(key==='bulk.broadcast' || key==='bulk.nuclear')return false;
   if(['games.use','xp.use','moderation.act'].includes(key) && !actor.groupMember)return false;
   if((key==='school.write' || key==='school.manage') && !actor.groupMember)return false;
   if(key==='config.global' || key==='jobs.diagnose' || key==='infra.minecraft')return false;

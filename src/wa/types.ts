@@ -7,8 +7,8 @@ export const msgSchema = z.object({
   attachments:z.array(z.object({kind:z.string(),ref:z.string(),mime:z.string().optional()})),
 });
 export type Msg = z.infer<typeof msgSchema>;
-export type Delivery = {id:string;chatId:string;text:string;sourceId:string;attachmentId?:string;media?:{kind:'image'|'document'|'audio'|'video'|'sticker';mime:string;base64:string;fileName?:string}};
-export type SendResult = {status:'sent';id:string} | {status:'retry'|'failed'|'uncertain';reason:string};
+export type Delivery = {id:string;chatId:string;text:string;sourceId:string;attachmentId?:string;requireReceipt?:boolean;media?:{kind:'image'|'document'|'audio'|'video'|'sticker';mime:string;base64:string;fileName?:string}};
+export type SendResult = {status:'sent';id:string} | {status:'retry'|'failed'|'uncertain';reason:string;id?:string;retryAfterMs?:number};
 export type ReconcileResult = {status:'found';id:string} | {status:'absent'|'unknown'};
 export interface Transport {
   state():Promise<boolean>;

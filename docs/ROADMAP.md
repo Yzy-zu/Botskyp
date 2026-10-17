@@ -24,7 +24,7 @@ flowchart TD
     f3 --> f6["Fase 6: Biblioteca, Packs y Cooperacha<br/>(Aprobada · lista para cierre técnico)"]
     f5 --> f6
     
-    f1 --> f7["Fase 7: Mensajes Masivos y Nuclear<br/>(Difusión, Nuclear, Outbox masivo)"]
+    f1 --> f7["Fase 7: Mensajes, Nuclear y Drive<br/>(Aprobada · lista para cierre técnico)"]
     f5 --> f7
     
     f2 --> f8["Fase 8: Módulos Opcionales<br/>(Encuestas, Lore, Afinidad, Reacciones)"]
@@ -128,24 +128,23 @@ En lugar de atar rígidamente herramientas específicas (como Antigravity o Code
 
 ## 6. Estado y siguiente paso inmediato
 
-Las **Fases 0–5 están cerradas y fusionadas a `main`**, según la confirmación del
-dueño; base de Fase 6 `03cffae779407102a030f95ecf759bdfaeda0438`.
+Las **Fases 0–6 están cerradas y fusionadas a `main`**, por instrucción directa del
+dueño; base `ffc30aa3e210363a8d565defd28901d0639a80f8`. Está autorizada únicamente
+la **Fase 7 — Mensajes, difusión, Nuclear y Drive** en
+`phase-7-mensajeria-difusion-nuclear-drive`, un constructor, sin delegación.
 
-La **Fase 6 — Biblioteca / Packs / Cooperacha está aprobada por el arquitecto y
-lista para cierre técnico**, sin correcciones de código, migraciones, scripts ni
-configuración requeridas. La aprobación comunicada por el dueño el 16-10-2026
-queda registrada en DEC-050. Se conserva el despliegue desde `46aeb3a`.
+Alcance y plan previo en FASE-7.md y DEC-051–054. Se conservan las barreras de Lab,
+las 548 regresiones y todos los controles de fases anteriores. No hay programador
+genérico nuevo ni Fase 8. Nuclear real requiere aviso previo al dueño con el texto
+y cantidad exactos; esta ejecución usa pruebas aisladas sin envíos físicos.
 
-Contenido autorizado, OAuth/rclone y pruebas físicas **no bloquean el cierre
-técnico**. La biblioteca local funciona sin OAuth/Drive, que es opcional. Antes de
-probar o activar Biblioteca fuera de Botsky Lab se necesita cargar contenido real
-autorizado; las pruebas físicas siguen pendientes y son necesarias solo antes de
-activar fuera de Lab. Se conservan todos los tests y la cobertura.
-
-El trabajo autorizado se limita a registrar la aprobación, repetir verificaciones
-y hacer commit/push de documentación a `phase-6-biblioteca-packs-cooperacha`.
-**Sin cambios funcionales ni de configuración, nuevo despliegue, merge a `main`,
-Fase 7 ni activaciones fuera de Lab**. El constructor se detiene al terminar.
+Fase 7 implementada y desplegada desde `88a8281`, con respaldo verificado,
+639/639 tests, multimedia 82/82, procesadores reales 17/17, wrapper Minecraft 14/14,
+typecheck/lint/build correctos y health HTTP 200. Evidencia en FASE-7-PRUEBAS.md.
+Estado: **aprobada arquitectónicamente y lista para cierre técnico** (DEC-054).
+Siguiente paso autorizado: registro documental, repetición de verificaciones y
+commit/push en la rama de Fase 7; después, **constructor detenido**.
+**Sin merge a main, Fase 8 ni activaciones fuera de Botsky Lab**.
 
 ## 7. Autorización y aprobación de Fase 5 — 16-10-2026
 
@@ -195,3 +194,24 @@ biblioteca ni OAuth; Drive deshabilitado, lluvia apagada, cero grupos fuera de L
 **Estado: aprobada y lista para cierre técnico.** Siguiente paso autorizado:
 registrar la aprobación, repetir verificaciones y hacer commit/push documental;
 después detenerse. Sin merge ni Fase 7, sin eliminar tests ni cobertura.
+
+## 9. Autorización y aprobación vigente de Fase 7 — 17-10-2026
+
+El dueño confirma el cierre/fusión de Fases 0–6 y autoriza implementar solo Fase 7.
+Esta instrucción supera los bloqueos históricos de DEC-050 y apartados 7/8 dentro
+de ese alcance. Difusión, permisos, outbox y Drive son cambios críticos; la revisión
+arquitectónica fue aprobada sin correcciones de código, migraciones, scripts ni
+configuración, según la instrucción del dueño registrada en DEC-054.
+
+**Fase 7 aprobada y lista para cierre técnico.** Nuclear sin menciones cumple §9.10:
+las menciones dependen de soporte fiable de Evolution. Se conserva la ráfaga
+obligatoria de 5–10 mensajes y todos los límites implementados. Las pruebas físicas
+de difusión/Nuclear no bloquean el cierre técnico y son requeridas solo antes de
+activar fuera de Botsky Lab. OAuth y política de retención remota se requieren
+únicamente antes de activar Drive, que permanece deshabilitado. No se eliminan
+tests ni cobertura.
+
+Solo se autoriza documentación de control, verificaciones y commit/push a la rama
+de Fase 7; después detenerse. **Sin merge a main, inicio de Fase 8 ni activaciones
+fuera de Lab**. No se requieren nuevas acciones manuales del dueño para este cierre
+documental.

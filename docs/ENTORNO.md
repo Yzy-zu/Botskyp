@@ -393,3 +393,25 @@ correcto tras un primer error de proveedor no atribuido a código HTTP concreto.
 - 548/548 tests, multimedia 82/82, wrapper 14/14; typecheck/lint/build correctos.
   Procesadores/rclone reales y límites de evidencia en FASE-6-PRUEBAS.md.
   Revisión crítica pendiente. Sin merge a main, Fase 7 ni activación de grupos reales.
+
+## 15. Fase 7 — despliegue y aislamiento (constructor, 16-10-2026)
+
+- Base `ffc30aa`, rama `phase-7-mensajeria-difusion-nuclear-drive`; código
+  **88a8281** desplegado por script oficial, backup verificado
+  `botsky-20261016T234214-2620889.dump`. Migraciones 001–009, checksum 009 correcto.
+  Health HTTP 200, PostgreSQL/Evolution conectados; app/worker healthy.
+- Evolution API/PostgreSQL/Redis conservan imagen y StartedAt; sin cambios de red,
+  base, configuración ni vinculación. Datos previos comprobados idénticos; cero
+  grupos habilitados fuera de Lab, cinco tablas nuevas vacías y cero jobs de fase.
+- Worker conserva 768 MiB/0,50 CPU/64 PIDs/read-only. Nuevo montaje OAuth
+  `.local/drive:/run/botsky-drive:ro`, solo worker; directorio 700 UID/GID 1000,
+  sin `config.json` todavía. No se cambian mounts/scopes readonly de biblioteca.
+  App sin OAuth/rclone y worker sin llave Minecraft.
+- `DRIVE_ENABLED=false` por defecto; no se modificó `.env` para activarlo.
+  `LIBRARY_DRIVE_ENABLED=false` permanece. Sin peticiones reales Google ni Nuclear,
+  difusión o entregas WhatsApp de esta fase por el agente. Mensajería restringida a
+  Lab/privados autorizados; módulos fuera de Lab siguen deshabilitados/bloqueados.
+- 639/639 tests (548 + 91), multimedia 82/82, procesadores reales 17/17 en la nueva
+  imagen desplegada, wrapper 14/14 y typecheck/lint/build correctos. Imágenes,
+  evidencia, configuración y guía física en FASE-7.md y FASE-7-PRUEBAS.md.
+  **Pendiente revisión arquitectónica; sin merge a main ni Fase 8.**

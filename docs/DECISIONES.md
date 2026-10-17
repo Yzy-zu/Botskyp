@@ -1,7 +1,7 @@
 # Botsky — Registro de Decisiones Técnicas y Arquitectónicas
 
 **Archivo:** `docs/DECISIONES.md`  
-**Última actualización:** 16 de octubre de 2026
+**Última actualización:** 17 de octubre de 2026
 **Responsable:** Arquitecto / Revisor de Botsky
 
 Este documento registra las decisiones técnicas tomadas durante la ejecución del proyecto, su justificación y el tratamiento formal de contradicciones documentales o discrepancias con el entorno real.
@@ -939,3 +939,125 @@ y hacer commit/push a `phase-6-biblioteca-packs-cooperacha`. Se mantiene el cód
 desplegado desde `46aeb3a`, sin cambios funcionales/configuración ni nuevo despliegue.
 **Sin merge a `main`, Fase 7 ni activación fuera de Lab**. El constructor se detiene
 al terminar, sin esperar contenido, secretos, OAuth ni mensajes físicos del dueño.
+
+## 10. Decisiones de Fase 7 (aprobadas; véase DEC-054)
+
+### DEC-051: Alcance autorizado, destinos y confirmación masiva
+
+El dueño confirma Fases 0–6 cerradas/fusionadas y base
+`ffc30aa3e210363a8d565defd28901d0639a80f8`. Autoriza exclusivamente Fase 7 en
+`phase-7-mensajeria-difusion-nuclear-drive`, sin merge, Fase 8 ni activación fuera
+de Lab. Prevalece sobre bloqueos históricos de DEC-050/ROADMAP. Un constructor.
+
+§3 Fase 7, §9.8/9.10: envíos a contactos/chats, difusión, Nuclear y archivos Drive.
+No se añade programación genérica: los horarios de Escuela/lluvia de §9.12 ya
+pertenecen a Fases 2/6 y conservan sus reglas CDMX/catch-up. Sin moderación avanzada,
+encuestas, lore ni reacciones. Las operaciones entre chats y masivas son owner-only;
+el modelo no recibe herramientas de mensajería/Drive ni elige identidades.
+
+Los destinos se descubren de chats permitidos y privados ya aprobados por backend,
+con referencias locales `dN`. No hay JIDs libres en argumentos. Preview completa,
+hash canónico de contenido/destinos/cantidad/ritmo/versión, sesión existente ligada
+a actor/chat y vencimiento de dos minutos. Confirmar consume esa sesión y crea un
+único job/objetivos; replay y concurrencia no añaden una segunda ejecución.
+Migración aditiva 009 con cinco tablas nuevas; no modifica migraciones anteriores.
+
+### DEC-052: Nuclear durable, pausa conservadora y acuses de Evolution
+
+Nuclear es owner-only, solo grupo, determinista y `modelCallable=false`; **nunca
+expulsa**. Rango 5–10, defecto 8; texto exacto con sufijo `[n/total]`, mínimo
+1,5 s después del envío previo confirmado. Menciones iniciales **cero**: el schema
+2.3.7 admite `mentioned`, pero no hay prueba física de fiabilidad. No se usa
+`mentionsEveryOne` ni se incluye a bot/identidades protegidas. Sin tormentas de
+menciones por texto libre. Configuración versionada en `config/product.ts`.
+
+Jobs cortos reanudables y un único bucle ligero de dispatcher en worker, separado
+de esperas de media/Drive/rclone; no se duerme dentro del webhook ni se crea un
+timer por mensaje. Cada objetivo tiene una sola outbox. Próximo envío depende de
+la BD y del acuse anterior, nunca se acumulan envíos para recuperar una caída.
+Se revalidan permisos, destino, hash y módulo al reclamar bajo lock de operación;
+cancelación solo retira pendientes y reconoce que un envío en curso puede finalizar.
+
+Un Nuclear activo/pausado por grupo, cooldown 10 min/grupo, máximo dos/hora global.
+Difusión: hasta 20 objetivos, mínimo 2 s + jitter de hasta 0,5 s. Máximo dos
+operaciones pendientes, cinco confirmadas/hora y 100 mensajes previstos/24 h.
+Admisión de jobs conserva dos activos por actor y veinte globales, con locks
+compartidos para media/Drive/bulk. Reintentos manuales: máximo dos por objetivo.
+
+Evolution instalado verificado 2.3.7. HTTP 2xx con `PENDING` **no confirma** una
+entrega de Fase 7: se conserva ID y queda `uncertain`. Se requiere acuse
+`SERVER_ACK`, `DELIVERY_ACK`, `READ` o `PLAYED`, en respuesta o historial
+`MessageUpdate`. No implica lectura humana. Ausencia de historial sigue `unknown`.
+Nuclear sin ID solo reconcilia texto exacto y cita de origen inequívocos con acuse.
+Un 429 pausa, conserva `Retry-After` y exige reintento explícito; 4xx definitivos
+fallan, 5xx/red/timeout quedan inciertos. Nunca se reintenta un incierto a ciegas.
+Resultados por objetivo y transiciones quedan en outbox, bulk_targets y audit_log.
+
+### DEC-053: Drive operativo separado, alcance y degradación segura
+
+La biblioteca readonly/rclone de Fase 6 no cambia. El módulo de archivos Drive usa
+OAuth propio en archivo local 600, solo montado en worker, y `DRIVE_ENABLED=false`
+por defecto. Además requiere módulo y `chats.settings.drive` habilitados expresamente
+por owner/admin. Miembros vigentes buscan/seleccionan/descargan en su ámbito y suben
+solo adjuntos propios; backend liga chat, autor, fuente y correo configurado localmente.
+
+API Google Drive v3, raíces explícitas por chat, archivos binarios de carpeta directa;
+sin shortcuts, documentos nativos, Shared Drives, rutas/IDs remotos del modelo o
+usuarios. Carpetas propiedad de la cuenta OAuth y ACL solo del dueño. Búsqueda
+asíncrona publica referencias locales vigentes por actor/chat. Descargas comprueban
+selección, carpeta, MIME/tamaño y checksum; subida crea un archivo nuevo con ID
+preasignado/persistido y verifica SHA-256 antes de compartir. No borra/sobrescribe
+archivos existentes ni cambia permisos de archivos ajenos al job.
+
+Enlaces solo por privado al actor con correo preconfigurado y ACL verificable del
+dueño/destinatario, nunca `anyone`, `domain` o `group`; validación reciente de 30 s
+antes de liberar. Si no puede conservarse ese ámbito o se exceden límites, falla
+sin enlace. Escritura ambigua/reinicio durante creación o compartición: `review`,
+sin replay. La cuota/rotación de backups externos heredada no se declara resuelta.
+Los originales/cache locales de Drive usan la retención de siete días y el cupo
+multimedia existente; no son blobs persistentes de biblioteca. No se borra remoto
+automáticamente; su retención privada requiere política operativa del dueño.
+
+No hay llamadas a Drive sin configuración OAuth local. Fallo/timeout no bloquea
+inbox, tick, dispatcher bulk ni outbox. Pruebas físicas/OAuth quedan pendientes;
+ninguna simulación se declara entrega WhatsApp o acceso real Google confirmado.
+
+Evidencia final: **88a8281** desplegado mediante script oficial y backup verificado,
+639/639 tests (548 anteriores + 91 nuevos), multimedia 82/82, procesadores reales
+17/17 en imagen desplegada, wrapper 14/14, typecheck/lint/build y `/health` HTTP 200.
+009 aplicada/checksum correcto; datos previos comprobados idénticos y Evolution
+sin cambios de imagen/arranque. Cero grupos fuera de Lab y cero jobs de fase.
+OAuth/Drive deshabilitado, sin Nuclear ni envíos físicos. **Aprobada y lista para
+cierre técnico según DEC-054; constructor detenido, sin merge ni Fase 8.**
+
+### DEC-054: Aprobación arquitectónica de Fase 7 y condiciones de activación
+
+El 17-10-2026 el dueño comunica que **Fase 7 — Mensajería avanzada / Nuclear /
+Drive fue aprobada arquitectónicamente**. No se requieren correcciones de código,
+migraciones, scripts ni configuración. DEC-051–053 quedan aprobadas y la fase
+queda **aprobada y lista para cierre técnico**, con evidencia en
+FASE-7.md/FASE-7-PRUEBAS.md.
+
+**Nuclear sin menciones cumple la especificación vigente**: el Plan Maestro
+§9.10 condiciona las menciones al soporte fiable de Evolution. Su fiabilidad física
+no está comprobada, por lo que se mantienen deshabilitadas. La ráfaga obligatoria
+sigue siendo de **5–10 mensajes**, ocho por defecto, con todos los límites ya
+implementados de ritmo, cooldown, volumen, concurrencia, permisos, vista previa y
+confirmación ligada; nunca expulsa miembros.
+
+**Las pruebas físicas de difusión y Nuclear no bloquean el cierre técnico**;
+permanecen pendientes y son requeridas solo antes de activar fuera de Botsky Lab,
+con autorización expresa del dueño. Nuclear físico conserva el aviso previo con
+texto y cantidad exactos. **OAuth y la política de retención remota de Drive son
+necesarias únicamente antes de activar Drive**; no bloquean el cierre técnico ni
+se declaran configuradas. Drive sigue deshabilitado. Ningún mock se atribuye a
+entrega WhatsApp o acceso Google real.
+
+**No se eliminan tests ni cobertura**: se conservan las 548 regresiones y 91 tests
+nuevos, además de multimedia, procesadores reales y wrapper Minecraft. Se autoriza
+solo actualizar documentación de control, repetir typecheck, lint, tests, build,
+multimedia, procesadores reales, wrapper Minecraft y `/health`, y hacer commit/push
+a `phase-7-mensajeria-difusion-nuclear-drive`. El código desplegado sigue siendo
+`88a8281`, sin nuevo despliegue ni cambios funcionales o de configuración.
+**Sin merge a `main`, inicio de Fase 8 ni activaciones fuera de Lab**. Al terminar,
+el constructor se detiene.

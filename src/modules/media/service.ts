@@ -37,11 +37,11 @@ export async function enqueueMedia(ctx:ToolCtx,input:z.infer<typeof requestSchem
   await ctx.c.query("SELECT pg_advisory_xact_lock(hashtext('media-user'),hashtext($1))",[ctx.actor.id]);
   const previous=(await ctx.c.query<{id:string}>('SELECT id FROM jobs WHERE kind=\'media\' AND chat_id=$1 AND owner_id=$2 AND source_message_id=$3',[ctx.chat.id,ctx.actor.id,ctx.msg.id])).rows[0];
   if(previous)return ok(`La solicitud ya está registrada como trabajo #${previous.id}; consulta su estado.`,{jobId:previous.id});
-  const active=(await ctx.c.query<{n:string}>("SELECT count(*) n FROM jobs WHERE kind='media' AND owner_id=$1 AND status IN ('queued','running')",[ctx.actor.id])).rows[0]!;
+  const active=(await ctx.c.query<{n:string}>("SELECT count(*) n FROM jobs WHERE owner_id=$1 AND status IN ('queued','running')",[ctx.actor.id])).rows[0]!;
   if(Number(active.n)>=product.mediaMaxJobs)return fail(`Ya tienes ${product.mediaMaxJobs} trabajos activos. Espera a que terminen.`);
   // Serialize queue capacity as well, without involving the worker's processing lock.
   await ctx.c.query("SELECT pg_advisory_xact_lock(hashtext('media-queue'))");
-  const total=(await ctx.c.query<{n:string}>("SELECT count(*) n FROM jobs WHERE kind='media' AND status IN ('queued','running')")).rows[0]!;
+  const total=(await ctx.c.query<{n:string}>("SELECT count(*) n FROM jobs WHERE status IN ('queued','running')")).rows[0]!;
   if(Number(total.n)>=product.mediaQueueLimit)return fail('La cola multimedia está llena. Intenta más tarde.');
   const row=(await ctx.c.query<{id:string}>(`INSERT INTO jobs(kind,payload,chat_id,owner_id,source_message_id) VALUES('media',$1,$2,$3,$4) RETURNING id`,[JSON.stringify({...args,sources}),ctx.chat.id,ctx.actor.id,ctx.msg.id])).rows[0]!;
   return ok(`Trabajo #${row.id} en cola. Lo procesaré y publicaré el resultado aquí; todavía no se ha entregado.`,{jobId:row.id});

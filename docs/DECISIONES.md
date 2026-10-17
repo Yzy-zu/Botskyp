@@ -1185,3 +1185,50 @@ Esquema, decisiones, límites, fuentes y evidencia en
 [ARQUITECTURA](v1.1/ARQUITECTURA.md) y
 [R1-FUNDAMENTOS](v1.1/R1-FUNDAMENTOS.md). La revisión crítica previa a merge sigue
 siendo un paso futuro; no se afirma revisión independiente ni activación de v1.1.
+
+## 13. Botsky v1.1 — R2 (17-10-2026)
+
+### DEC-059: Catálogo v2, visibilidad dinámica y observación sin ejecución
+
+R1 aprobada por el dueño; R2 autorizada exclusivamente sobre `92cde7e` en
+`feat/v1.1-natural-router`. Un constructor, sin delegación, merge, deploy ni R3.
+Esta autorización sustituye el bloqueo de avance histórico de DEC-058 solo en
+el alcance explícito de R2. No se conecta Gemini al router v2.
+
+Se conservan las 98 tools y todos sus PermissionKey: snapshot independiente en
+`tests/fixtures/v1.1/permissions-r1.json`, contrastado contra v1 y v2. Cualquier
+cambio futuro al snapshot requiere una nueva decisión explícita. task_edit
+conserva `school.write` y su regla histórica de propiedad dentro del handler.
+Los riesgos v2 no derivan ni sustituyen autorización.
+
+Catálogo v2 separado sin handlers: 96 visibles, school.schedule_commit y
+bulk.confirm internas, meta-tool core.load_capability adicional sin permisos de
+negocio ni efectos. Schemas de modelo explícitos con SafeRefs/SemanticTime,
+sanitización anidada y sin puente a handlers. La visibilidad v2 de nuclear y
+otras tools no-modelCallable no modifica flags/ejecución v1: es metadata para
+etapas futuras. Autorización final sigue siendo backend, pendiente R3.
+
+Base de siete tools + meta, dominios tipados, máximo 20 incluido meta. Selección
+por módulo/scope/contexto y señales léxicas; representante por dominio relevante
+no-admin y llenado por prioridad, admin al final si relevante para owner. Las
+señales no ejecutan, rechazan ni deciden argumentos. Una expansión válida por
+turno, disponibilidad para chat/rol por módulo y scope comprobada, sin quitar
+schemas ni exceder tope. No se exige señal léxica para expandir: la meta-tool
+puede recuperar dominios no detectados por el selector inicial.
+Fast Path v2 exacto independiente; frases naturales siempre pasan. Memoria es
+semántica de productivity, nunca traducción automática a notes.create en v2.
+
+Shadow solo agrega log de booleano, nombres estáticos y bytes, usando contexto
+y sesión ya cargados; sin queries, Gemini ni writes adicionales. La ejecución
+visible v1 continúa, incluido su bug legacy memoria/notas por compatibilidad.
+Modo v1 no calcula v2; v1_1 permanece reservado y continúa v1 sin activarse.
+
+Se eliminan topes artificiales de cuotas a defaults, con enteros positivos y
+máximos defensivos. LLM_* tiene prioridad sobre aliases GEMINI_*; defaults v1
+intactos. Reserva configurable es fallback sin reemplazar la estimación v1 de
+DEC-023. No se cambian límites reales, `.env`, facturación ni configuración en
+servicios. Documentación detallada y evidencia en docs/v1.1/R2-TOOL-REGISTRY.md.
+
+Verificación final R2: 187/187 pruebas focalizadas en nueve archivos,
+typecheck/lint/build, auditoría de secretos y validación Compose correctos.
+Sin llamadas reales Gemini, ejecución v2, deploy, merge ni cambios a Evolution.

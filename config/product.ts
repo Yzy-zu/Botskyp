@@ -1,4 +1,9 @@
 export const product = {
+  maxToolsPerTurn: 20,
+  maxCapabilityExpansionsPerTurn: 1,
+  llmMaxConfiguredRpm: 10_000,
+  llmMaxConfiguredDaily: 1_000_000,
+  llmMaxConfiguredTokens: 10_000_000,
   pollQuestionChars:300,
   pollOptionChars:100,
   pollMaxOptions:10,

@@ -24,6 +24,7 @@ export function defineTool<A extends z.ZodType>(tool:Tool<A>):Tool{
 }
 export class ToolRegistry {
   private tools=new Map<string,Tool>();
+  all():readonly Tool[]{return [...this.tools.values()];}
   register(tool:Tool):void{
     if(this.tools.has(tool.name))throw new Error('Duplicate tool');this.tools.set(tool.name,tool);
   }

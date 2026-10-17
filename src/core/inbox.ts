@@ -1,3 +1,4 @@
+import { registerIncomingArtifactsV2 } from './artifact-registration-v2.js';
 import { modules } from './control-tools.js';
 import { chatLock,lockChatWallets } from '../modules/games/state.js';
 import { activity } from '../modules/xp/service.js';
@@ -46,6 +47,7 @@ export async function processNext(db: Db, config: Config):Promise<boolean> {
       const sent = await c.query('SELECT id FROM outbox WHERE provider_msg_id=$1 AND chat_id=$2 AND status=\'sent\'',[msg.quoted.id,msg.chatId]);
       msg.quoted.fromBot = Boolean(sent.rowCount);
     }
+    if(config.ROUTER_MODE==='v1_1')await registerIncomingArtifactsV2(c,config,msg.chatId,actor.id,msg.id);
     const flags=await c.query<{key:string;value:unknown}>('SELECT key,value FROM system_flags');
     const emergency=flags.rows.some(f=>f.key==='emergency' && f.value===true);
     const maintenance=flags.rows.some(f=>f.key==='maintenance' && f.value===true);

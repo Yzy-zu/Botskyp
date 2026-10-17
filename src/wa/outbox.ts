@@ -1,3 +1,4 @@
+import { artifactResendDelivery } from '../core/artifact-resend-v2.js';
 import { moduleEnabled,type Chat } from '../core/permissions.js';
 import { driveDelivery } from '../modules/drive/delivery.js';
 import { claimBulk } from '../modules/messaging/worker.js';
@@ -66,6 +67,11 @@ export async function sendNext(db:Db, transport:Transport, config:Config):Promis
       return true;
     }
     if(school.media)delivery.media=school.media;
+  }
+  if(row.kind==='artifact_resend'){
+    const media=await artifactResendDelivery(db,config,row);
+    if(!media){await db.query("UPDATE outbox SET status='failed',last_error='artifact_delivery_not_allowed' WHERE id=$1 AND status='queued'",[row.id]);return true;}
+    delivery.media=media;
   }
   if(row.kind==='media_result'){
     const media=await mediaDelivery(db,config,row);

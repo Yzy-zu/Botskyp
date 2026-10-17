@@ -1,3 +1,4 @@
+import { registerArtifactV2 } from '../../core/artifact-registration-v2.js';
 import type { PoolClient } from 'pg';
 import { product } from '../../../config/product.js';
 import { transaction,type Db } from '../../db/client.js';
@@ -97,6 +98,8 @@ export async function processDrive(db:Db,config:Config,job:DriveJob,deps:DriveDe
       const text=link?`Archivo Drive con acceso restringido a tu cuenta configurada: https://drive.google.com/file/d/${file.id}/view`:`Archivo Drive #${job.id}.`;
       const target=link?job.owner_id:job.chat_id;
       const out=(await c.query<{id:string}>(`INSERT INTO outbox(chat_id,kind,payload,dedupe_key) VALUES($1,$2,$3,$4) ON CONFLICT(dedupe_key) DO UPDATE SET dedupe_key=excluded.dedupe_key RETURNING id`,[target,link?'drive_link':'drive_file',JSON.stringify({text,sourceId:link?'':job.source_message_id,jobId:job.id,actorId:job.owner_id,originChatId:job.chat_id,...(!link?{attachmentId}:{})}),`drive:${job.id}:result`])).rows[0]!;
+      if(attachmentId && !link && config.ROUTER_MODE==='v1_1')await registerArtifactV2(c,config.ROUTER_MODE,{
+        chatId:job.chat_id,actorId:job.owner_id,sourceMessageId:job.source_message_id,origin:'bot_output',mediaId:attachmentId,jobId:job.id,outboxId:out.id});
       await c.query("UPDATE jobs SET status='done',outbox_id=$2,result=$3 WHERE id=$1",[job.id,out.id,JSON.stringify({deliveryText:text,target,verifiedAt:new Date().toISOString()})]);
       await c.query("UPDATE drive_operations SET phase='done',remote_id=$2,updated_at=clock_timestamp() WHERE job_id=$1",[job.id,file.id]);
       await c.query("INSERT INTO audit_log(actor_id,chat_id,action,detail) VALUES($1,$2,'drive.completed',$3)",[job.owner_id,job.chat_id,JSON.stringify({jobId:job.id,operation:input.operation,delivery:'queued',bytes:bytes?.length ?? 0})]);

@@ -15,7 +15,7 @@ const dataSchema=z.object({
   messageTimestamp:z.union([z.number(),z.string().regex(/^\d+$/)]).transform(Number).pipe(z.number().int().positive().max(8_640_000_000_000)),
   contextInfo:contextSchema.nullish(),
 });
-const mediaSchema=z.object({caption:z.string().optional(),mimetype:z.string().optional(),contextInfo:contextSchema.optional()});
+const mediaSchema=z.object({fileName:z.string().optional(),caption:z.string().optional(),mimetype:z.string().optional(),contextInfo:contextSchema.optional()});
 const extendedSchema=textMessage.extend({contextInfo:contextSchema.optional()});
 export type Reaction={kind:'reaction';msgId:string;chatId:string;actorId:string;emoji:string};
 export type NormalizedEvent={kind:'message';message:Msg}|Reaction;
@@ -42,7 +42,7 @@ export function normalizeData(input:unknown):NormalizedEvent|null {
     if(!data.message[providerKind])continue;
     const media=mediaSchema.parse(data.message[providerKind]);
     text=media.caption ?? text;context ??= media.contextInfo;
-    attachments.push({kind,ref:`${data.key.id}:${kind}`,...(media.mimetype?{mime:media.mimetype}:{})});
+    attachments.push({kind,ref:`${data.key.id}:${kind}`,...(media.mimetype?{mime:media.mimetype}:{}),...(media.fileName?{fileName:media.fileName}:{})});
   }
   if(!text && !attachments.length)return null;
   const quoted=context?.stanzaId?{

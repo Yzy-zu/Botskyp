@@ -146,9 +146,9 @@ async function artifact(t: Awaited<ReturnType<typeof turn>>, options: { parent?:
       VALUES($1,$2,$3,'document','application/pdf',$4,4,now()+$5::int*interval '1 hour') RETURNING id`, [chatId, actorId, randomUUID(), data, backingExpires])).rows[0]!.id
     : (await db.query<{ id: string }>(`INSERT INTO media_attachments(chat_id,owner_id,is_original,mime,extension,size,sha256,data,expires_at)
       VALUES($1,$2,false,'application/pdf','pdf',4,$3,$4,now()+$5::int*interval '1 hour') RETURNING id`, [chatId, actorId, 'a'.repeat(64), data, backingExpires])).rows[0]!.id;
-  return (await db.query<{ id: string }>(`INSERT INTO chat_artifacts(chat_id,actor_id,turn_id,source_message_id,media_attachment_id,school_attachment_id,parent_artifact_id,kind,mime,created_at,expires_at)
-    VALUES($1,$2,$3,$4,$5,$6,$7,'pdf','application/pdf',now()-$8::int*interval '1 hour',now()+$9::int*interval '1 hour') RETURNING id`,
-  [chatId, actorId, t.turn_id, t.source, options.school ? null : backing, options.school ? backing : null, options.parent ?? null, options.age ?? 0, expires])).rows[0]!;
+  return (await db.query<{ id: string }>(`INSERT INTO chat_artifacts(chat_id,actor_id,turn_id,source_message_id,media_attachment_id,school_attachment_id,parent_artifact_id,kind,mime,created_at,expires_at,origin)
+    VALUES($1,$2,$3,$4,$5,$6,$7,'pdf','application/pdf',now()-$8::int*interval '1 hour',now()+$9::int*interval '1 hour',$10) RETURNING id`,
+  [chatId, actorId, t.turn_id, t.source, options.school ? null : backing, options.school ? backing : null, options.parent ?? null, options.age ?? 0, expires, options.school ? 'user_input' : 'bot_output'])).rows[0]!;
 }
 it('builds an artifact chain across turns with real media/school backing; A_LAST uses scope and runtime expiry', async () => {
   const t = await turn();

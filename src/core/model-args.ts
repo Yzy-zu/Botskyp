@@ -11,7 +11,7 @@ const text = z.string().trim().min(1).max(product.maxTextChars);
 const short = z.string().trim().min(1).max(product.schoolSubjectChars);
 const bool = z.boolean();
 const integer = (max: number) => z.number().int().positive().max(max);
-export const safeRefSchema = (kind: RefKind) => z.string().regex(new RegExp(`^${kind}_[0-9a-f-]{36}$`));
+export const safeRefSchema = (kind: RefKind) => z.string().regex(new RegExp(`^${kind}_(?:[0-9a-f]{24}|[0-9a-f-]{36})$`));
 const ref = (kind: RefKind) => safeRefSchema(kind).describe('Referencia opaca entregada por el backend; nunca un ID real.');
 const poll = { pollRef: ref('pollRef') };
 const op = { opRef: ref('opRef') };

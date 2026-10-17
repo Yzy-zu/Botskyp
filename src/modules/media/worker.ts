@@ -1,3 +1,5 @@
+import { registerArtifactV2, registerIncomingArtifactsV2 } from '../../core/artifact-registration-v2.js';
+import { rememberContextResultV2, type ContextResultKind } from '../../core/context-results-v2.js';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -40,16 +42,20 @@ export async function claimMedia(db:Db):Promise<MediaJob|undefined>{
     if(job)await c.query("UPDATE jobs SET status='running',attempts=attempts+1,updated_at=now(),error=NULL WHERE id=$1",[job.id]);return job;
   });
 }
-async function original(db:Db,job:MediaJob,index:number,key:string,expires:Date,load:()=>Promise<{bytes:Buffer;mime:string}>):Promise<{bytes:Buffer;mime:string}>{
+async function original(db:Db,config:Config,job:MediaJob,index:number,key:string,expires:Date,load:()=>Promise<{bytes:Buffer;mime:string}>):Promise<{bytes:Buffer;mime:string}>{
   const cached=(await db.query<{data:Buffer;mime:string}>(`SELECT data,mime FROM media_attachments WHERE chat_id=$1 AND owner_id=$2 AND source_message_id=$3
     AND is_original AND expires_at>clock_timestamp() AND data IS NOT NULL`,[job.chat_id,job.owner_id,key])).rows[0];
-  if(cached)return {bytes:cached.data,mime:cached.mime};
+  if(cached){
+    if(config.ROUTER_MODE==='v1_1')await transaction(db,c=>registerIncomingArtifactsV2(c,config,job.chat_id,job.owner_id,key));
+    return {bytes:cached.data,mime:cached.mime};
+  }
   if(expires.getTime()<=Date.now())throw new Error('original_retention_limit');
   const result=await load();validateBytes(result.bytes,result.mime);
   await transaction(db,async c=>{
     await capacity(c,result.bytes.length);
     await c.query(`INSERT INTO media_attachments(chat_id,owner_id,source_message_id,job_id,artifact_index,is_original,mime,extension,size,sha256,data,expires_at)
       VALUES($1,$2,$3,$4,$5,true,$6,$7,$8,$9,$10,$11) ON CONFLICT DO NOTHING`,[job.chat_id,job.owner_id,key,job.id,index,result.mime,extension(result.mime),result.bytes.length,digest(result.bytes),result.bytes,expires]);
+    if(config.ROUTER_MODE==='v1_1')await registerIncomingArtifactsV2(c,config,job.chat_id,job.owner_id,key);
   });return result;
 }
 async function finish(db:Db,config:Config,job:MediaJob,artifacts:Artifact[],source:string):Promise<void>{
@@ -59,6 +65,17 @@ async function finish(db:Db,config:Config,job:MediaJob,artifacts:Artifact[],sour
     if(current?.status!=='running')throw new Error('invalid_job_state');
     if(!await mediaAllowed(c,config,job.chat_id,job.owner_id))throw new Error('not_allowed');
     await capacity(c,artifacts.reduce((n,a)=>n+a.bytes.length,0));
+    let parentId:string|undefined;
+    if(config.ROUTER_MODE==='v1_1'){
+      const payload=payloadSchema.parse(job.payload);
+      if(payload.sources.length===1){
+        const source=z.object({storedId:z.string().optional(),id:z.string().optional()}).safeParse(payload.sources[0]);
+        if(source.success)parentId=(await c.query<{id:string}>(`SELECT id FROM chat_artifacts WHERE chat_id=$1 AND actor_id=$2
+          AND (media_attachment_id::text=$3 OR (origin='user_input' AND (source_message_id=$4 OR source_message_id IN(
+            SELECT source_message_id FROM media_attachments WHERE id::text=$3 AND chat_id=$1 AND owner_id=$2 AND is_original)))) ORDER BY created_at DESC LIMIT 1`,
+        [job.chat_id,job.owner_id,source.data.storedId ?? null,source.data.id ?? null])).rows[0]?.id;
+      }
+    }
     let first:string|undefined;
     for(const [index,a] of artifacts.entries()){
       const attachment=(await c.query<{id:string}>(`INSERT INTO media_attachments(chat_id,owner_id,job_id,artifact_index,is_original,mime,extension,size,sha256,data,expires_at)
@@ -66,6 +83,14 @@ async function finish(db:Db,config:Config,job:MediaJob,artifacts:Artifact[],sour
         ON CONFLICT(job_id,artifact_index,is_original) DO UPDATE SET job_id=excluded.job_id RETURNING id`,[job.chat_id,job.owner_id,job.id,index,a.mime,extension(a.mime),a.bytes.length,digest(a.bytes),a.bytes,product.mediaGeneratedDays])).rows[0]!;
       const row=(await c.query<{id:string}>(`INSERT INTO outbox(chat_id,kind,payload,dedupe_key) VALUES($1,'media_result',$2,$3)
         ON CONFLICT(dedupe_key) DO UPDATE SET dedupe_key=excluded.dedupe_key RETURNING id`,[job.chat_id,JSON.stringify({text:`Resultado del trabajo #${job.id}.${source?`\n${source}`:''}`,sourceId:job.source_message_id,attachmentId:attachment.id,actorId:job.owner_id,jobId:job.id,mediaKind:a.kind,fileName:a.name}),`media:result:${job.id}:${index}`])).rows[0]!;
+      if(config.ROUTER_MODE==='v1_1'){
+        const op=payloadSchema.parse(job.payload).operation;
+        const textualResult=a.mime==='text/plain' && ['ocr','qr_read','transcribe','read'].includes(op);
+        if(textualResult)await rememberContextResultV2(c,config.ROUTER_MODE,{
+          chatId:job.chat_id,actorId:job.owner_id,key:`media:${job.id}:${index}`,kind:op as ContextResultKind,text:a.bytes.toString('utf8')});
+        else await registerArtifactV2(c,config.ROUTER_MODE,{chatId:job.chat_id,actorId:job.owner_id,sourceMessageId:job.source_message_id,
+          mediaId:attachment.id,origin:'bot_output',jobId:job.id,outboxId:row.id,filename:a.name,kind:a.kind,...(parentId?{parentId}:{})});
+      }
       first ??=row.id;
     }
     await c.query("UPDATE jobs SET status='done',outbox_id=$2,result=$3,updated_at=now() WHERE id=$1 AND status='running'",[job.id,first,JSON.stringify({artifacts:artifacts.length,delivery:'pending'})]);
@@ -73,6 +98,7 @@ async function finish(db:Db,config:Config,job:MediaJob,artifacts:Artifact[],sour
   });
 }
 export async function processMedia(db:Db,config:Config,job:MediaJob,deps:WorkerDeps=defaults):Promise<void>{
+  if(config.ROUTER_MODE==='v1_1' && (await db.query<{status:string}>('SELECT status FROM jobs WHERE id=$1',[job.id])).rows[0]?.status!=='running')return;
   let cwd:string|undefined;
   const signal=AbortSignal.timeout(product.mediaJobTimeoutMs);
   try{
@@ -82,7 +108,7 @@ export async function processMedia(db:Db,config:Config,job:MediaJob,deps:WorkerD
     cwd=await jobDirectory(job.id,deps.root);await cleanTemporary(job.id,deps.root);cwd=await jobDirectory(job.id,deps.root);
     const inputs:string[]=[];let total=0;const source=args.url?`Fuente y licencia: https://commons.wikimedia.org/wiki/File:${new URL(args.url).pathname.split('/').at(-1)}`:'';
     if(args.url){
-      const result=await original(db,job,0,`url:${digest(Buffer.from(args.url))}:${job.id}`,new Date(Date.now()+product.mediaOriginalDays*86_400_000),async()=>deps.download(args.url!,{signal}));
+      const result=await original(db,config,job,0,`url:${digest(Buffer.from(args.url))}:${job.id}`,new Date(Date.now()+product.mediaOriginalDays*86_400_000),async()=>deps.download(args.url!,{signal}));
       total+=result.bytes.length;inputs.push(await saveInput(cwd,0,result.bytes,result.mime));
     }else for(const [index,raw] of args.sources.entries()){
       const stored=z.strictObject({storedId:z.uuid()}).safeParse(raw);
@@ -98,7 +124,7 @@ export async function processMedia(db:Db,config:Config,job:MediaJob,deps:WorkerD
       // Reconfirm provenance against an accepted inbox event, never a model-supplied message key.
       const accepted=await db.query(`SELECT 1 FROM inbox WHERE chat_id=$1 AND payload->>'id'=$2 AND payload->>'senderId'=$3 AND status<>'failed'`,[job.chat_id,sourceMsg.id,sourceMsg.senderId]);
       if(!accepted.rowCount)throw new Error('invalid_attachment_provenance');
-      const result=await original(db,job,index,sourceMsg.id,new Date(sourceMsg.ts.getTime()+product.mediaOriginalDays*86_400_000),()=>deps.attachment(config,sourceMsg,signal));
+      const result=await original(db,config,job,index,sourceMsg.id,new Date(sourceMsg.ts.getTime()+product.mediaOriginalDays*86_400_000),()=>deps.attachment(config,sourceMsg,signal));
       total+=result.bytes.length;if(total>product.mediaInputBytes)throw new Error('input_size_limit');
       inputs.push(await saveInput(cwd,index,result.bytes,result.mime));
     }

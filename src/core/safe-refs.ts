@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 
 export const refKinds = ['memberRef', 'artifactRef', 'noteRef', 'reminderRef', 'memoryRef', 'pollRef', 'taskRef', 'subjectRef', 'driveRef', 'destinationRef', 'opRef'] as const;
@@ -33,7 +33,7 @@ export class SafeRefs {
       if (personalKinds.has(resource.kind) && resource.access.visibility !== 'personal') {
         throw new Error('Personal references require ownership');
       }
-      this.resources.set(`${resource.kind}_${randomUUID()}`, resource);
+      this.resources.set(`${resource.kind}_${randomBytes(12).toString('hex')}`, resource);
     }
   }
   list(scope: RefScope): { ref: SafeRef; label: string; kind: RefKind }[] {

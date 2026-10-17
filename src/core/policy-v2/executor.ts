@@ -1,3 +1,4 @@
+import { confirmationInputV2 } from '../session-input-v2.js';
 import { randomUUID } from 'node:crypto';
 import pino from 'pino';
 import { transaction } from '../../db/client.js';
@@ -96,7 +97,7 @@ export async function executeToolV2(ctx: ToolCtx, name: string, modelArgs: unkno
       else if (pending.invalidated) confirmationFailure = 'DENIED_CONFIRMATION_INVALIDATED';
       else if (pending.expires_at <= context.now) confirmationFailure = 'DENIED_CONFIRMATION_EXPIRED';
       else if (pending.parent_turn_id === context.turnId || context.callOrigin !== 'session') confirmationFailure = 'DENIED_CONFIRMATION_SECOND_TURN';
-      else if (!/^s[ií][.!]?$/iu.test(context.legacy.msg.text.trim())) confirmationFailure = 'DENIED_CONFIRMATION_INPUT';
+      else if (confirmationInputV2(context.legacy.msg.text) !== 'confirm') confirmationFailure = 'DENIED_CONFIRMATION_INPUT';
       else if (pending.scope_state.role !== context.role || pending.scope_state.permission !== entry.tool.permission) confirmationFailure = 'DENIED_CONFIRMATION_STATE_CHANGED';
       else if (policyArgsHash(context, name, pending.resolved_args, pending.scope_state.resourceState) !== pending.args_hash || (['allow','needs_confirmation'].includes(decision.status) && decision.argsHash !== pending.args_hash)) confirmationFailure = 'DENIED_CONFIRMATION_ARGS_CHANGED';
     }
@@ -113,6 +114,10 @@ export async function executeToolV2(ctx: ToolCtx, name: string, modelArgs: unkno
     [id, context.turnId, context.callOrigin, context.providerCallId, context.executionKey, context.sourceMessageId,
       context.chatId, context.actorId, name, risk, hash, JSON.stringify(claim), context.parentExecutionId, context.logicalActionId, requestHash]);
     async function finish(value: ToolResult): Promise<ToolResult> {
+      if (pending && confirmationFailure !== 'DENIED_CONFIRMATION_INPUT' && ['ok','queued','uncertain','error','denied'].includes(value.status)) {
+        const sessionStatus = pending.expires_at <= context.now ? 'expired' : pending.invalidated ? 'cancelled' : 'done';
+        await c.query("UPDATE sessions_v2 SET status=$2,version=version+1 WHERE confirmation_id=$1 AND status='active'", [pending.id, sessionStatus]);
+      }
       await c.query('UPDATE tool_executions SET status=$2,result_json=$3,finished_at=clock_timestamp() WHERE id=$1', [id, value.status, JSON.stringify(value)]);
       return value;
     }

@@ -6,7 +6,7 @@ import { DateTime } from 'luxon';
 import { product } from '../../config/product.js';
 import { createRegistry } from './registry.js';
 import { createToolRegistryV2 } from './tool-registry-v2.js';
-import { observeRouterShadow } from './router-shadow.js';
+import { observeRouterShadow, observeContextShadowV2 } from './router-shadow.js';
 import { type ToolCtx,type ToolResult } from './tools.js';
 import { activeSession,argumentHash,closeSession,sessionAccepts } from './sessions.js';
 import { commandText,parseDate,shortcut } from './shortcuts.js';
@@ -50,7 +50,8 @@ export function llmError(error:LlmUnavailable):string{
 export async function route(ctx:ToolCtx,llm?:Llm):Promise<string|undefined>{
   const text=commandText(ctx.msg.text);
   const session=await activeSession(ctx.c,ctx.actor.id,ctx.chat.id);
-  observeRouterShadow(ctx,session,()=>createToolRegistryV2(registry));
+  const shadow=observeRouterShadow(ctx,session,()=>createToolRegistryV2(registry));
+  if(ctx.config.ROUTER_MODE==='v1_1_shadow' && ctx.turnId)await observeContextShadowV2(ctx,shadow?.domains ?? []);
   if(session?.kind==='media' && sessionAccepts(session,text,ctx.msg.attachments.length>0))return continueMedia(ctx,session,text);
   if(session?.kind==='game' && /^cancelar[.!]?$/iu.test(text))return invoke(ctx,'games.cancel',{});
   if(session?.kind==='game' && /^(terminar|no)[.!]?$/iu.test(text))return 'La partida sigue activa. Usa carta, plantarse o doblar; un lobby se cancela con cancelar.';

@@ -1,3 +1,4 @@
+import { registerArtifactV2 } from '../../core/artifact-registration-v2.js';
 import { z } from 'zod';
 import { product } from '../../../config/product.js';
 import type { ToolCtx } from '../../core/tools.js';
@@ -46,5 +47,6 @@ export async function captureAttachment(ctx:ToolCtx,source:Msg):Promise<{id:stri
   const row=await ctx.c.query<{id:string}>(`INSERT INTO school_attachments(chat_id,owner_id,source_message_id,kind,mime,data,size,expires_at)
     VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(chat_id,owner_id,source_message_id,kind) DO UPDATE SET source_message_id=excluded.source_message_id RETURNING id`,
   [ctx.chat.id,owner,source.id,media.kind,media.mime,bytes,bytes.length,new Date(source.ts.getTime()+product.schoolOriginalDays*86_400_000)]);
+  await registerArtifactV2(ctx.c,ctx.config.ROUTER_MODE,{schoolId:row.rows[0]!.id,chatId:ctx.chat.id,actorId:owner,sourceMessageId:source.id,origin:'user_input'});
   return {id:row.rows[0]!.id,media};
 }

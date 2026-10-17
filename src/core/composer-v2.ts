@@ -43,6 +43,7 @@ export function localPresenterV2(result: ToolResult): string {
   if(name==='media.status')return Array.isArray(data.jobs) && data.jobs.length?data.jobs.map((item,index)=>{const job=record(item);return `Archivo ${index+1}: ${job.status==='done'?'procesado; revisa el resultado en este chat':job.status==='running'?'lo estoy preparando':job.status==='queued'?'pendiente de procesar':'no se pudo completar'}.`;}).join('\n'):'No tienes archivos pendientes en este chat.';
   if(name==='core.help')return 'Pídeme lo que necesites: guardar un recuerdo, anotar algo para el grupo, crear un recordatorio, consultar tus XP, jugar, buscar información o trabajar con un archivo. Te diré qué está disponible aquí.';
   if(name==='reminders.create')return `Listo, te recordaré «${String(data.body)}» el ${formatHumanDue(new Date(String(data.dueAt)))}.`;
+  if(name==='reminders.edit')return `Listo, cambié tu recordatorio de «${String(data.body)}» al ${formatHumanDue(new Date(String(data.dueAt)))}.`;
   if(name.startsWith('games.') && typeof data.hand==='string')return `Blackjack: ${data.hand} (${data.total}). Apuesta: ${data.bet} XP.\nDealer: ${data.dealer}.${data.closed?` Partida terminada.${typeof data.returnedXp==='number'?` Recibiste ${data.returnedXp} XP.`:''}`:' ¿Otra carta o te plantas?'}`;
   if(name==='memory.remember')return 'Listo, lo guardé en tu memoria personal.';
   if(name==='notes.create')return `Listo, anoté «${String(data.body ?? 'eso')}» para este chat.`;
@@ -79,17 +80,19 @@ export const conversationalOutcomeV2=z.strictObject({
   effects:z.array(z.strictObject({action:z.string(),status:z.enum(['ok','queued'])})).max(3),
 });
 /** Plain provider prose has no authority. Local mutation templates always come from current receipts. */
-export function conversationTextV2(text: string): { text: string; retry: boolean } {
+export function conversationTextV2(text: string): { text: string; retry: boolean; valid?: boolean } {
   // Secondary diagnostic for a provider violating its structured no-effects declaration.
-  const mutationClaim=/(?<![\p{L}\p{N}_])(?:guardad[oa]|registrad[oa]|(?:te )?di \d+\s*XP|recordatorio creado|mensaje enviado|ya (?:guardé|envié|creé|borré|cancelé|registré|programé|anoté|actualicé|otorgué|te di|quedó))(?![\p{L}\p{N}_])/iu;
+  const mutationClaim=/(?<![\p{L}\p{N}_])(?:voto registrad[oa]|listo[,.:!]?\s+(?:guardad[oa]|registrad[oa])|(?:te )?di \d+\s*XP|recordatorio creado|mensaje enviado|ya (?:guardé|envié|creé|borré|cancelé|registré|programé|anoté|actualicé|otorgué|te di|quedó))(?![\p{L}\p{N}_])/iu;
   const noAction={text:'No ejecuté ninguna acción para esa solicitud.',retry:false};
   const invalid={text:'No pude preparar una respuesta clara. Inténtalo otra vez.',retry:false};
   let value: unknown;
-  try { value=JSON.parse(text); } catch { return mutationClaim.test(text)?noAction:invalid; }
+  const json=text.trim().replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/iu,'$1');
+  try { value=JSON.parse(json); } catch { return mutationClaim.test(text)?noAction:invalid; }
   const parsed=conversationalOutcomeV2.safeParse(value);
+  if(!parsed.success && record(value).outcome==='action_required')return {...noAction,retry:true};
   if(!parsed.success)return mutationClaim.test(text)?noAction:invalid;
   if(parsed.data.effects.length)return noAction;
   if(parsed.data.outcome==='action_required')return {...noAction,retry:true};
   if(mutationClaim.test(parsed.data.text))return noAction;
-  return {text:parsed.data.text,retry:false};
+  return {text:parsed.data.text,retry:false,valid:true};
 }

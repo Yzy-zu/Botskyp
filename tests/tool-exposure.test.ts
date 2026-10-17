@@ -130,3 +130,13 @@ it('retains active schemas on expansion, obeys capacity and freezes the original
   expect(turn.loadCapability({ domain: 'admin' }).status).toBe('not_relevant_or_allowed');
   expect(turn.exposure.toolNames).toEqual(before);
 });
+
+it('keeps reminder editing available after a QR and an open poll fill the context',()=>{
+  const result=select('bot cambia el recordatorio de tortillas a las 10 de la noche, el mismo día',{
+    openPoll:true,recentArtifactContext:[{kind:'image',mime:'image/png'}],quotedText:'bot haz sticker con ese QR',
+  });
+  expect(result.toolNames).toContain('reminders.edit');
+  expect(result.toolNames).toContain('media.process');
+  expect(result.toolNames).toContain('polls.vote');
+  expect(result.schemas.length).toBeLessThanOrEqual(20);
+});

@@ -8,7 +8,7 @@ import { coolDown,LlmUnavailable,reserveCall } from './quota.js';
 export { LlmUnavailable } from './quota.js';
 export type Image={mimeType:string;data:string};
 export type Declaration={name:string;description:string;parametersJsonSchema:Record<string,unknown>};
-export type LlmInput={turnId?:string;system:string;contents:unknown[];tools:Declaration[];images?:Image[]};
+export type LlmInput={turnId?:string;system:string;contents:unknown[];tools:Declaration[];images?:Image[];responseJsonSchema?:Record<string,unknown>;requireFunctionCall?:boolean};
 export type LlmReply={text:string;calls:GeminiFunctionCall[];content:unknown;providerContext?:ProviderToolContext;usage?:{inputTokens:number;outputTokens:number}};
 export type CallBudget={used:number};
 export interface Llm { readonly counters?:Readonly<{calls:number;inputTokens:number;outputTokens:number}>;generate(input:LlmInput):Promise<LlmReply> }
@@ -17,6 +17,9 @@ const responseSchema=z.object({
   candidates:z.array(z.object({finishReason:z.string().optional(),content:geminiContentSchema.optional(),groundingMetadata:z.object({groundingChunks:z.array(z.object({web:z.object({uri:z.string(),title:z.string().optional()}).optional()})).optional()}).optional()})).optional(),
   usageMetadata:z.object({promptTokenCount:z.number().optional(),candidatesTokenCount:z.number().optional()}).optional(),
 });
+// Official adjustable filters only. Inherent provider protections still apply.
+const safetySettings=['HATE_SPEECH','SEXUALLY_EXPLICIT','DANGEROUS_CONTENT','HARASSMENT'].map(category=>({category:`HARM_CATEGORY_${category}`,threshold:'OFF'}));
+const blockedReasons=new Set(['SAFETY','BLOCKLIST','PROHIBITED_CONTENT','RECITATION','SPII','IMAGE_SAFETY','IMAGE_PROHIBITED_CONTENT','IMAGE_RECITATION','ESCALATION','PUP_LIMITED_DISABLED']);
 /** A conservative local estimate, not a provider token count; base64 bytes are never counted as text. */
 export function estimateInputTokens(input:LlmInput):number{
   let imageCount=0;
@@ -51,7 +54,9 @@ export class Gemini implements Llm {
         response=await this.http(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,{
           method:'POST',headers:{'x-goog-api-key':this.config.GEMINI_API_KEY,'content-type':'application/json'},
           body:JSON.stringify({systemInstruction:{parts:[{text:input.system}]},contents:input.contents,
-            generationConfig:{maxOutputTokens:product.llmMaxOutputTokens},
+            safetySettings,
+            generationConfig:{maxOutputTokens:product.llmMaxOutputTokens,...(input.responseJsonSchema?{responseMimeType:'application/json',responseJsonSchema:input.responseJsonSchema}:{})},
+            ...(input.requireFunctionCall && input.tools.length && !search?{toolConfig:{functionCallingConfig:{mode:'ANY'}}}:{}),
             ...(search?{tools:[{google_search:{}}]}:input.tools.length?{tools:[{functionDeclarations:input.tools}]}:{}),
           }),signal,redirect:'error',
         });
@@ -76,9 +81,15 @@ export class Gemini implements Llm {
         await this.db.query('UPDATE llm_usage SET status=$2 WHERE id=$1',[id,timeout?'timeout':'invalid']);
         throw new LlmUnavailable(timeout?'timeout':'invalid');
       }
-      await this.db.query("UPDATE llm_usage SET status='ok',input_tokens=$2,output_tokens=$3 WHERE id=$1",[id,result.usageMetadata?.promptTokenCount ?? 0,result.usageMetadata?.candidatesTokenCount ?? 0]);
+      const finish=result.candidates?.[0]?.finishReason;
+      const blocked=Boolean(result.promptFeedback?.blockReason) || blockedReasons.has(finish ?? '');
+      // Store controlled reason labels, never provider prose or request content.
+      const reason=result.promptFeedback?.blockReason ?? finish;
+      const status=blocked?`provider_blocked_${blockedReasons.has(reason ?? '')?reason!.toLowerCase():'other'}`
+        :finish==='MAX_TOKENS'?'invalid_max_tokens':!result.candidates?.[0]?.content?'invalid_content':'ok';
+      await this.db.query('UPDATE llm_usage SET status=$4,input_tokens=$2,output_tokens=$3 WHERE id=$1',[id,result.usageMetadata?.promptTokenCount ?? 0,result.usageMetadata?.candidatesTokenCount ?? 0,status]);
       this.counters.inputTokens+=result.usageMetadata?.promptTokenCount ?? 0;this.counters.outputTokens+=result.usageMetadata?.candidatesTokenCount ?? 0;
-      if(result.promptFeedback?.blockReason || ['SAFETY','BLOCKLIST','PROHIBITED_CONTENT','RECITATION'].includes(result.candidates?.[0]?.finishReason ?? ''))throw new LlmUnavailable('blocked');
+      if(blocked)throw new LlmUnavailable('blocked');
       if(result.candidates?.[0]?.finishReason==='MAX_TOKENS')throw new LlmUnavailable('invalid');
       return result;
     }

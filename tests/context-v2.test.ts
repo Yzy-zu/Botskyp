@@ -188,3 +188,13 @@ it('bounds mentioned members to five even when the current actor sorts after all
     expect(result.envelope.REFERENCE_DATA.actor.displayName).toBe('Dueño');
   });
 });
+
+it('supplies scoped ordinary dialogue as reference for a follow-up without replaying effects',async()=>{
+  await db.query("INSERT INTO context_msgs(chat_id,user_id,role,text) VALUES($1,$2,'user','bot hoy voy a cenar tacos de suadero'),($1,$2,'bot','Con salsa verde.'),($1,$3,'user','mensaje ajeno')",[chat,owner,member]);
+  await context({text:'bot y eso con qué salsa queda chido?'},async ctx=>{
+    const envelope=(await buildTurnContextV2(ctx)).envelope;
+    expect(envelope.REFERENCE_DATA.recentDialogue?.map(row=>row.text)).toEqual(['bot hoy voy a cenar tacos de suadero','Con salsa verde.']);
+    expect(envelope.CURRENT_USER_TURN.userText).toBe(ctx.msg.text);
+    expect(envelope.SYSTEM_RULES.join(' ')).not.toContain('tacos');
+  });
+});

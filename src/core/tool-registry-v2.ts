@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { product } from '../../config/product.js';
 import type { PermissionKey } from './permissions.js';
 import type { ToolRegistry } from './tools.js';
 import type { Declaration } from './llm.js';
@@ -48,10 +49,15 @@ export const backendOnlyFields = [
 ] as const;
 const descriptions: Partial<Record<BusinessToolName, string>> = {
   'notes.create': 'Crear una nota compartida del chat por petición explícita de nota. Guardar memoria personal corresponde a memory.remember.',
+  'notes.list': 'Consultar notas del chat. Para listar todas omite query; úsalo solo si el usuario pidió buscar un tema concreto, nunca la palabra genérica notas.',
+  'media.process': 'Crear o procesar archivos. Para crear un código QR llama esta función con operation=qr_create y text con el contenido exacto, sin artifactRef. Para leer QR usa qr_read y el archivo. Para sticker usa sticker. No presentes archivos como creados antes del resultado del worker.',
+  'notes.edit': 'Editar o corregir una nota existente del chat por su noteRef en REFERENCE_DATA.notes.',
   'memory.remember': 'Guardar memoria personal solo por petición explícita: guarda en tu memoria, acuérdate de que o recuerda que. Nunca crear una nota compartida para esa petición.',
   'memory.forget': 'Borrar una memoria personal por referencia o contenido, o todas (all), con confirmación.',
   'reminders.create': 'Crear un recordatorio personal. Omitir body o time si faltan; el backend pide aclaración y resuelve fecha y zona. No inventar horas ni periodos.',
-  'reminders.edit': 'Editar un recordatorio propio por referencia y semántica temporal; el backend resuelve fecha y recurrencia.',
+  'reminders.edit': 'Editar un recordatorio propio. Omite body si no cambia el texto. Si solo cambia la hora del mismo día, usa kind=date con la fecha de dueLocal del recordatorio, nunca supongas today. El backend conserva campos omitidos.',
+  'games.blackjack': `Jugar blackjack con la apuesta exacta solicitada. Mínimo ${product.gameMinBet} XP: si pide menos, explica el mínimo y pregunta cuánto quiere apostar; nunca aumentes su apuesta ni ejecutes el mínimo automáticamente.`,
+  'games.roulette': `Jugar ruleta con la apuesta exacta solicitada. Mínimo ${product.gameMinBet} XP; si pide menos, explica el mínimo, sin aumentar ni ejecutar otra apuesta.`,
   'school.task_create': 'Registrar una tarea del miembro autenticado en una materia existente. time solo si se dio fecha explícita; sin time el backend usa próxima clase o sin fecha. includeAttachment selecciona un adjunto confiable.',
   'school.task_edit': 'Editar título o fecha de una tarea propia por referencia. Owner/admin pueden editar otras del grupo; el backend valida propiedad. time=null quita la fecha.',
   'school.destination': 'Configurar destino escolar autorizado por referencia; restringido a owner/admin.',
@@ -93,6 +99,11 @@ export function modelDeclaration(tool: Pick<ToolMetadataV2, 'name' | 'descriptio
   if (!tool.llmVisible || tool.exposure === 'internal') throw new Error('Internal tool cannot be exposed');
   const schema = z.toJSONSchema(tool.modelArgsSchema);
   delete schema.$schema;
+  if(tool.name==='memory.remember'){
+    // Expose one canonical field; Policy still accepts the historical fact alias.
+    delete schema.properties?.fact;
+    schema.required=['body'];
+  }
   const forbidden = new Set(tool.backendOnlyFields.map(field => field.toLowerCase()));
   function inspect(node: unknown): void {
     if (!node || typeof node !== 'object') return;

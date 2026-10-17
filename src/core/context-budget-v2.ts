@@ -5,6 +5,7 @@ export const MAX_CONTEXT_CHARS = product.contextV2Chars;
 export function budgetContextV2(envelope: ContextEnvelopeV2): ContextEnvelopeV2 {
   const e = structuredClone(envelope), r = e.REFERENCE_DATA;
   const size = () => JSON.stringify(e).length;
+  while(size()>MAX_CONTEXT_CHARS && r.recentDialogue?.length)r.recentDialogue.shift();
   const lists = [r.recentEvents, r.recentResults, r.recentArtifacts, r.personalMemories, r.notes, r.reminders, r.school, r.members];
   for (const list of lists) while (size() > MAX_CONTEXT_CHARS && list.length) list.pop();
   for (const key of ['cooperacha','poll','game','activeSession','visionArtifact','currentArtifact','currentAttachment'] as const) {

@@ -11,6 +11,7 @@ import { readSessionV2, decideSessionV2 } from './sessions-v2.js';
 import { stateSchema } from '../modules/games/state.js';
 import { total } from '../modules/games/rules.js';
 import { contextData } from './context-data-v2.js';
+import { sanitizeOutputV2 } from './output-sanitizer-v2.js';
 import { budgetContextV2 } from './context-budget-v2.js';
 import type { TurnContextV2, SafeConversationSnapshotV2, SafeArtifactV2 } from './context-v2-types.js';
 export type { TurnContextV2 } from './context-v2-types.js';
@@ -24,7 +25,7 @@ const summaries: Readonly<Record<string, string>> = {
   'notes.list': 'El usuario consultó notas.', 'reminders.create': 'El usuario creó un recordatorio.',
   'memory.remember': 'El usuario guardó un recuerdo personal.', 'web.search': 'El usuario consultó información en la web.',
 };
-/** Authenticated, bounded, SELECT-only snapshot. Does not read legacy chat/tool payload history. */
+/** Authenticated, bounded, SELECT-only snapshot. Dialogue is reference data, never provider call history. */
 export async function buildTurnContextV2(ctx: ToolCtx, domains: readonly string[] = []): Promise<TurnContextV2> {
   const backend = await loadExecutionContext(ctx, { callOrigin: 'internal', safeRefMap: new SafeRefs([]) });
   const { actorId, chatId, actor, chat, sourceMessageId, turnId, now } = backend;
@@ -84,6 +85,12 @@ export async function buildTurnContextV2(ctx: ToolCtx, domains: readonly string[
   const events = (await c.query<{ tool_name: string; created_at: Date }>(`SELECT tool_name,created_at FROM tool_executions
     WHERE chat_id=$1 AND actor_id=$2 AND status='ok' AND turn_id<>$3 AND created_at>$4::timestamptz-$5::int*interval '1 day'
     ORDER BY created_at DESC,id DESC LIMIT $6`, [chatId, actorId, turnId, now, product.contextRetentionDays, product.contextV2Events])).rows;
+  const dialogue=(await c.query<{role:'user'|'bot';text:string}>(`SELECT role,text FROM context_msgs
+    WHERE chat_id=$1 AND user_id=$2 AND result_kind IS NULL AND created_at>$3::timestamptz-$4::int*interval '1 day'
+    ORDER BY id DESC LIMIT $5`,[chatId,actorId,now,product.contextRetentionDays,product.contextMessages])).rows.reverse()
+    // Old v1 tool payloads are not conversation. History stays declarative reference data.
+    .filter(row=>row.role==='user' || !/\b(?:functionCalls?|functionResponse|queued|uncertain)\b/u.test(row.text))
+    .map(row=>({role:row.role,text:sanitizeOutputV2(row.text).slice(0,product.contextV2ResultChars)}));
   const safeRefMap = new SafeRefs(resources);
   const refEntries = safeRefMap.list(scope).map(entry => ({ ...entry, resolved: safeRefMap.resolve(entry.ref,entry.kind,scope) }));
   function ref(kind: RefKind, id: string): SafeRef {
@@ -118,6 +125,7 @@ export async function buildTurnContextV2(ctx: ToolCtx, domains: readonly string[
     personalMemoryAvailable, personalMemories: memories.map(m => ({ ref: ref('memoryRef', m.id), text: contextData(m.body) })),
     recentResults: results.map((r, i) => ({ ref: i === 0 ? 'R_LAST' : `R_${i + 1}` as const, kind: r.result_kind, excerpt: contextData(r.text).slice(0, product.contextV2ResultChars), ageSec: Math.max(0, Math.floor((now.getTime() - r.created_at.getTime()) / 1000)) })),
     recentEvents: events.map(e => ({ kind: 'resolved_event', summary: summaries[e.tool_name] ?? 'Una operación anterior terminó.', ageSec: Math.max(0, Math.floor((now.getTime() - e.created_at.getTime()) / 1000)) })),
+    recentDialogue:dialogue,
   };
   if (game?.kind === 'blackjack' && snapshot.game) {
     const state = stateSchema.safeParse(game.state);

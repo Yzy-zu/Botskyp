@@ -1,5 +1,7 @@
 import { currentResultV2 } from './current-result-v2.js';
 import { product } from '../../config/product.js';
+import pino from 'pino';
+import { z } from 'zod';
 import type { ToolCtx } from './tools.js';
 import type { Llm, Image, LlmReply } from './llm.js';
 import { LlmUnavailable } from './llm.js';
@@ -11,16 +13,19 @@ import type { ToolExposureTurn } from './tool-exposure.js';
 import { geminiContentSchema, geminiToolContext, geminiFunctionResult } from './provider-tool-context.js';
 import { executeToolV2, evaluateToolV2 } from './policy-v2/executor.js';
 import type { ToolResult } from './tool-result.js';
-import { localPresenterV2, visibleToolResultV2, conversationTextV2 } from './composer-v2.js';
+import { localPresenterV2, visibleToolResultV2, conversationTextV2, conversationalOutcomeV2 } from './composer-v2.js';
 
 export type RouterMetricsV2={callsPerTurn:number;inputTokens:number;outputTokens:number;toolCount:number;capabilityExpansion:number;synthesisUsed:boolean;mutationRetry:number;routerLatency:number;backendFieldAttempts:number};
 const retryInstruction='El usuario pidió una acción. Selecciona una tool disponible o explica por qué no puede realizarse. No afirmes que ocurrió sin tool.';
+const log=pino({level:'info'});
+const synthesisSchema=z.toJSONSchema(conversationalOutcomeV2);
+delete synthesisSchema.$schema;
 function backendAttempts(args:unknown):number{
   if(!args || typeof args!=='object')return 0;
   return Object.entries(args).reduce((sum,[k,v])=>sum+((backendOnlyFields as readonly string[]).some(f=>f.toLowerCase()===k.toLowerCase())?1:0)+backendAttempts(v),0);
 }
 function providerFailure(error:unknown):string{
-  if(error instanceof LlmUnavailable && error.kind==='blocked')return 'No pude responder esa solicitud. Intenta plantearla de otra forma.';
+  if(error instanceof LlmUnavailable && error.kind==='blocked')return 'Gemini bloqueó esa solicitud por sus propias restricciones. No pude completarla.';
   if(error instanceof LlmUnavailable && ['quota','local_limit'].includes(error.kind))return 'Llegué al límite de IA por ahora. Inténtalo más tarde.';
   return 'La IA no pudo responder en este momento. Inténtalo más tarde.';
 }
@@ -36,7 +41,7 @@ export async function naturalToolLoopV2(ctx:ToolCtx,llm:Llm,catalog:readonly Too
   async function generate(synthesis=false):Promise<LlmReply>{
     if(metrics.callsPerTurn>=product.llmMaxCalls)throw new LlmUnavailable('local_limit','message');
     metrics.callsPerTurn++;
-    const reply=await llm.generate({...(ctx.turnId?{turnId:ctx.turnId}:{}),system:system+(synthesis?'\nEsta vuelta solo sintetiza los resultados visibles. Contesta la pregunta con fuentes disponibles. No solicites acciones nuevas. Usa el mismo JSON de outcome sin effects.':''),contents:structuredClone(contents),tools:synthesis?[]:[...exposure.exposure.schemas]});
+    const reply=await llm.generate({...(ctx.turnId?{turnId:ctx.turnId}:{}),...(synthesis?{responseJsonSchema:synthesisSchema}:metrics.mutationRetry?{requireFunctionCall:true}:{}),system:system+(synthesis?'\nEsta vuelta solo sintetiza los resultados visibles. Contesta la pregunta con fuentes disponibles. No solicites acciones nuevas. Usa el mismo JSON de outcome sin effects.':''),contents:structuredClone(contents),tools:synthesis?[]:[...exposure.exposure.schemas]});
     metrics.inputTokens+=reply.usage?.inputTokens ?? 0;metrics.outputTokens+=reply.usage?.outputTokens ?? 0;
     return reply;
   }
@@ -87,6 +92,7 @@ export async function naturalToolLoopV2(ctx:ToolCtx,llm:Llm,catalog:readonly Too
         if(!tool || !exposed){
           const policy=tool?await evaluateToolV2(ctx,tool.name,call.args ?? {},{callOrigin:'llm',safeRefMap:context.safeRefMap,...(call.id?{providerCallId:call.id}:{}),toolExposureCount:exposure.exposure.schemas.length}):undefined;
           const denied:ToolResult={toolName:tool?.name ?? 'core.unknown',domain:tool?.domain ?? 'core',status:'denied',code:policy?.denialCode ?? 'DENIED_TOOL_NOT_EXPOSED',data:{}};
+          log.info({routerOutcome:tool?'tool_not_exposed':'tool_not_found',turnId:ctx.turnId},'Natural router unavailable tool');
           results.push(denied);responses.push(geminiFunctionResult(call,visibleToolResultV2(denied)));continue;
         }
         if(call.id===''){responses.push(geminiFunctionResult(call,{status:'denied',message:'La solicitud no es válida.'}));continue;}
@@ -110,12 +116,15 @@ export async function naturalToolLoopV2(ctx:ToolCtx,llm:Llm,catalog:readonly Too
       // Synthesis is read-only even if the provider violates the no-tools request.
       if(content.success && !geminiToolContext(content.data).calls.length){
         const answer=conversationTextV2(content.data.parts.filter(p=>!p.thought).map(p=>p.text ?? '').join(''));
-        if(!answer.retry)return answer.text;
+        if(!answer.retry && answer.valid)return answer.text;
       }
       return local();
     }
     return `${local()}${results.length?'\n\n':''}Llegué al límite de acciones de esta solicitud. Lo que falte, pídemelo en otro mensaje.`;
-  }catch(error){return results.length?local():providerFailure(error);}
+  }catch(error){
+    log.info({routerOutcome:error instanceof LlmUnavailable?(error.kind==='blocked'?'provider_blocked':'technical_failure'):'technical_failure',reason:error instanceof LlmUnavailable?error.kind:'internal',turnId:ctx.turnId},'Natural router failure');
+    return results.length?local():providerFailure(error);
+  }
   finally{
     if(llm.counters && initialCounters){metrics.callsPerTurn=llm.counters.calls-initialCounters.calls;metrics.inputTokens=llm.counters.inputTokens-initialCounters.inputTokens;metrics.outputTokens=llm.counters.outputTokens-initialCounters.outputTokens;}
   }

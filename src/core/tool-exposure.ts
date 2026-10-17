@@ -37,7 +37,7 @@ const signals: Readonly<Partial<Record<CapabilityDomain, RegExp>>> = {
   polls: /\b(?:voto|vota|votar|encuesta|encuestas|sondeo)\b/gu,
   school: /\b(?:tarea|tareas|horario|materia|materias|escuela|clase|clases)\b/gu,
   games: /\b(?:blackjack|ruleta|juego|juegos|partida|plantarse|doblar|airdrop)\b/gu,
-  media: /\b(?:pdf|docx|convierte|convertir|comprimelo|comprimir|sticker|audio|video|ocr|transcribe)\b/gu,
+  media: /\b(?:pdf|docx|convierte|convertir|comprimelo|comprimir|sticker|audio|video|ocr|transcribe|qr)\b/gu,
   library: /\b(?:biblioteca|pack|packs|cooperacha|lluvia)\b/gu,
   moderation: /\b(?:warn|warns|moderacion|castigo)\b/gu,
   minecraft: /\b(?:minecraft|bedrock|mc)\b/gu,
@@ -80,7 +80,7 @@ function domainTools(catalog: readonly ToolMetadataV2[], domain: CapabilityDomai
 export const loadCapabilityArgsSchema = z.strictObject({ domain: capabilityDomainSchema });
 export const loadCapabilityMetaTool = Object.freeze({
   name: 'core.load_capability', domain: 'core', llmVisible: true, exposure: 'always',
-  descriptionForModel: 'Pedir al backend schemas de un dominio relevante para este turno. Una expansión máxima; sin ejecutar acciones. Visibilidad nunca concede permiso.',
+  descriptionForModel: 'Cargar funciones de un dominio: productivity incluye notas, recordatorios y memoria; economy incluye XP. Usa literalmente un valor de domain del schema. Una expansión máxima; sin ejecutar acciones. Visibilidad nunca concede permiso.',
   modelArgsSchema: loadCapabilityArgsSchema,
 });
 function metaDeclaration(): Declaration {
@@ -112,7 +112,9 @@ export function selectToolExposure(catalog: readonly ToolMetadataV2[], input: To
     const representative = domainTools(catalog, domain, input).find(tool => !tools.includes(tool));
     if (representative && tools.length < MAX_TOOLS_PER_TURN - 1) tools.push(representative);
   }
-  for (const domain of relevant) {
+  // An explicit new request must not lose its tools to an old poll or recent file.
+  const fillOrder=[...new Set([...lexicalDomains(normalize(input.text),'').filter(domain=>domain!=='admin'),...relevant])];
+  for (const domain of fillOrder) {
     // Core contributes only the definitive always-on set. Admin is last, including role fallback.
     if (domain === 'core') continue;
     for (const tool of domainTools(catalog, domain, input)) {

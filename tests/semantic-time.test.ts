@@ -10,8 +10,11 @@ function local(input: SemanticTimeInput, base = now): string {
   return DateTime.fromJSDate(result.dueAt, { zone: result.timezone }).toFormat('yyyy-MM-dd HH:mm');
 }
 it('resolves en 20 minutos from the backend clock', () => expect(local({ kind: 'relative', amount: 20, unit: 'minute' })).toBe('2026-10-17 12:20'));
-it('resolves mañana a las 8 pm and de la noche to 20:00', () => {
-  for (const meridiem of ['pm', 'night'] as const) expect(local({ kind: 'tomorrow', hour: 8, meridiem })).toBe('2026-10-18 20:00');
+it('resolves mañana a las 8 pm and de la noche to 20:00, and accepts consistent 24h pm/night hours', () => {
+  for (const meridiem of ['pm', 'night'] as const) {
+    expect(local({ kind: 'tomorrow', hour: 8, meridiem })).toBe('2026-10-18 20:00');
+    expect(local({ kind: 'tomorrow', hour: 21, meridiem })).toBe('2026-10-18 21:00');
+  }
 });
 it('mañana a las 8 requires clarification; explicit 24h is accepted', () => {
   expect(resolveSemanticTime({ kind: 'tomorrow', hour: 8 }, now)).toEqual({ status: 'needs_clarification', code: 'ambiguous_hour' });

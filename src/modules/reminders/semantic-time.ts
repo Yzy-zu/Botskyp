@@ -31,9 +31,9 @@ export function resolveSemanticTime(input: SemanticTimeInput, now: Date): Semant
     let hour = value.hour;
     if (!value.meridiem && hour >= 1 && hour <= 12) return { status: 'needs_clarification', code: 'ambiguous_hour' };
     if (value.meridiem && value.meridiem !== '24h') {
-      if (hour < 1 || hour > 12) return { status: 'error', code: 'invalid_time' };
       const pm = ['pm', 'afternoon', 'night'].includes(value.meridiem);
-      hour = hour % 12 + (pm ? 12 : 0);
+      if ((hour === 0 && !['am', 'night'].includes(value.meridiem)) || (hour > 12 && !pm)) return { status: 'error', code: 'invalid_time' };
+      if (hour >= 1 && hour <= 12) hour = hour % 12 + (pm ? 12 : 0);
     }
     let day: DateTime = base.startOf('day');
     if (value.kind === 'tomorrow') day = day.plus({ days: 1 });

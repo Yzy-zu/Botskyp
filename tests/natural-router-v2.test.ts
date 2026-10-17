@@ -72,6 +72,8 @@ it('retries structured action intent once, then executes a real memory write',as
   expect((await turn('oye acuérdate de que estudio sistemas',llm)).text).toContain('guardé');
   expect(await count('user_memories')).toBe(1);
   expect(JSON.stringify(llm.generate.mock.calls[1]?.[0])).toContain('El usuario pidió una acción.');
+  expect(llm.generate.mock.calls[0]?.[0].requireFunctionCall).toBeUndefined();
+  expect(llm.generate.mock.calls[1]?.[0].requireFunctionCall).toBe(true);
 });
 it.each(['hola','cuánto es 2+2','explícame la gravedad','qué opinas de esto'])('allows ordinary conversation without tools: %s',async text=>{
   const llm=scripted(say('Aquí tienes una respuesta útil.'));
@@ -184,7 +186,7 @@ it.each(['qué raza será?','qué dice ahí?','cuánto cuesta esto?','qué opina
   });
   expect((await turn(text,llm)).text).toContain('Veo la imagen');expect(llm.generate).toHaveBeenCalledOnce();
 });
-it.each(['100@s.whatsapp.net','123e4567-e89b-12d3-a456-426614174000','2026-10-17T12:00:00Z','/home/botsky/.env','notes.create','{"actorId":"x"}','GEMINI_API_KEY','Gemini','Trabajo #13','queued','uncertain'])('output sanitizer removes internal UX: %s',async internal=>{
+it.each(['100@s.whatsapp.net','123e4567-e89b-12d3-a456-426614174000','2026-10-17T12:00:00Z','/home/botsky/.env','notes.create','{"actorId":"x"}','GEMINI_API_KEY','Trabajo #13','queued','uncertain'])('output sanitizer removes internal UX: %s',async internal=>{
   const output=sanitizeOutputV2(`Dato interno: ${internal}`);expect(output).not.toContain(internal);clean(output);
 });
 it('function responses never export IDs, paths, hashes, exceptions or secrets',()=>{
@@ -436,4 +438,45 @@ it('multiple results never send authoritative XP or wagers back for model rewrit
 it.each([owner,'123e4567-e89b-12d3-a456-426614174000','/home/private/file','GEMINI_API_KEY','{"actorId":"internal"}'])('function response message and data both sanitize user content: %s',value=>{
   const visible=visibleToolResultV2({status:'ok',toolName:'notes.list',domain:'productivity',code:'NOTES_LIST',data:{notes:[{id:'1',body:`Dato: ${value}`}]}});
   expect(JSON.stringify(visible)).not.toContain(value);
+});
+
+it('accepts a fenced JSON conversation while retaining the no-effects contract',()=>{
+  const wrap=(text:string,effects:unknown[]=[])=>'```json\n'+JSON.stringify({outcome:'conversation',text,effects})+'\n```';
+  expect(conversationTextV2(wrap('El 15% de 280 es 42.'))).toMatchObject({text:'El 15% de 280 es 42.',retry:false});
+  expect(conversationTextV2(wrap('Listo',[{action:'notes.create',status:'ok'}])).text).toContain('No ejecuté');
+  expect(sanitizeOutputV2('Gemini bloqueó esa solicitud.')).toBe('Gemini bloqueó esa solicitud.');
+});
+
+it('retries an action_required draft with simulated calls, executing only the actual next functionCall',async()=>{
+  const draft=JSON.stringify({outcome:'action_required',text:'Aquí va tu QR',effects:[{name:'media_process',arguments:{operation:'qr_create',text:'fiesta'}}]});
+  const llm=scripted(say(draft,false),reply([{name:'media_process',args:{operation:'qr_create',text:'fiesta'}}]));
+  await turn('bot haz un QR que diga fiesta',llm);
+  expect(llm.generate).toHaveBeenCalledTimes(2);
+  expect(await count('jobs')).toBe(1);
+});
+it('keeps web sources when synthesis returns prose instead of the required outcome',async()=>{
+  const llm=scripted(reply([{name:'web_search',args:{query:'ajolote'}}]),say('Texto sin contrato',false));
+  const result=await turn('bot busca ajolote en la web',llm,async ctx=>{ctx.search=async()=> 'Ajolote\nAnfibio mexicano\nhttps://example.com/ajolote';});
+  expect(result.text).toContain('Anfibio mexicano');
+  expect(result.text).toContain('https://example.com/ajolote');
+  expect(llm.generate.mock.calls[1]?.[0].responseJsonSchema).toBeDefined();
+});
+it('changes only the hour of a reminder while keeping its existing text and date',async()=>{
+  const llm=scripted(input=>{
+    const ref=envelope(input).REFERENCE_DATA.reminders[0]!.ref;
+    return reply([{name:'reminders_edit',args:{reminderRef:ref,time:{kind:'date',date:'2026-12-01',hour:21,meridiem:'pm'}}}]);
+  });
+  const output=await turn('bot cambia ese recordatorio a las 9 de la noche, el mismo día',llm,async ctx=>{
+    await ctx.c.query("INSERT INTO reminders(chat_id,owner_id,body,due_at,timezone) VALUES($1,$2,'comprar tortillas','2026-12-02T02:00:00Z','America/Mexico_City')",[ctx.chat.id,ctx.actor.id]);
+  });
+  const saved=(await db.query('SELECT body,due_at FROM reminders')).rows[0];
+  expect(output.text).toContain('21:00');
+  expect(output.text).not.toMatch(/#\d/);
+  expect(saved.body).toBe('comprar tortillas');
+  expect(saved.due_at.toISOString()).toBe('2026-12-02T03:00:00.000Z');
+});
+
+it('keeps an honest missing-file explanation containing guardado',()=>{
+  const text='No hay ningún QR anterior guardado ni archivo al que referirme. Mándalo otra vez.';
+  expect(conversationTextV2(JSON.stringify({outcome:'conversation',text,effects:[]})).text).toBe(text);
 });

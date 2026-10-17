@@ -67,7 +67,7 @@ export async function normalizeLegacyResult(ctx: ExecutionContextV2, tool: ToolM
     const op = (await c.query<{ id: string; status: string }>('SELECT id,status FROM bulk_ops WHERE chat_id=$1 AND actor_id=$2 AND source_id=$3 AND kind=$4', [ctx.chatId, ctx.actorId, ctx.sourceMessageId, tool.name === 'bulk.nuclear' ? 'nuclear' : tool.name === 'bulk.broadcast' ? 'broadcast' : 'message'])).rows[0];
     return { ...base, status: op?.status === 'queued' ? 'queued' : 'uncertain', code, data: { operationId: op?.id, operationStatus: op?.status, count: args.count ?? (Array.isArray(args.destinations) ? args.destinations.length : 1) } };
   }
-  if(tool.name==='reminders.create')return {...base,status:'ok',code,data:{body:args.body,dueAt:args.dueAt}};
+  if(tool.name==='reminders.create' || tool.name==='reminders.edit')return {...base,status:'ok',code,data:{body:args.body,dueAt:args.dueAt}};
   if(tool.name==='notes.create')return {...base,status:'ok',code,data:{body:args.body}};
   if (['memory.remember','notes.delete'].includes(tool.name)) return { ...base, status: 'ok', code, data: result.facts };
   if (tool.name.startsWith('drive.') && result.facts.jobId) return { ...base, status: 'queued', code: 'LEGACY_JOB_QUEUED', data: { jobId: result.facts.jobId } };

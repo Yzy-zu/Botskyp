@@ -14,7 +14,7 @@ export function sanitizeOutputV2(text: string): string {
     .replace(/^#\d+:?\s*/gmu, '')
     .replace(/\b(?:[A-Z][A-Z0-9]*_){1,}[A-Z0-9_]+\b/gu, '[configuración interna]')
     .replace(/\b(?:queued|processing|uncertain|pending_review)\b/giu, 'pendiente de confirmar')
-    .replace(/\b(?:Gemini|SearXNG|redspi|PermissionKey|Policy Engine|backend|schema)\b/giu, 'el servicio')
+    .replace(/\b(?:redspi|PermissionKey|Policy Engine|backend|schema)\b/giu, 'el servicio')
     .replace(/\b(?:core|notes|memory|reminders|xp|games|polls|school|minecraft|media|library|packs|cooperacha|web|drive|bulk|messaging|control|diag)[._][a-z][a-z_-]*(?:\.[a-z_-]+)?\b/giu, 'esa función');
   // Internal objects are never a user response. They are not repaired by hiding individual keys.
   if (/"(?:actorId|chatId|toolName|permission|executionKey|confirmationId|confirmationHash|result_json|providerCallId|logicalActionId)"\s*:/u.test(safe) || /(?:confirmationHash|executionKey|logicalActionId|providerCallId|raw SQL|SELECT .+ FROM)/iu.test(safe)) {

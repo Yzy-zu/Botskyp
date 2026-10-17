@@ -141,3 +141,23 @@ it('applies environment quota reductions before making provider requests',async(
   await expect(llm.generate(input)).rejects.toMatchObject({kind:'local_limit',reason:'global'});
   expect(http).toHaveBeenCalledOnce();
 });
+
+it('disables only adjustable provider filters and records blocked responses with their actual usage',async()=>{
+  const http=vi.fn<typeof fetch>(async()=>Response.json({candidates:[{finishReason:'SPII'}],usageMetadata:{promptTokenCount:18,candidatesTokenCount:2}}));
+  const llm=new Gemini(db,config,'actor',{used:0},http);
+  await expect(llm.generate(input)).rejects.toMatchObject({kind:'blocked'});
+  const body=JSON.parse(String(http.mock.calls[0]?.[1]?.body)) as {safetySettings:{category:string;threshold:string}[]};
+  expect(body.safetySettings).toHaveLength(4);
+  expect(body.safetySettings).toContainEqual({category:'HARM_CATEGORY_SEXUALLY_EXPLICIT',threshold:'OFF'});
+  expect(body.safetySettings.every(s=>s.threshold==='OFF')).toBe(true);
+  expect((await db.query('SELECT status,input_tokens,output_tokens FROM llm_usage')).rows[0]).toEqual({status:'provider_blocked_spii',input_tokens:18,output_tokens:2});
+  expect(llm.counters).toEqual({calls:1,inputTokens:18,outputTokens:2});
+  expect(http).toHaveBeenCalledOnce();
+});
+
+it('uses native function-calling ANY only for a requested correction with tools',async()=>{
+  const http=vi.fn<typeof fetch>(async()=>success());
+  const llm=new Gemini(db,config,'actor',{used:0},http);
+  await llm.generate({...input,requireFunctionCall:true,tools:[{name:'media_process',description:'Crear QR',parametersJsonSchema:{type:'object',properties:{},additionalProperties:false}}]});
+  expect(JSON.parse(String(http.mock.calls[0]?.[1]?.body)).toolConfig).toEqual({functionCallingConfig:{mode:'ANY'}});
+});

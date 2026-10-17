@@ -26,6 +26,7 @@ export type SafeConversationSnapshotV2 = {
   personalMemories: { ref: SafeRef; text: string }[];
   recentResults: { ref: 'R_LAST' | `R_${number}`; kind: string; excerpt: string; ageSec: number }[];
   recentEvents: { kind: 'resolved_event'; summary: string; ageSec: number }[];
+  recentDialogue?: { role: 'user' | 'bot'; text: string }[];
 };
 export type ContextEnvelopeV2 = {
   SYSTEM_RULES: readonly string[];

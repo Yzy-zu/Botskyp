@@ -1,4 +1,5 @@
 import { product } from '../../../config/product.js';
+import { DateTime } from 'luxon';
 import { permitted, moduleEnabled, privateEligible } from '../permissions.js';
 import type { ToolMetadataV2 } from '../tool-registry-v2.js';
 import type { Tool } from '../tools.js';
@@ -86,6 +87,14 @@ export async function evaluateToolPolicy(ctx: ExecutionContextV2, tool: ToolMeta
     const options = (await ctx.legacy.c.query<{ idx: number }>('SELECT idx FROM poll_options WHERE poll_id=$1 AND lower(label)=lower($2)', [args.pollRef, args.option])).rows;
     if (options.length !== 1) return decision('needs_clarification', 'POLL_OPTION_AMBIGUOUS');
     args.option = options[0]!.idx;
+  }
+  if(!confirmedResolvedArgs && tool.name==='reminders.edit'){
+    const saved=(await ctx.legacy.c.query<{body:string;due_at:Date;timezone:string;recurrence:unknown}>(
+      "SELECT body,due_at,timezone,recurrence FROM reminders WHERE id::text=$1 AND chat_id=$2 AND owner_id=$3 AND status='pending'",
+      [args.reminderRef,ctx.chatId,ctx.actorId])).rows[0];
+    if(!saved)return decision('not_found','REF_NOT_FOUND');
+    const due=DateTime.fromJSDate(saved.due_at,{zone:saved.timezone});
+    args={body:saved.body,dueAt:due.toISO(),timezone:saved.timezone,...(saved.recurrence?{recurrence:saved.recurrence}:{}),...args};
   }
   const translated = confirmedResolvedArgs ? legacy.args.safeParse(args) : null;
   if (translated) {

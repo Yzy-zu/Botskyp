@@ -1358,3 +1358,44 @@ un voto, tarea, juego o job existente acredite falsamente otra acción propuesta
 La selección de artifact entra al hash y polls.vote presenta el voto real en BD.
 Los cambios de mensajes de errores/progreso se limitan a v1_1. Una conversación
 malformada no induce el retry de acción si no hay intención/afirmación de efecto.
+
+## 17. R5 con Gemini real (17-10-2026)
+
+### DEC-063: Prueba cotidiana real, sin moderación propia ni infraestructura nueva
+
+Autorización del dueño desde `387f3dd47e82f201f78df262ee90d8eb5c16a615`:
+Gemini real, unas 20–30 conversaciones de amigos y correcciones pequeñas.
+Sin deploy, merge a main, cambios a Evolution ni implementación de los ocho
+puentes pendientes. El producto no incorpora una política propia de censura;
+§0 del Plan Maestro lo explicita. Cuotas y controles técnicos se conservan.
+
+Se explicita OFF en los cuatro filtros ajustables oficiales de GenerateContent;
+las protecciones inherentes y negativas del modelo siguen perteneciendo a Google.
+Los bloqueos se contabilizan como provider_blocked_<motivo>, conservando tokens,
+sin reintentos de evasión. Se conserva el nombre del proveedor en mensajes de error.
+
+La prueba real descubrió JSON válido envuelto en Markdown que Composer descartaba,
+y pérdida de contexto porque R4 solo transmitía eventos fijos de acciones. Se
+acepta una envoltura Markdown completa manteniendo el contrato JSON sin efectos.
+Se añade diálogo reciente acotado de context_msgs, exclusivamente del actor/chat,
+como REFERENCE_DATA; nunca se importa como functionCalls ni instrucciones actuales.
+Esto sustituye la exclusión absoluta de prosa histórica de DEC-061 para resolver
+«eso» y correcciones naturales. No cambia identidad, permisos ni recibos R3.
+No hay tablas nuevas, dependencias nuevas ni despliegue. Evidencia y límites en
+`docs/v1.1/R5-GEMINI-REAL.md`.
+
+El smoke real también justificó correcciones concretas: memory.remember expone a
+Gemini solo body (Policy mantiene fact para callers históricos); notes.list omite
+el filtro genérico «notas»; editar recordatorio conserva campos omitidos desde la
+fila propia y acepta 21 pm como 21:00. La exposición llena primero los dominios
+pedidos en el mensaje actual, conservando representantes del contexto: un QR y
+una encuesta anterior no deben ocultar reminders.edit.
+
+La síntesis usa responseJsonSchema oficial y vuelve a fuentes locales si el modelo
+rompe el contrato. La única corrección ya prevista de action_required usa el modo
+oficial functionCallingConfig.ANY; no hay retry adicional ni ejecución de pseudo
+calls dentro de JSON. La detección de éxito dejó de considerar la palabra aislada
+«guardado» como prueba de una mutación: bloqueaba «no hay un QR anterior guardado».
+La apuesta mínima se explica sin aumentar el importe pedido; las reglas económicas
+permanecen intactas. La persona reduce humillación automática y conserva cotorreo,
+groserías y temas adultos. No se añaden filtros de contenido.

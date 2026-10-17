@@ -180,3 +180,24 @@ Historial operativo de fallos, causas, impacto y soluciones aplicadas en producc
   facturación ni bucle de reintentos. Disponibilidad externa observada, no garantizada.
 - **Evidencia:** logs privados `phase5-real-integration.log` y
   `phase5-audio-diagnostic.log`; producción siguió healthy y `/health` HTTP 200.
+
+### [INC-20261017-R5] Respuesta correcta descartada y referencias sin contexto en smoke
+
+- **Fase:** R5, prueba local con Gemini real; producción sin cambios.
+- **Síntomas:** «15% de 280» devolvió fallback aunque Gemini respondió 42; «eso»
+  tras hablar de tacos obtuvo una respuesta sin saber de qué comida se hablaba.
+- **Causa:** JSON con fence Markdown no admitido por Composer; R4 omitía todo el
+  diálogo guardado y solo enviaba eventos fijos de acciones.
+- **Solución:** quitar únicamente el fence completo antes de validar JSON y enviar
+  diálogo reciente acotado/scoped como datos de referencia. Regresiones específicas
+  y repetición real documentadas en `v1.1/R5-GEMINI-REAL.md`. Sin rollback ni deploy.
+
+- **Otros hallazgos del mismo smoke:** body/fact duplicados en memoria; búsqueda
+  de todas las notas filtrada por «notas»; edición parcial de recordatorio rechazada
+  por contenido omitido/21 pm; síntesis web en prosa descartada; QR expresado como
+  intención sin llamada; edición oculta por slots ocupados por poll/archivo anterior;
+  falso positivo de «guardado» en una explicación negativa y aumento automático
+  de apuesta de 1 a 20 XP. Correcciones, regresiones y repeticiones en el informe.
+- **Fallo del montaje de prueba:** docker cp falló por rootfs readonly del worker.
+  Se usó stdin/stdout y su /tmp ya existente para ejecutar el mismo procesador;
+  sin alterar el contenedor ni scripts productivos. QR/lectura/sticker completados.

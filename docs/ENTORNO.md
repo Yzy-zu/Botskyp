@@ -460,3 +460,11 @@ OOM/restarts ni warnings/errores nuevos observados. Detalles/imágenes en FASE-8
 Árbol versionado limpio de hallazgos; doce blobs históricos con JIDs pendientes de
 saneamiento explícito. Sin merge ni declaración de v1 terminado. Auditoría FINAL
 pendiente; constructor detenido.
+
+## R5 — Gemini real en prueba aislada (17-10-2026)
+
+Adapter REST probado con `gemini-3.5-flash-lite` y la clave/free tier existentes.
+BD temporal, identidades ficticias y MockEvolution; SearXNG existente, consultas
+Minecraft con llave restringida y procesadores reales del worker vía su /tmp.
+Sin despliegue, cambios a Evolution, cuotas productivas ni activación de chats.
+Resultados y consumo en [R5-GEMINI-REAL](v1.1/R5-GEMINI-REAL.md).

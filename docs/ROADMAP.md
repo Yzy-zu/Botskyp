@@ -300,3 +300,19 @@ explícitos. Cinco pruebas de procesadores reales aislados y checks estáticos,
 secretos y Compose correctos. Código final 2de275e; informe de cierre en
 R5-NATURAL-ROUTER.md. Ocho puentes siguen cerrados. Tras el push, detenerse;
 no autoriza despliegue, Canary ni merge.
+
+## 16. R5 — Smoke cotidiano con Gemini real (17-10-2026)
+
+El dueño autoriza desde `387f3dd47e82f201f78df262ee90d8eb5c16a615` el uso del
+adapter REST con Gemini real, conversaciones coloquiales y fixes de bugs observados.
+Un constructor, sin delegación. DEC-063 y `v1.1/R5-GEMINI-REAL.md` documentan el
+alcance y los resultados. Solo BD temporal, transporte mock y lecturas reales
+externas; mutaciones inocuas dentro de la prueba. Sin deploy general, merge a
+main, activación WhatsApp ni puentes adicionales. Detenerse tras entregar resultados.
+
+Smoke entregado: 28 conversaciones, 72 turnos principales incluyendo repeticiones,
+92 respuestas Gemini confirmadas contando exploración. Código `42bb456`; informe
+R5-GEMINI-REAL con consumo, resultados y límites. Checks estáticos correctos;
+primera suite 1148/1150 y repetición de seis archivos contra código fijo 190/190,
+incluidos los dos resultados afectados por cambios durante la corrida. Sin deploy
+ni merge; no avanzar de fase ni activar WhatsApp por esta autorización.

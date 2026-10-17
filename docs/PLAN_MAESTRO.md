@@ -20,6 +20,7 @@ Salen del cuestionario contestado (`docs/owner-answers.md`) y de las confirmacio
 |---|---|
 | Costo | **Cero adicional.** Se aprovechan Oracle Free Tier, Gemini/API gratuita y las suscripciones ya disponibles del dueño para desarrollo. Ningún servicio nuevo de pago ni gasto sin permiso expreso. |
 | IA dentro de Botsky | Google Gemini mediante el nivel gratuito disponible en AI Studio: conversación, visión de imágenes y transcripción de audio. Los nombres de modelo se verifican en la Fase 1 y no se fijan de memoria. |
+| Contenido conversacional (17-10-2026) | Bot privado y relajado para amigos. Botsky no añade moderación general, clasificadores NSFW ni negativas por vulgaridad, humor negro o temas adultos. Conserva seguridad técnica y permisos. Los rechazos propios de proveedores se explican como limitaciones externas, sin falsos éxitos ni intentos de eludirlos. |
 | Agentes de desarrollo | Arquitecto/revisor + constructor(es). Pueden trabajar por SSH en VPS o desde la computadora del dueño, hacer commit y push, y avanzar sin esperar cuando pasan las pruebas. Git es el estado compartido. |
 | WhatsApp | Un solo número, prepago, desechable, ya vinculado a Evolution. Es el mismo para pruebas y producción. Estará en los grupos como administrador. |
 | VPS | Oracle Cloud, 4 vCPU, 8 GB de RAM, 50–100 GB, Ubuntu Server, Docker y Evolution ya funcionando. El dueño tiene más VPS disponibles para pruebas. |

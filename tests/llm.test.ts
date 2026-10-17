@@ -109,3 +109,35 @@ it('uses the vision deadline for images and records a response-body timeout too'
   const bodyTimeout=vi.fn<typeof fetch>(async()=>{const response=success();vi.spyOn(response,'json').mockRejectedValue(new DOMException('timeout','TimeoutError'));return response;});
   await expect(new Gemini(db,config,'actor',{used:0},bodyTimeout).generate(input)).rejects.toMatchObject({kind:'timeout'});
 });
+
+it('preserves exact Gemini call IDs, original ordered parts and opaque signatures through a prepared loop',async()=>{
+  const {geminiFunctionResult}=await import('../src/core/provider-tool-context.js');
+  const content={role:'model',providerExtension:'keep',parts:[
+    {text:'internal',thought:true,thoughtSignature:'opaque-thought'},
+    {functionCall:{id:'Provider-ID/Exact==',name:'notes_search',args:{query:'x'},extra:'keep'},thoughtSignature:'opaque-call',partMetadata:{key:'keep'}},
+    {functionCall:{id:'second-ID',name:'notes_search',args:{query:'y'}}},
+    {toolCall:{id:'server-tool',name:'opaque'},thoughtSignature:'server-signature'},
+  ]};
+  const http=vi.fn<typeof fetch>(async()=>Response.json({candidates:[{content}],usageMetadata:{promptTokenCount:5}}));
+  const llm=new Gemini(db,config,'actor',{used:0},http);
+  const reply=await llm.generate(input);
+  expect(reply.text).toBe('');
+  expect(reply.content).toEqual(content);
+  expect(reply.calls[0]?.id).toBe('Provider-ID/Exact==');
+  expect(reply.providerContext?.modelContent).toBe(reply.content);
+  expect(reply.providerContext?.calls.map(c=>c.partIndex)).toEqual([1,2]);
+  const parts=reply.calls.map(call=>geminiFunctionResult(call,{status:'ok'}));
+  expect(parts[0]?.functionResponse.id).toBe('Provider-ID/Exact==');
+  await llm.generate({...input,contents:[...input.contents,reply.providerContext!.modelContent,{role:'user',parts}]});
+  const sent=JSON.parse(String(http.mock.calls[1]?.[1]?.body)) as {contents:unknown[]};
+  expect(sent.contents[1]).toEqual(content);
+  expect(sent.contents[2]).toEqual({role:'user',parts});
+  expect(geminiFunctionResult({name:'legacy',args:{}},{status:'ok'}).functionResponse).not.toHaveProperty('id');
+});
+it('applies environment quota reductions before making provider requests',async()=>{
+  const http=vi.fn<typeof fetch>(async()=>success());
+  const llm=new Gemini(db,{...config,GEMINI_GLOBAL_RPM:1},'actor',{used:0},http);
+  await llm.generate(input);
+  await expect(llm.generate(input)).rejects.toMatchObject({kind:'local_limit',reason:'global'});
+  expect(http).toHaveBeenCalledOnce();
+});

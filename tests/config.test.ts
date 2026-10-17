@@ -9,3 +9,15 @@ it('never embeds secret values in validation errors',()=>{
   try{readConfig({...valid,WEBHOOK_SECRET:'private-secret',DATABASE_URL:'private-url'});throw new Error('Expected validation failure');}
   catch(err){expect(String(err)).not.toContain('private-secret');expect(String(err)).not.toContain('private-url');expect(String(err)).toContain('WEBHOOK_SECRET');}
 });
+it('defaults to v1 and validates the three inert router modes',()=>{
+  expect(readConfig(valid).ROUTER_MODE).toBe('v1');
+  for(const mode of ['v1','v1_1_shadow','v1_1'])expect(readConfig({...valid,ROUTER_MODE:mode}).ROUTER_MODE).toBe(mode);
+  expect(()=>readConfig({...valid,ROUTER_MODE:'v2'})).toThrow('ROUTER_MODE');
+});
+it('keeps current local quota defaults and only accepts safe reductions in R1',()=>{
+  expect(readConfig(valid)).toMatchObject({GEMINI_USER_RPM:8,GEMINI_GLOBAL_RPM:5,GEMINI_DAILY_LIMIT:20,GEMINI_INPUT_TPM:65536});
+  for(const [key,limit] of Object.entries({GEMINI_USER_RPM:8,GEMINI_GLOBAL_RPM:5,GEMINI_DAILY_LIMIT:20,GEMINI_INPUT_TPM:65536})){
+    expect(readConfig({...valid,[key]:'1'})).toHaveProperty(key,1);
+    for(const value of ['0','-1','1.5','NaN',String(limit+1)])expect(()=>readConfig({...valid,[key]:value})).toThrow(key);
+  }
+});

@@ -5,7 +5,12 @@ import { product } from '../../config/product.js';
 export class LlmUnavailable extends Error {
   constructor(readonly kind:'quota'|'local_limit'|'timeout'|'disabled'|'blocked'|'provider'|'invalid',readonly reason?:'global'|'personal'|'daily'|'tokens'|'message') {super(kind);}
 }
-export async function reserveCall(db:Db,actor:string,model:string,purpose:string,reservedTokens:number=product.llmReservedInputTokens):Promise<string>{
+export type QuotaLimits = { userRpm:number; globalRpm:number; dailyLimit:number; inputTokensPerMinute:number };
+export const defaultQuotaLimits:QuotaLimits = {
+  userRpm:product.llmUserRpm, globalRpm:product.llmGlobalRpm,
+  dailyLimit:product.llmDailyLimit, inputTokensPerMinute:product.llmInputTokensPerMinute,
+};
+export async function reserveCall(db:Db,actor:string,model:string,purpose:string,reservedTokens:number=product.llmReservedInputTokens,limits:QuotaLimits=defaultQuotaLimits):Promise<string>{
   return transaction(db,async c=>{
     await c.query("SELECT pg_advisory_xact_lock(hashtext('botsky-llm-quota'))");
     const midnight=DateTime.now().setZone('America/Los_Angeles').startOf('day').toUTC().toISO();
@@ -19,10 +24,10 @@ export async function reserveCall(db:Db,actor:string,model:string,purpose:string
     const u=usage.rows[0];
     if(!u)throw new LlmUnavailable('invalid');
     if(cooldown.rowCount)throw new LlmUnavailable('quota');
-    if(u.daily>=product.llmDailyLimit)throw new LlmUnavailable('local_limit','daily');
-    if(u.personal>=product.llmUserRpm)throw new LlmUnavailable('local_limit','personal');
-    if(u.minute>=product.llmGlobalRpm)throw new LlmUnavailable('local_limit','global');
-    if(u.tokens+reservedTokens>product.llmInputTokensPerMinute)throw new LlmUnavailable('local_limit','tokens');
+    if(u.daily>=limits.dailyLimit)throw new LlmUnavailable('local_limit','daily');
+    if(u.personal>=limits.userRpm)throw new LlmUnavailable('local_limit','personal');
+    if(u.minute>=limits.globalRpm)throw new LlmUnavailable('local_limit','global');
+    if(u.tokens+reservedTokens>limits.inputTokensPerMinute)throw new LlmUnavailable('local_limit','tokens');
     const row=await c.query<{id:string}>('INSERT INTO llm_usage(actor_id,model,purpose,reserved_input_tokens) VALUES($1,$2,$3,$4) RETURNING id',[actor,model,purpose,reservedTokens]);
     return row.rows[0]!.id;
   });

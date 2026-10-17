@@ -3,6 +3,11 @@ import { product } from '../config/product.js';
 const jid = z.string().regex(/^\d+@(s\.whatsapp\.net|lid)$/);
 const list = z.string().transform(s => s.split(',').map(x => x.trim()).filter(Boolean)).pipe(z.array(jid).min(1));
 const schema = z.object({
+  ROUTER_MODE: z.enum(['v1','v1_1_shadow','v1_1']).default('v1'),
+  GEMINI_USER_RPM: z.coerce.number().int().min(1).max(product.llmUserRpm).default(product.llmUserRpm),
+  GEMINI_GLOBAL_RPM: z.coerce.number().int().min(1).max(product.llmGlobalRpm).default(product.llmGlobalRpm),
+  GEMINI_DAILY_LIMIT: z.coerce.number().int().min(1).max(product.llmDailyLimit).default(product.llmDailyLimit),
+  GEMINI_INPUT_TPM: z.coerce.number().int().min(1).max(product.llmInputTokensPerMinute).default(product.llmInputTokensPerMinute),
   DRIVE_ENABLED: z.enum(['true','false']).default('false').transform(s => s === 'true'),
   LIBRARY_DRIVE_ENABLED: z.enum(['true','false']).default('false').transform(s => s === 'true'),
   MINECRAFT_ENABLED: z.enum(['true','false']).default('false').transform(s => s === 'true'),

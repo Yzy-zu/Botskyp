@@ -10,7 +10,7 @@ export const defaultQuotaLimits:QuotaLimits = {
   userRpm:product.llmUserRpm, globalRpm:product.llmGlobalRpm,
   dailyLimit:product.llmDailyLimit, inputTokensPerMinute:product.llmInputTokensPerMinute,
 };
-export async function reserveCall(db:Db,actor:string,model:string,purpose:string,reservedTokens:number|undefined=undefined,limits:QuotaLimits=defaultQuotaLimits):Promise<string>{
+export async function reserveCall(db:Db,actor:string,model:string,purpose:string,reservedTokens:number|undefined=undefined,limits:QuotaLimits=defaultQuotaLimits,turnId?:string):Promise<string>{
   const reserved = reservedTokens ?? limits.reservedInputTokens ?? product.llmReservedInputTokens;
   return transaction(db,async c=>{
     await c.query("SELECT pg_advisory_xact_lock(hashtext('botsky-llm-quota'))");
@@ -29,7 +29,7 @@ export async function reserveCall(db:Db,actor:string,model:string,purpose:string
     if(u.personal>=limits.userRpm)throw new LlmUnavailable('local_limit','personal');
     if(u.minute>=limits.globalRpm)throw new LlmUnavailable('local_limit','global');
     if(u.tokens+reserved>limits.inputTokensPerMinute)throw new LlmUnavailable('local_limit','tokens');
-    const row=await c.query<{id:string}>('INSERT INTO llm_usage(actor_id,model,purpose,reserved_input_tokens) VALUES($1,$2,$3,$4) RETURNING id',[actor,model,purpose,reserved]);
+    const row=await c.query<{id:string}>('INSERT INTO llm_usage(actor_id,model,purpose,reserved_input_tokens,turn_id) VALUES($1,$2,$3,$4,$5) RETURNING id',[actor,model,purpose,reserved,turnId ?? null]);
     return row.rows[0]!.id;
   });
 }

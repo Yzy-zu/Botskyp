@@ -1275,3 +1275,42 @@ No se reescriben los 98 handlers ni se habilita fallback que ignore referencias.
 
 Resultado y evidencia final en docs/v1.1/R3-POLICY-ENGINE.md; no se declara
 validación manual WhatsApp ni despliegue/health de este cambio.
+
+## 15. Botsky v1.1 — R4 (17-10-2026)
+
+### DEC-061: Contexto estructurado sin replay, cadena real y sesiones aisladas
+
+R1/R2/R3 aprobadas por el dueño. Base R3
+`0858ce1807f610c89084290847d14c63f09376c3`, exclusivamente en
+`feat/v1.1-natural-router`, un constructor sin delegación. Esta autorización
+supera el bloqueo histórico de R4. No autoriza R5, deploy, merge ni conexión de
+Gemini a ejecución v2. La revisión crítica previa a main permanece pendiente.
+
+Contexto con runtime backend separado y envelope serializable de reglas/datos/
+turno actual. Se excluye historial libre v1; eventos de acciones ok usan textos
+constantes, nunca llamadas/JSON legacy ni estados queued/uncertain. Presupuesto
+16 000 caracteres, evicción de nodos completos, cargas scoped y acotadas, sin
+resumen mediante proveedor. SafeRefs nuevas sin forma UUID; schemas R2 admiten
+nuevo formato y sintaxis anterior, pero el mapa vigente sigue siendo obligatorio.
+Memoria personal: cero cuerpos en grupos, DM autorizado y relevancia explícita.
+
+Migración 013 aditiva: metadata/idempotencia por backing y mapping de outbox;
+sessions_v2 separada para no alterar v1. Resultados textuales reutilizan
+context_msgs con excerpt de 1 200 caracteres y retención 7 días; no se crea una
+tabla nueva de textos ni se cambia A_LAST al leer un archivo. Los originales
+conservan cronología del turno al registrarse tarde; outputs binarios heredan
+actor/turno/job/padre/retención reales. Registro solo en v1_1; no en shadow.
+
+Resolución compatible por matriz media existente, con A_CURRENT/A_REPLY/refs/
+A_LAST. Implicación por chat+actor y 24 h; visión 10 min sin señal de raza.
+Reply compartido del mismo grupo se permite para selección/reenvío sujeto a
+mediaAllowed; privacidad DM/cross-chat estricta. Padres siguen mismo actor/chat
+R1; no se habilitan adaptadores cerrados de transformación compartida.
+Reenvío interno utiliza outbox, no añade tool #99 ni ejecuta worker.
+
+Session v2 consume únicamente gramática completa o slots tipados. Escape de
+intención devuelve not_consumed. Confirmaciones heredan hash/linaje/expiry R3,
+revalidan siempre en executor y cancelan/expiran sin efectos; cancelación y
+preview comparten el orden de locks de admisión R3. Shadow solo SELECT con
+savepoint y métricas sin contenido; v1 y Gemini conservan su ruta visible.
+Detalles, pruebas y limitaciones: docs/v1.1/R4-CONTEXT-SESSIONS-ARTIFACTS.md.

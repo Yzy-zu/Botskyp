@@ -17,7 +17,8 @@ las 98 tools, 96 visibles/dos internas, más `core.load_capability`, selección
 dinámica con máximo 20 schemas, Fast Path exacto independiente y shadow sin
 ejecución. R3 añade Policy Engine read-only, executor aislado, confirmaciones con dos
 turnos y ledger real. El router y resultados visibles siguen siendo v1; Gemini
-no tiene conexión a ejecución v2. No hay Session v2, loop ni presenter nuevo.
+no tiene conexión a ejecución v2. R4 añade contexto estructurado, Artifact Chain integrada y Session v2 aislada.
+No hay loop ni presenter nuevo; Gemini continúa sin ejecución v2.
 Detalle en [R2-TOOL-REGISTRY](R2-TOOL-REGISTRY.md) y
 [R3-POLICY-ENGINE](R3-POLICY-ENGINE.md).
 
@@ -109,8 +110,8 @@ capturada; no se afirma validación del loop por Google ni nuevas llamadas reale
 
 `ROUTER_MODE` valida `v1 | v1_1_shadow | v1_1`, default `v1`.
 En R2, `v1` usa exclusivamente los shortcuts, declaraciones y ejecución legacy.
-`v1_1_shadow` observa Fast Path v2, dominios, schemas y tamaño aproximado sin
-consultas adicionales ni llamadas Gemini/efectos nuevos; la respuesta y ejecución
+`v1_1_shadow` observa Fast Path v2, dominios, schemas y tamaño aproximado con
+lecturas acotadas de contexto en R4, sin llamadas Gemini/efectos nuevos; la respuesta y ejecución
 visibles continúan por v1. `v1_1` está reservado y no se activa: también conserva
 v1 hasta autorización posterior. Los shortcuts legacy no se modifican.
 
@@ -164,8 +165,9 @@ inmutables en índices, por lo que la expiración se consulta en runtime.
 pública reconstruye contexto desde inbox y no ejecuta handlers. La ejecución
 pública reevalúa dentro de su propia transacción; no acepta decisiones anteriores
 como credencial. Los callers v2 no reciben un handler ni un dispatch sin policy.
-El executor solo es invocado por tests; router/llm/sessions/worker permanecen sin
-imports de ejecución v2. v1/v1_1_shadow rechazan efectos incluso si un caller
+El executor se invoca explícitamente en tests y desde el puente backend de
+confirmaciones Session v2 R4. Router/llm/worker permanecen sin conexión de ejecución
+v2; el puente tampoco se llama desde tráfico real. v1/v1_1_shadow rechazan efectos incluso si un caller
 invocara esa entrada; el valor reservado v1_1 no conecta el router por sí mismo.
 
 Orden: system → chat → module → identidad/membresía → permitted(PermissionKey)
@@ -200,5 +202,47 @@ de draft conserva su comportamiento anterior por default.
 
 Logs de policy: solo nombres estáticos, decisiones/códigos, confirmación requerida,
 conteo de exposición y origen. Sin args, identidades, contenido ni hashes. Shadow
-R2 sigue usando su observer sin consultas; evaluación explícita R3 también es
-read-only. Límites y evidencia en [R3-POLICY-ENGINE](R3-POLICY-ENGINE.md).
+R2 conserva su cálculo puro; R4 agrega observación de contexto mediante SELECTs
+y savepoint. La evaluación explícita R3 también es read-only. Límites y evidencia en [R3-POLICY-ENGINE](R3-POLICY-ENGINE.md).
+
+
+## Contexto, sesiones y archivos R4
+
+Detalle contractual, límites y evidencia en
+[R4-CONTEXT-SESSIONS-ARTIFACTS](R4-CONTEXT-SESSIONS-ARTIFACTS.md).
+El envelope es `SYSTEM_RULES` / `REFERENCE_DATA` / `CURRENT_USER_TURN`;
+`serializeContextV2` excluye runtime backend y mapa de SafeRefs. Presupuesto de
+16 000 caracteres, máximo cinco artifacts/notas/recordatorios/entidades y cuatro
+eventos/extractos. La carga es scoped, relevante y acotada. Historial legacy libre
+no se reinyecta: solo eventos de acciones ok con resúmenes constantes y extractos
+textuales R4 limitados. Ningún function call o prompt antiguo se reconstruye.
+
+Artifact Chain usa backing media/escolar real. La migración 013 añade metadata,
+unicidad por backing y mapping artifact/outbox con FKs por chat. Captura de
+entrada y finalización de worker registran bajo v1_1; shadow no registra nada.
+Un derivado binario del propio actor se convierte en el último archivo; leerlo
+produce contextResult limitado sin reemplazar su fuente como A_LAST. Los replies
+salientes se resuelven con el provider ID persistido, también tras reconciliación.
+
+Resolución: actual → reply → SafeRef explícita → último compatible por MIME.
+A_LAST siempre filtra chat+actor, backing/retención y ventana de 24 h. Reply
+explícito admite un artifact público del mismo grupo sujeto a permisos; nunca
+cruza chats o privados. Las refs personales y padres de derivaciones conservan
+propiedad R1. Reenvío es capacidad interna con outbox/dedupe/revalidación, sin
+nueva tool, worker o ejecución Python.
+
+Session v2 vive en sessions_v2 y no altera sessions v1 ni juegos. Continuación
+inequívoca resuelve slots; un intent distinto devuelve not_consumed. Afirmación
+con cambios no autoriza los argumentos anteriores. Confirmaciones vinculan
+hash/linaje/expiry R3 y pasan por executeToolV2 con reevaluación completa; nunca
+por un handler directo. Cancelación invalida pending; expiración no revive.
+TTL de aclaración/confirmación: 5/2 min. R4 prepara media_collect, sin conectar
+su collector al tráfico real.
+
+Memoria personal completa ausente en grupos. DM solo actor autorizado y señal
+relevante dentro de límites. Visión prepara imagen actual/citada/reciente del
+actor (10 min), sin ninguna condición de raza de mascota. El nuevo shadow
+construye y mide mediante lecturas, aísla errores y conserva respuestas/calls v1.
+No hay consumo de sesiones, artifacts, jobs, confirmaciones, respuestas ni
+llamadas Gemini adicionales. R5, deploy, merge y activaciones siguen fuera de
+esta autorización.

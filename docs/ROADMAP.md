@@ -265,3 +265,20 @@ R3 implementada para revisión: 467 pruebas únicas focalizadas, typecheck/lint/
 y auditoría de secretos verdes. 89 adapters explícitos; nueve puentes todavía
 se deniegan de forma segura y están enumerados en el informe R3. No hay despliegue
 ni conexión de ejecución real. Tras el push, constructor detenido; no avanzar a R4.
+
+## 14. Autorización vigente de v1.1 — R4 (17-10-2026)
+
+El dueño aprueba R1/R2/R3 y autoriza exclusivamente R4 sobre
+`0858ce1807f610c89084290847d14c63f09376c3`, en
+`feat/v1.1-natural-router`. Context Builder/Artifact Chain/Session v2 y puente
+backend a confirmaciones R3, con pruebas en BD efímera y workers mock.
+Un constructor sin delegación. DEC-061 y
+[R4-CONTEXT-SESSIONS-ARTIFACTS](v1.1/R4-CONTEXT-SESSIONS-ARTIFACTS.md) describen
+contratos y límites. Se supera solo el bloqueo R4 del apartado anterior.
+**Sin R5, deploy, merge, activaciones ni ejecución Gemini v2 desde tráfico real.**
+Tras verificaciones, documentación, commits y push a esta rama, detenerse.
+
+R4 implementada para revisión: 337 pruebas únicas focalizadas en 12 archivos,
+typecheck/lint/build, auditoría de secretos y diff check correctos. Contexto y
+sesiones v2 siguen aislados de Gemini real. Sin deploy ni merge; tras el push a
+la rama indicada el constructor se detiene, sin avanzar a R5.

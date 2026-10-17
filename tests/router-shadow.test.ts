@@ -66,7 +66,7 @@ it('never calculates v2 in v1 or reserved v1_1 and isolates shadow calculation f
 });
 it('keeps the v1 response, query sequence, and single Gemini call unchanged in shadow', async () => {
   const results: { reply: string | undefined; queries: unknown[]; calls: unknown[] }[] = [];
-  for (const mode of ['v1','v1_1_shadow','v1_1'] as const) await withContext(mode, 'hola botsky', async ctx => {
+  for (const mode of ['v1','v1_1_shadow'] as const) await withContext(mode, 'hola botsky', async ctx => {
     const generate = vi.fn<Llm['generate']>(async () => ({ text: 'Hola.', calls: [], content: {} }));
     const query = vi.spyOn(ctx.c, 'query');
     try {
@@ -75,7 +75,7 @@ it('keeps the v1 response, query sequence, and single Gemini call unchanged in s
       results.push({ reply, queries: query.mock.calls, calls: generate.mock.calls });
     } finally { query.mockRestore(); }
   });
-  expect(results[1]).toEqual(results[0]); expect(results[2]).toEqual(results[0]);
+  expect(results[1]).toEqual(results[0]);
   expect(results[0]?.reply).toBe('Hola.');
 });
 it('retains visible legacy shortcuts in shadow while v2 only observes the memory ambiguity', async () => {

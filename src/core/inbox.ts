@@ -1,3 +1,5 @@
+import { readSessionV2, decideSessionV2 } from './sessions-v2.js';
+import { sanitizeOutputV2 } from './output-sanitizer-v2.js';
 import { registerIncomingArtifactsV2 } from './artifact-registration-v2.js';
 import { modules } from './control-tools.js';
 import { chatLock,lockChatWallets } from '../modules/games/state.js';
@@ -79,8 +81,11 @@ export async function processNext(db: Db, config: Config):Promise<boolean> {
         }
         const session=await activeSession(c,actor.id,msg.chatId);
         const text=commandText(msg.text);
-        const accepts=sessionAccepts(session,text,msg.attachments.length>0);
-        if(allowed && msg.isGroup){await chatLock(c,msg.chatId);await lockChatWallets(c,msg.chatId,actor.id);}
+        const v2Session=config.ROUTER_MODE==='v1_1'?await readSessionV2(c,actor.id,msg.chatId):undefined;
+        const v2Decision=decideSessionV2(v2Session,msg.text,new Date(),msg.attachments.length>0);
+        // An actor's live foreground/game interaction keeps activation while a new intent escapes interception.
+        const accepts=config.ROUTER_MODE==='v1_1'? !['not_consumed','expired'].includes(v2Decision.kind) || Boolean(v2Session && v2Session.expires_at>new Date()) || session?.kind==='game':sessionAccepts(session,text,msg.attachments.length>0);
+        if(allowed && msg.isGroup){if(config.ROUTER_MODE==='v1_1')await c.query("SELECT pg_advisory_xact_lock(hashtext('botsky-v2-execution-admission'))");await chatLock(c,msg.chatId);await lockChatWallets(c,msg.chatId,actor.id);}
         const xpCtx={turnId:row.turn_id,actor,chat:{id:msg.chatId,isGroup:msg.isGroup,enabled:allowed,settings:saved?.settings ?? {}},msg,db,c,config,now:new Date(),search:async()=>''};
         if(allowed && !maintenance)await activity(xpCtx);
         if(allowed && activated(msg,config.BOT_JIDS,Boolean(accepts))){
@@ -88,7 +93,7 @@ export async function processNext(db: Db, config: Config):Promise<boolean> {
           else if(maintenance && !owner)reply='Estoy en mantenimiento.';
           else {
             const gemini=new Gemini(db,config,actor.id);
-            const ctx={turnId:row.turn_id,actor,chat:{id:msg.chatId,isGroup:msg.isGroup,enabled:true,settings:saved?.settings ?? {}},msg,db,c,config,now:new Date(),search:(query:string)=>config.WEB_SEARCH_PROVIDER==='gemini'?gemini.search(query):searxSearch(config,query)};
+            const ctx={...(config.ROUTER_MODE==='v1_1'?{inboxTransaction:true as const}:{}),turnId:row.turn_id,actor,chat:{id:msg.chatId,isGroup:msg.isGroup,enabled:true,settings:saved?.settings ?? {}},msg,db,c,config,now:new Date(),search:(query:string)=>config.WEB_SEARCH_PROVIDER==='gemini'?gemini.search(query,config.ROUTER_MODE==='v1_1'?row.turn_id:undefined):searxSearch(config,query)};
             reply=await route(ctx,config.GEMINI_API_KEY && config.GEMINI_FREE_TIER_CONFIRMED?gemini:undefined);
             if(commandText(msg.text).toLowerCase()==='apagado de emergencia' && owner)reply=undefined;
             if(reply)await rememberContext(ctx,reply);
@@ -96,6 +101,7 @@ export async function processNext(db: Db, config: Config):Promise<boolean> {
         }
       }
     }
+    if (reply && config.ROUTER_MODE==='v1_1') reply=sanitizeOutputV2(reply);
     if (reply) {
       await c.query(`INSERT INTO outbox(chat_id,payload,dedupe_key) VALUES($1,$2,$3) ON CONFLICT(dedupe_key) DO NOTHING`,
         [msg.chatId,JSON.stringify({text:reply,sourceId:msg.id}),`reply:${row.provider_msg_id}`]);

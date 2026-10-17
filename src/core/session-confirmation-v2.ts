@@ -1,4 +1,4 @@
-import { transaction } from '../db/client.js';
+import { executionTransaction } from './execution-transaction-v2.js';
 import type { ToolCtx } from './tools.js';
 import type { SafeRefs } from './safe-refs.js';
 import { executeToolV2 } from './policy-v2/executor.js';
@@ -13,7 +13,7 @@ export async function continueConfirmationV2(ctx: ToolCtx, safeRefMap: SafeRefs)
   if (!session || session.kind !== 'confirm') return { status: 'not_consumed' };
   const decision = decideSessionV2(session, backend.legacy.msg.text, ctx.now);
   if (decision.kind === 'cancel' || decision.kind === 'expired') {
-    const actual = await transaction(ctx.db,c=>coordinateSessionV2(c, ctx.config.ROUTER_MODE, session, backend.legacy.msg.text, ctx.now));
+    const actual = await executionTransaction(ctx,c=>coordinateSessionV2(c, ctx.config.ROUTER_MODE, session, backend.legacy.msg.text, ctx.now));
     return { status: actual.kind === 'cancel' || actual.kind === 'expired' ? actual.kind : 'not_consumed' };
   }
   if (decision.kind !== 'confirm' || !session.confirmation_id) return { status: 'not_consumed' };

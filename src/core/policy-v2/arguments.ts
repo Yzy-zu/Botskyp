@@ -6,7 +6,7 @@ import type { ExecutionContextV2 } from './types.js';
 
 /** Deliberately bounded adapters. Unknown contracts fail closed instead of guessing backend arguments. */
 const adapters = new Set<string>([
-  'core.ping','core.help','notes.create','notes.list','notes.edit',
+  'media.process','core.ping','core.help','notes.create','notes.list','notes.edit',
   'notes.delete','reminders.create','reminders.list','reminders.edit','reminders.cancel',
   'memory.remember','memory.list','memory.forget','web.search','polls.create',
   'polls.vote','polls.results','polls.close','drive.cancel','drive.search',
@@ -30,6 +30,11 @@ export function adapterAvailable(name: string): boolean { return adapters.has(na
 export function legacyArguments(ctx: ExecutionContextV2, tool: Tool, input: Record<string, unknown>):
   { status: 'ok'; args: Record<string, unknown> } | { status: 'needs_clarification' | 'denied'; code: string } {
   const args = { ...input };
+  if(tool.name==='games.play')args.move=({hit:'carta',stand:'plantarse',double:'doblar'} as Record<string,string>)[String(args.move)] ?? args.move;
+  if(tool.name==='media.process'){
+    delete args.artifactRef;
+    if(args.operation==='resend')return {status:'ok',args:{operation:'resend'}};
+  }
   for (const field of ['noteRef','reminderRef','pollRef','taskRef','subjectRef','opRef','driveRef']) {
     if (args[field] !== undefined) { args.id = args[field]; delete args[field]; }
   }

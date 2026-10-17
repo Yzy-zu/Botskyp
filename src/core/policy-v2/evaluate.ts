@@ -47,7 +47,9 @@ export async function evaluateToolPolicy(ctx: ExecutionContextV2, tool: ToolMeta
   } else {
     const parsed = tool.modelArgsSchema.safeParse(modelArgs);
     if (!parsed.success) return decision('denied', 'INVALID_MODEL_ARGUMENTS');
-    const resolved = await resolveReferences(ctx, parsed.data as Record<string, unknown>);
+    const input={...parsed.data as Record<string,unknown>};
+    if(tool.name==='media.process' && !['download','qr_create','speak'].includes(String(input.operation)) && !input.artifactRef)input.artifactRef='A_LAST';
+    const resolved = await resolveReferences(ctx, input, tool.name==='media.process'?String(input.operation):undefined);
     args = resolved.args; refs = resolved.refs; ownership = resolved.ownership;
     if (resolved.failure) return decision(resolved.failure, resolved.failure === 'not_found' ? 'REF_NOT_FOUND' : 'REF_AMBIGUOUS');
   }

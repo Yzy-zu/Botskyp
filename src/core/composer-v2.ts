@@ -1,0 +1,88 @@
+import { z } from 'zod';
+import type { ToolResult } from './tool-result.js';
+import { sanitizeOutputV2 } from './output-sanitizer-v2.js';
+import { formatHumanDue } from '../modules/reminders/semantic-time.js';
+
+const moduleNames: Record<string, string> = { games:'juegos', school:'escuela', library:'biblioteca', media:'archivos', memory:'memoria', notes:'notas', polls:'encuestas', web:'búsqueda web', economy:'XP', productivity:'notas y recordatorios', minecraft:'Minecraft', drive:'Drive' };
+function record(value: unknown): Record<string, unknown> { return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
+export function localPresenterV2(result: ToolResult): string {
+  const data=record(result.data), name=result.toolName, code=result.code;
+  if (result.status === 'denied') {
+    if(code==='DENIED_PERMISSION')return /^(?:minecraft\.|bulk\.|control\.|diag\.)/u.test(name)?'Esa función solo la puede usar el dueño del bot.':'Eso solo lo pueden hacer los admins del grupo.';
+    if(code==='DENIED_MODULE_DISABLED' || code==='DENIED_DRIVE_DISABLED')return `El módulo de ${moduleNames[name.split('.')[0]!] ?? moduleNames[result.domain] ?? 'esa función'} está apagado en este chat.`;
+    if(code==='DENIED_ADAPTER_UNAVAILABLE')return 'Esa función todavía no está disponible de forma segura. No hice cambios.';
+    if(code==='DENIED_INSUFFICIENT_XP')return typeof data.balance==='number' && typeof data.shortfall==='number'?`Te faltan ${data.shortfall} XP para eso; tienes ${data.balance}.`:'No tienes suficientes XP para eso.';
+    if(code==='DENIED_DAILY_COOLDOWN')return 'Ya cobraste tu premio diario. Vuelve cuando se cumplan las 24 horas.';
+    if(code==='DENIED_PRIVATE_ONLY')return 'Pídemelo por privado para cuidar tu información.';
+    if(code==='DENIED_SENSITIVE_MEMORY')return 'No guardo contraseñas, tokens ni datos sensibles.';
+    if(code==='DENIED_MAINTENANCE')return 'Estoy en mantenimiento. Inténtalo más tarde.';
+    if(code.startsWith('DENIED_CONFIRMATION'))return 'La confirmación venció o cambió la operación. Pídemela otra vez para revisarla.';
+    if(code==='DENIED_POLL_CLOSED')return 'Esa encuesta ya está cerrada.';
+    if(code.includes('NOT_FOUND'))return 'No encontré una operación activa para eso en este chat.';
+    if(code.startsWith('INVALID'))return 'Me faltan datos válidos para hacerlo. No hice cambios.';
+    return 'No pude realizar esa operación con los permisos o el estado actual. No hice cambios.';
+  }
+  if(result.status==='needs_confirmation')return typeof data.prompt==='string'?data.prompt:'¿Seguro que quieres hacerlo? Dime “sí” o “nel”.';
+  if(result.status==='needs_clarification'){
+    if(/AMBIGUOUS_HOUR/u.test(code))return '¿De la mañana o de la noche?';
+    if(code==='MISSING_BODY')return '¿Qué quieres que te recuerde?';
+    if(code==='MISSING_TIME')return '¿Cuándo quieres que te lo recuerde?';
+    return 'Me falta un dato para hacerlo. ¿Puedes precisarlo?';
+  }
+  if(result.status==='not_found')return result.domain==='media'?'No tengo ese archivo disponible en este chat. Reenvíalo con la solicitud.':'No encontré eso en este chat. ¿Cuál quieres usar?';
+  if(result.status==='uncertain')return 'La solicitud quedó pendiente de confirmar. No voy a repetirla automáticamente.';
+  if(result.status==='error')return result.presentation || 'No pude completar esa operación. No confirmo ningún cambio.';
+  if(result.status==='queued'){
+    if(name==='media.process')return '';
+    if(name.startsWith('minecraft.'))return 'Ya solicité la operación de Minecraft. Todavía no está confirmado el cambio.';
+    return 'La solicitud está en marcha. Te aviso cuando tenga el resultado.';
+  }
+  if(name==='xp.balance' || name==='xp.daily')return `${name==='xp.daily'?'Listo, cobraste tu premio diario. ':''}Tienes ${data.balance} XP. Nivel ${data.level}; racha de ${data.streak}.`;
+  if(name==='media.status')return Array.isArray(data.jobs) && data.jobs.length?data.jobs.map((item,index)=>{const job=record(item);return `Archivo ${index+1}: ${job.status==='done'?'procesado; revisa el resultado en este chat':job.status==='running'?'lo estoy preparando':job.status==='queued'?'pendiente de procesar':'no se pudo completar'}.`;}).join('\n'):'No tienes archivos pendientes en este chat.';
+  if(name==='core.help')return 'Pídeme lo que necesites: guardar un recuerdo, anotar algo para el grupo, crear un recordatorio, consultar tus XP, jugar, buscar información o trabajar con un archivo. Te diré qué está disponible aquí.';
+  if(name==='reminders.create')return `Listo, te recordaré «${String(data.body)}» el ${formatHumanDue(new Date(String(data.dueAt)))}.`;
+  if(name.startsWith('games.') && typeof data.hand==='string')return `Blackjack: ${data.hand} (${data.total}). Apuesta: ${data.bet} XP.\nDealer: ${data.dealer}.${data.closed?` Partida terminada.${typeof data.returnedXp==='number'?` Recibiste ${data.returnedXp} XP.`:''}`:' ¿Otra carta o te plantas?'}`;
+  if(name==='memory.remember')return 'Listo, lo guardé en tu memoria personal.';
+  if(name==='notes.create')return `Listo, anoté «${String(data.body ?? 'eso')}» para este chat.`;
+  if(name==='notes.edit')return 'Listo, actualicé la nota.';
+  if(name==='notes.delete')return 'Listo, borré esa nota.';
+  if(name==='reminders.cancel')return 'Listo, cancelé ese recordatorio.';
+  if(name==='polls.vote')return `Va, tu voto quedó registrado${typeof data.label==='string'?` por ${data.label}`:''}.`;
+  if(name==='notes.list' || name==='memory.list'){
+    const items=(name==='notes.list'?data.notes:data.memories);
+    return Array.isArray(items) && items.length?items.map(item=>String(record(item).body ?? '')).filter(Boolean).join('\n'):name==='memory.list'?'No tengo recuerdos tuyos.':'No hay notas para esa búsqueda.';
+  }
+  if(name==='reminders.list' && Array.isArray(data.reminders))return data.reminders.map(item=>{const r=record(item);return `${String(r.body)} — ${formatHumanDue(new Date(String(r.due_at)))}`;}).join('\n') || 'No tienes recordatorios pendientes.';
+  if(name==='web.search'){
+    const sources=Array.isArray(data.searchResults)?data.searchResults.map(record).filter(r=>typeof r.snippet==='string' && r.snippet.trim()).slice(0,2):[];
+    return sources.length?`No pude completar la explicación, pero encontré esto:\n${sources.map(r=>`${String(r.snippet).slice(0,600)}${typeof r.url==='string' && /^https?:\/\//u.test(r.url)?`\nFuente: ${r.url}`:''}`).join('\n\n')}`:'Encontré información, pero no pude preparar una respuesta verificada con esos resultados. Inténtalo más tarde.';
+  }
+  return result.presentation || 'La consulta terminó, pero no tengo más detalles disponibles.';
+}
+
+/** Explicit allowlist projection. Neither DB keys nor local exceptions reach the provider. */
+export function visibleToolResultV2(result: ToolResult): Record<string, unknown> {
+  const allowed=new Set(['balance','level','streak','label','option','question','options','votes','closed','body','notes','memories','reminders','due_at','timezone','status','searchResults','total','goal','count','shortfall','title','snippet','url','hand','bet','dealer','returnedXp','dueAt','open']);
+  function project(value: unknown): unknown {
+    if(Array.isArray(value))return value.slice(0,30).map(project);
+    if(value && typeof value==='object')return Object.fromEntries(Object.entries(value).filter(([key])=>allowed.has(key)).map(([key,v])=>[key,project(v)]));
+    return typeof value==='string'?sanitizeOutputV2(value):value;
+  }
+  return {status:result.status,message:localPresenterV2(result),data:project(result.data)};
+}
+
+export const conversationalOutcomeV2=z.strictObject({
+  outcome:z.enum(['conversation','action_required','unavailable']),
+  text:z.string().min(1).max(12000),
+  effects:z.array(z.strictObject({action:z.string(),status:z.enum(['ok','queued'])})).max(3),
+});
+/** Plain provider prose has no authority. Local mutation templates always come from current receipts. */
+export function conversationTextV2(text: string): { text: string; retry: boolean } {
+  let value: unknown;
+  try { value=JSON.parse(text); } catch { return {text:'No ejecuté ninguna acción para esa solicitud.',retry:true}; }
+  const parsed=conversationalOutcomeV2.safeParse(value);
+  if(!parsed.success || parsed.data.effects.length || parsed.data.outcome==='action_required')return {text:'No ejecuté ninguna acción para esa solicitud.',retry:true};
+  // Secondary diagnostic for a provider violating its structured no-effects declaration.
+  if(/\b(?:guardad[oa]|registrad[oa]|(?:te )?di \d+\s*XP|recordatorio creado|mensaje enviado|ya (?:guardé|envié|creé|borré|cancelé|te di|quedó))\b/iu.test(parsed.data.text))return {text:'No ejecuté ninguna acción para esa solicitud.',retry:true};
+  return {text:parsed.data.text,retry:false};
+}

@@ -24,8 +24,8 @@ export async function mediaDelivery(db:Db,config:Config,row:{id:string;chat_id:s
 }
 export async function reportMediaDeliveries(db:Db):Promise<void>{
   await db.query(`INSERT INTO outbox(chat_id,payload,dedupe_key)
-    SELECT j.chat_id,jsonb_build_object('text','Trabajo #'||j.id||': no pude confirmar la entrega de todos los archivos. Consulta «bot trabajos». No repetí entregas inciertas.','sourceId',j.source_message_id),
+    SELECT j.chat_id,jsonb_build_object('text','No pude confirmar la entrega de todos los archivos. No repetí entregas pendientes de confirmar.','sourceId',j.source_message_id),
       'media:delivery-problem:'||j.id FROM jobs j WHERE j.kind='media' AND j.status='done' AND EXISTS(
-        SELECT 1 FROM outbox o WHERE o.kind='media_result' AND o.payload->>'jobId'=j.id::text AND (o.status='failed' OR (o.status='uncertain' AND o.reconcile_attempts>=$1)))
+        SELECT 1 FROM outbox o WHERE o.kind IN ('media_result','media_text') AND o.payload->>'jobId'=j.id::text AND (o.status='failed' OR (o.status='uncertain' AND o.reconcile_attempts>=$1)))
     ON CONFLICT(dedupe_key) DO NOTHING`,[product.maxReconcileAttempts]);
 }

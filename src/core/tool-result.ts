@@ -12,6 +12,7 @@ export function toolResultSchema<T extends z.ZodType>(data: T) {
     domain: z.string().min(1),
     code: z.string().min(1),
     data,
+    presentation: z.string().optional(),
     artifactProduced: z.string().uuid().optional(),
     requiresLlmSynthesis: z.boolean().optional(),
   });
@@ -22,6 +23,8 @@ export type ToolResult<T = unknown> = {
   domain: string;
   code: string;
   data: T;
+  /** Backend-only local template; excluded from raw data projection. */
+  presentation?: string;
   artifactProduced?: string;
   requiresLlmSynthesis?: boolean;
 };

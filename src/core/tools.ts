@@ -11,7 +11,7 @@ import { argumentHash,openSession } from './sessions.js';
 import type { Declaration } from './llm.js';
 const log=pino({level:'info'});
 export type ToolResult={ok:true;facts:Record<string,unknown>;reply:string;stylable?:boolean}|{ok:false;kind:'user'|'transient'|'bug';message:string};
-export type ToolCtx={turnId?:string;actor:Actor;chat:Chat;msg:Msg;db:Db;c:PoolClient;config:Config;now:Date;search:(query:string)=>Promise<string>};
+export type ToolCtx={inboxTransaction?:true;turnId?:string;actor:Actor;chat:Chat;msg:Msg;db:Db;c:PoolClient;config:Config;now:Date;search:(query:string)=>Promise<string>};
 export interface Tool<A extends z.ZodType=z.ZodType> {
   name:string;description:string;examples:string[];args:A;permission:PermissionKey;
   risk:'read'|'write'|'destructive';scope:'group'|'private'|'both';modelCallable:boolean;module:string;

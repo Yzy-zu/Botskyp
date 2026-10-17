@@ -130,11 +130,11 @@ it('appends confirmation in a new turn, preserving original status and scoped li
   await expect(execution(third, { parent: parent.id, logical: parent.logical_action_id, argsHash: 'a'.repeat(64) })).rejects.toMatchObject({ code: '23514' });
   await expect(execution(third, { parent: parent.id })).rejects.toMatchObject({ code: '23503' });
 });
-it.each(['v1', 'v1_1_shadow', 'v1_1'] as const)('keeps visible v1 behavior and ledger disconnected under %s', async mode => {
+it.each(['v1', 'v1_1_shadow', 'v1_1'] as const)('routes ping under %s, with v2 receipts only when enabled', async mode => {
   await receive(db, config, msg());
   await processNext(db, { ...config, ROUTER_MODE: mode });
   expect((await db.query('SELECT payload FROM outbox')).rows[0]?.payload.text).toBe('pong');
-  expect((await db.query('SELECT * FROM tool_executions')).rowCount).toBe(0);
+  expect((await db.query('SELECT * FROM tool_executions')).rowCount).toBe(mode==='v1_1'?1:0);
 });
 
 async function artifact(t: Awaited<ReturnType<typeof turn>>, options: { parent?: string; school?: boolean; chatId?: string; actorId?: string; age?: number; expires?: number; backingExpires?: number; data?: Buffer | null } = {}) {

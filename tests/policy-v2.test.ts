@@ -436,7 +436,7 @@ it('logs only the explicit policy-debug allowlist, excluding args, IDs, paths an
   expect(JSON.stringify(debug)).not.toMatch(/tacos|@|argsHash|confirmationHash|actorId|chatId|\/home\/|\/data\//iu);
   expect(debug.toolExposureCount).toBe(12);
 });
-it('keeps runtime callers disconnected from the v2 executor and exposes no bypass handler', () => {
+it('keeps legacy entry points free of direct executor bypass and exposes no handler', () => {
   for (const file of ['router','router-shadow','sessions','llm','inbox','runtime']) {
     expect(readFileSync(`src/core/${file}.ts`, 'utf8')).not.toContain('policy-v2/executor');
   }
@@ -464,7 +464,7 @@ it('checks artifact ownership, expiry and real backing; A_LAST is backend scoped
   const r = ref('artifactRef', artifact, chat, member);
   const last = await evaluate(ctx, 'media.process', { operation: 'pdf_compress', artifactRef: 'A_LAST' });
   expect(last.resolvedSafeRefs).toEqual([{ ref: 'A_LAST', kind: 'artifactRef', id: artifact }]);
-  expect(last.denialCode).toBe('DENIED_ADAPTER_UNAVAILABLE');
+  expect(last.status).toBe('allow'); expect(last.denialCode).toBeNull();
   const forged = ref('artifactRef', artifact, chat, owner);
   expect((await evaluate(await context(), 'media.process', { operation: 'pdf_compress', artifactRef: forged.token }, forged.refs)).status).toBe('not_found');
   await db.query('UPDATE media_attachments SET data=NULL WHERE id=$1', [backing]);
@@ -478,10 +478,10 @@ it('prevents nested identity injection and validates reminder recurrence before 
   expect(mismatch.denialCode).toBe('INVALID_RECURRENCE');
   expect(await count('sessions')).toBe(0); expect(await count('reminders')).toBe(0);
 });
-it('offers 89 explicit legacy adapters and fails closed on nine preview/artifact/session bridges', () => {
+it('offers 90 explicit adapters including scoped media and keeps eight bridges closed', () => {
   const blocked = catalog.filter(t => !adapterAvailable(t.name)).map(t => t.name).sort();
-  expect(blocked).toEqual(['bulk.confirm','drive.upload','media.collect','media.process','media.search','school.destination','school.schedule_commit','school.schedule_import','school.schedule_propose'].sort());
-  expect(catalog.filter(t => adapterAvailable(t.name))).toHaveLength(89);
+  expect(blocked).toEqual(['bulk.confirm','drive.upload','media.collect','media.search','school.destination','school.schedule_commit','school.schedule_import','school.schedule_propose'].sort());
+  expect(catalog.filter(t => adapterAvailable(t.name))).toHaveLength(90);
 });
 it('adapts safe legacy contracts without rewriting their domain implementation', async () => {
   expect((await execute(await context(), 'control.modules', { module: 'notes', enabled: false })).status).toBe('ok');
@@ -489,7 +489,7 @@ it('adapts safe legacy contracts without rewriting their domain implementation',
   expect((await execute(await context(admin), 'xp.happy', { minutes: 15 })).code).toBe('LEGACY_ADAPTER_OK');
   expect((await execute(await context(member), 'moderation.warns')).status).toBe('ok');
   const web = await execute(await context(member), 'web.search', { query: 'fixture' });
-  expect(web.status).toBe('ok'); expect(web.code).toBe('LEGACY_ADAPTER_OK');
+  expect(web.status).toBe('ok'); expect(web.code).toBe('WEB_SEARCH');
 });
 it.each(['messaging.send','bulk.broadcast'])('%s uses SafeRef destinations and the same two-turn atomic queue service', async name => {
   const destination = (await db.query<{ id: string }>("INSERT INTO messaging_destinations(target_id,is_group,label) VALUES($1,true,'Lab') RETURNING id", [chat])).rows[0]!.id;

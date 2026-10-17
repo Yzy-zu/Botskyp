@@ -31,11 +31,11 @@ export interface ToolExposure {
   readonly approximateSchemaBytes: number;
 }
 const signals: Readonly<Partial<Record<CapabilityDomain, RegExp>>> = {
-  productivity: /\b(?:memoria|recuerda|acuerdate|memoriza|nota|notas|anota|recordatorio|recuerdame)\b/gu,
+  productivity: /\b(?:memoria|recuerda|recuerdas|recuerdos|acuerdate|memoriza|nota|notas|anota|recordatorio|recuerdame)\b/gu,
   web: /\b(?:web|internet|google|noticias)\b/gu,
   economy: /\b(?:xp|daily|diario|saldo|nivel|hora feliz)\b/gu,
   polls: /\b(?:voto|vota|votar|encuesta|encuestas|sondeo)\b/gu,
-  school: /\b(?:tarea|tareas|horario|materia|materias|escuela|clase)\b/gu,
+  school: /\b(?:tarea|tareas|horario|materia|materias|escuela|clase|clases)\b/gu,
   games: /\b(?:blackjack|ruleta|juego|juegos|partida|plantarse|doblar|airdrop)\b/gu,
   media: /\b(?:pdf|docx|convierte|convertir|comprimelo|comprimir|sticker|audio|video|ocr|transcribe)\b/gu,
   library: /\b(?:biblioteca|pack|packs|cooperacha|lluvia)\b/gu,

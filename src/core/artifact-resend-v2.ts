@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { transaction, type Db } from '../db/client.js';
+import { executionTransaction } from './execution-transaction-v2.js';
 import type { Config } from '../config.js';
 import type { Delivery } from '../wa/types.js';
 import { mediaAllowed } from '../modules/media/access.js';
@@ -12,7 +13,7 @@ import { resolveArtifactForOperation } from './artifact-resolution-v2.js';
 /** Internal media capability, not tool #99. Only enqueues an existing blob, never a worker job. */
 export async function resendArtifactV2(ctx: ToolCtx, safeRefMap: SafeRefs, ref = 'A_LAST'): Promise<{ status: 'queued'; outboxId: string } | { status: 'denied' | 'not_found' | 'incompatible' | 'needs_clarification' }> {
   if (ctx.config.ROUTER_MODE !== 'v1_1') return { status: 'denied' };
-  return transaction(ctx.db, async c => {
+  return executionTransaction(ctx, async c => {
     const backend = await loadExecutionContext({ ...ctx, c }, { callOrigin: 'internal', safeRefMap });
     if (!await mediaAllowed(c, ctx.config, backend.chatId, backend.actorId)) return { status: 'denied' };
     const selected = await resolveArtifactForOperation('resend', { c, ...backend,
@@ -49,6 +50,6 @@ export async function artifactResendDelivery(db: Db, config: Config, row: { id: 
     try { validateBytes(a.data, a.mime); } catch { return undefined; }
     const kind = z.enum(['image','video','audio','sticker','document']).safeParse(a.kind);
     if (!kind.success) return undefined;
-    return { kind: kind.data, mime: a.mime, base64: a.data.toString('base64'), fileName: safeName(p.data.artifactId, extension(a.mime)) };
+    return { kind: kind.data, mime: a.mime, base64: a.data.toString('base64'), fileName: safeName('archivo', extension(a.mime)) };
   });
 }

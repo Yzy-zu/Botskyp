@@ -44,6 +44,7 @@ export async function enqueueMedia(ctx:ToolCtx,input:z.infer<typeof requestSchem
   const total=(await ctx.c.query<{n:string}>("SELECT count(*) n FROM jobs WHERE status IN ('queued','running')")).rows[0]!;
   if(Number(total.n)>=product.mediaQueueLimit)return fail('La cola multimedia está llena. Intenta más tarde.');
   const row=(await ctx.c.query<{id:string}>(`INSERT INTO jobs(kind,payload,chat_id,owner_id,source_message_id) VALUES('media',$1,$2,$3,$4) RETURNING id`,[JSON.stringify({...args,sources}),ctx.chat.id,ctx.actor.id,ctx.msg.id])).rows[0]!;
+  if(ctx.config.ROUTER_MODE==='v1_1')await ctx.c.query(`INSERT INTO outbox(chat_id,kind,payload,dedupe_key,next_try_at) VALUES($1,'media_progress',$2,$3,clock_timestamp()+$4::int*interval '1 millisecond') ON CONFLICT(dedupe_key) DO NOTHING`,[ctx.chat.id,JSON.stringify({text:'Aguanta, ya estoy preparando tu archivo...',sourceId:ctx.msg.id,jobId:row.id,actorId:ctx.actor.id}),`media:progress:${row.id}`,product.mediaProgressDelayMs]);
   return ok(`Trabajo #${row.id} en cola. Lo procesaré y publicaré el resultado aquí; todavía no se ha entregado.`,{jobId:row.id});
 }
 export async function beginCollection(ctx:ToolCtx,operation:'images_pdf'|'pdf_merge'):Promise<ToolResult>{

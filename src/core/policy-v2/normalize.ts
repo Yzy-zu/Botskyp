@@ -1,3 +1,6 @@
+import { stateSchema } from '../../modules/games/state.js';
+import { total, cardText } from '../../modules/games/rules.js';
+import { sanitizeOutputV2 } from '../output-sanitizer-v2.js';
 import { product } from '../../../config/product.js';
 import { level } from '../../modules/xp/service.js';
 import type { ToolResult as LegacyResult } from '../tools.js';
@@ -7,8 +10,8 @@ import type { ExecutionContextV2 } from './types.js';
 
 /** Facts are authoritative. Never infer a successful effect by parsing human reply text. */
 export async function normalizeLegacyResult(ctx: ExecutionContextV2, tool: ToolMetadataV2, result: LegacyResult, args: Record<string, unknown>): Promise<ToolResult> {
-  const base = { toolName: tool.name, domain: tool.domain };
-  if (!result.ok) return { ...base, status: 'error', code: 'LEGACY_REJECTED', data: { kind: result.kind } };
+  const base = { toolName: tool.name, domain: tool.domain, ...(result.ok ? {presentation:sanitizeOutputV2(result.reply)} : {}) };
+  if (!result.ok) return { ...base, status: 'error', code: 'LEGACY_REJECTED', data: { kind: result.kind }, presentation:sanitizeOutputV2(result.message === 'No.' ? 'No pude realizar esa operación con los datos disponibles.' : result.message) };
   const code = tool.name.replace(/[.-]/gu, '_').toUpperCase();
   const c = ctx.legacy.c;
   if (tool.name === 'xp.balance' || tool.name === 'xp.daily') {
@@ -29,17 +32,30 @@ export async function normalizeLegacyResult(ctx: ExecutionContextV2, tool: ToolM
     return { ...base, status: 'ok', code, data: { reminders } };
   }
   if (tool.name === 'polls.results') return { ...base, status: 'ok', code, data: result.facts };
-  if (tool.name === 'polls.vote') return { ...base, status: 'ok', code, data: { pollId: args.id, option: args.option } };
-  if (tool.name === 'games.blackjack' || tool.name === 'games.status') {
-    const games = (await c.query(`SELECT g.id,g.kind,g.status FROM games g JOIN game_actions a ON a.game_id=g.id
-      WHERE a.chat_id=$1 AND a.user_id=$2 AND a.source_id=$3`, [ctx.chatId, ctx.actorId, ctx.sourceMessageId])).rows;
-    return { ...base, status: 'ok', code, data: { games } };
+  if (tool.name === 'polls.vote') {
+    const option=(await c.query<{label:string}>('SELECT label FROM poll_options WHERE poll_id=$1 AND idx=$2',[args.id,args.option])).rows[0];
+    return { ...base, status: 'ok', code, data: { pollId: args.id, option: args.option,label:option?.label } };
+  }
+  if(tool.name.startsWith('games.')){
+    const game=(await c.query<{kind:string;status:string;state:unknown}>(`SELECT g.kind,g.status,g.state FROM games g JOIN game_actions a ON a.game_id=g.id
+      WHERE a.chat_id=$1 AND a.user_id=$2 AND a.source_id=$3`,[ctx.chatId,ctx.actorId,ctx.sourceMessageId])).rows[0];
+    const state=stateSchema.safeParse(game?.state);
+    if(game?.kind==='blackjack' && state.success){
+      const player=state.data.players.find(p=>p.id===ctx.actorId);
+      if(player)return {...base,status:'ok',code,data:{hand:cardText(player.hand),total:total(player.hand),bet:player.bet,closed:game.status==='done',dealer:cardText(game.status==='done'?state.data.dealer:state.data.dealer.slice(0,1)),returnedXp:state.data.results?.[ctx.actorId]}};
+    }
+  }
+  if(tool.name.startsWith('cooperacha.')){
+    const co=(await c.query<{total:number;goal:number;status:string}>('SELECT total,goal,status FROM cooperachas WHERE chat_id=$1 ORDER BY created_at DESC LIMIT 1',[ctx.chatId])).rows[0];
+    if(co)return {...base,status:'ok',code,data:{total:co.total,goal:co.goal,open:co.status==='open'},presentation:`La cooperacha lleva ${co.total} de ${co.goal} XP.${co.status==='open'?' Sigue abierta.':' Ya terminó.'}`};
   }
   if (tool.name === 'media.status') {
     const jobs = (await c.query(`SELECT id,status FROM jobs WHERE kind='media' AND chat_id=$1 AND owner_id=$2 ORDER BY id DESC LIMIT $3`, [ctx.chatId, ctx.actorId, product.mediaMaxFiles])).rows;
     return { ...base, status: 'ok', code, data: { jobs } };
   }
   if (tool.name === 'minecraft.status') return { ...base, status: 'ok', code, data: { observed: true, adapter: 'legacy_status' } };
+  if (tool.name === 'web.search') return {...base,status:'ok',code,data:{searchResults:result.reply.split('\n\n').slice(0,product.searchResults).map(block=>{const lines=block.split('\n');return {title:lines[0],snippet:lines.slice(1,-1).join(' '),url:lines.at(-1)};})},requiresLlmSynthesis:true};
+  if (tool.name === 'media.process') return {...base,status:result.facts.jobId || result.facts.deliveryRequested?'queued':'ok',code,data:result.facts};
   if (tool.domain === 'minecraft' && ['start','stop','restart','backup','config-set','console'].includes(tool.name.slice('minecraft.'.length)) && !['minecraft.operations'].includes(tool.name)) {
     const op = (await c.query<{ id: string; status: string }>('SELECT id,status FROM minecraft_operations WHERE chat_id=$1 AND actor_id=$2 AND source_id=$3', [ctx.chatId, ctx.actorId, ctx.sourceMessageId])).rows[0];
     if (!op) return { ...base, status: 'uncertain', code: 'MINECRAFT_UNCERTAIN', data: {} };
@@ -49,7 +65,9 @@ export async function normalizeLegacyResult(ctx: ExecutionContextV2, tool: ToolM
     const op = (await c.query<{ id: string; status: string }>('SELECT id,status FROM bulk_ops WHERE chat_id=$1 AND actor_id=$2 AND source_id=$3 AND kind=$4', [ctx.chatId, ctx.actorId, ctx.sourceMessageId, tool.name === 'bulk.nuclear' ? 'nuclear' : tool.name === 'bulk.broadcast' ? 'broadcast' : 'message'])).rows[0];
     return { ...base, status: op?.status === 'queued' ? 'queued' : 'uncertain', code, data: { operationId: op?.id, operationStatus: op?.status, count: args.count ?? (Array.isArray(args.destinations) ? args.destinations.length : 1) } };
   }
-  if (['memory.remember','notes.create','notes.delete','reminders.create'].includes(tool.name)) return { ...base, status: 'ok', code, data: result.facts };
+  if(tool.name==='reminders.create')return {...base,status:'ok',code,data:{body:args.body,dueAt:args.dueAt}};
+  if(tool.name==='notes.create')return {...base,status:'ok',code,data:{body:args.body}};
+  if (['memory.remember','notes.delete'].includes(tool.name)) return { ...base, status: 'ok', code, data: result.facts };
   if (tool.name.startsWith('drive.') && result.facts.jobId) return { ...base, status: 'queued', code: 'LEGACY_JOB_QUEUED', data: { jobId: result.facts.jobId } };
   if (tool.name === 'library.sync') {
     const sync = (await c.query<{ id: string; status: string }>("SELECT id,status FROM library_syncs WHERE actor_id=$1 AND status IN ('queued','running') ORDER BY id DESC LIMIT 1", [ctx.actorId])).rows[0];

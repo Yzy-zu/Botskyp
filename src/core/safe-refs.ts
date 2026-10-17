@@ -36,6 +36,10 @@ export class SafeRefs {
       this.resources.set(`${resource.kind}_${randomBytes(12).toString('hex')}`, resource);
     }
   }
+  /** Merge another authenticated snapshot while retaining references already sent this turn. */
+  include(snapshot: SafeRefs): void {
+    for (const [ref, resource] of snapshot.resources) this.resources.set(ref, resource);
+  }
   list(scope: RefScope): { ref: SafeRef; label: string; kind: RefKind }[] {
     return [...this.resources].filter(([, r]) => visible(r, scope)).map(([ref, r]) => ({
       ref, kind: r.kind, label: r.label.replace(/\b\d+@(?:s\.whatsapp\.net|g\.us|lid)\b/gu, '[identidad]'),

@@ -1,3 +1,4 @@
+import { resolveArtifactForOperation, type ArtifactOperation } from '../artifact-resolution-v2.js';
 import { product } from '../../../config/product.js';
 import { destinationAllowed } from '../../modules/messaging/access.js';
 import { lastChatArtifact } from '../chat-artifacts.js';
@@ -34,7 +35,7 @@ export type ResolvedReferences = {
   args: Record<string, unknown>; refs: PolicyDecision['resolvedSafeRefs']; ownership: PolicyDecision['ownership'];
   failure?: 'not_found' | 'needs_clarification';
 };
-export async function resolveReferences(ctx: ExecutionContextV2, args: Record<string, unknown>): Promise<ResolvedReferences> {
+export async function resolveReferences(ctx: ExecutionContextV2, args: Record<string, unknown>, artifactOperation?: string): Promise<ResolvedReferences> {
   const refs: { ref: string; kind: RefKind; id: string }[] = [], ownership: { kind: RefKind; id: string; ownerId: string | null; own: boolean }[] = [];
   let failure: ResolvedReferences['failure'];
   async function walk(value: unknown, field: string): Promise<unknown> {
@@ -46,6 +47,13 @@ export async function resolveReferences(ctx: ExecutionContextV2, args: Record<st
       ?? (field === 'subject' && value.startsWith('subjectRef_') ? 'subjectRef' : undefined);
     if (value === 'SELF' && field === 'memberRef') return ctx.actorId;
     if (!kind && field !== 'subject') return value;
+    if(field==='artifactRef' && artifactOperation){
+      const selected=await resolveArtifactForOperation(artifactOperation as ArtifactOperation,{c:ctx.legacy.c,...ctx,...(ctx.legacy.msg.quoted?{quotedMessageId:ctx.legacy.msg.quoted.id}:{})},value);
+      if(selected.status!=='ok'){failure=selected.status==='not_found'?'not_found':'needs_clarification';return value;}
+      refs.push({ref:value,kind:'artifactRef',id:selected.artifact.id});
+      ownership.push({kind:'artifactRef',id:selected.artifact.id,ownerId:ctx.actorId,own:true});
+      return selected.artifact.id;
+    }
     const last = field === 'artifactRef' && value === 'A_LAST' ? await lastChatArtifact(ctx.legacy.c, ctx.chatId, ctx.actorId) : undefined;
     const resolved = last ? { status: 'ok' as const, id: last.id, kind: 'artifactRef' as const } : kind ? ctx.safeRefMap.resolve(value, kind, ctx)
       : ctx.safeRefMap.resolveName(value, 'subjectRef', ctx);

@@ -1,7 +1,10 @@
+import { confirmationPromptV2 } from '../confirmation-presenter-v2.js';
+import { openTimeClarificationV2 } from '../clarification-v2.js';
+import { runMediaBridgeV2 } from '../media-bridge-v2.js';
 import { confirmationInputV2 } from '../session-input-v2.js';
 import { randomUUID } from 'node:crypto';
 import pino from 'pino';
-import { transaction } from '../../db/client.js';
+import { executionTransaction } from '../execution-transaction-v2.js';
 import { createRegistry } from '../registry.js';
 import { createToolRegistryV2 } from '../tool-registry-v2.js';
 import { executionKey } from '../tool-execution.js';
@@ -54,7 +57,7 @@ async function replay(ctx: ExecutionContextV2, name: string, requestHash: string
   [ctx.chatId, ctx.actorId, ctx.executionKey, ctx.turnId, ctx.providerCallId, name, requestHash])).rows[0];
 }
 
-/** Only this function invokes a legacy handler for v2. Not imported by router, sessions, Gemini or worker. */
+/** Only this function invokes business handlers for v2; the natural router and sessions use this gate. */
 export async function executeToolV2(ctx: ToolCtx, name: string, modelArgs: unknown, call: BackendCall): Promise<ToolResult> {
   const entry = metadata(name);
   if (!entry) return result(name, 'core', 'not_found', 'TOOL_NOT_FOUND');
@@ -63,7 +66,7 @@ export async function executeToolV2(ctx: ToolCtx, name: string, modelArgs: unkno
     const d = await evaluateToolV2(ctx, name, modelArgs, call);
     return result(name, entry.tool.domain, 'denied', 'DENIED_EXECUTION_MODE', { policyDecision: d?.status });
   }
-  return transaction(ctx.db, async c => {
+  return executionTransaction(ctx, async c => {
     // A single admission lock covers every identity key, including provider IDs and logical actions.
     // No external mutations run here; writes enqueue to historical workers.
     await c.query("SELECT pg_advisory_xact_lock(hashtext('botsky-v2-execution-admission'))");
@@ -124,18 +127,26 @@ export async function executeToolV2(ctx: ToolCtx, name: string, modelArgs: unkno
     if (confirmationFailure) return finish(result(name, entry.tool.domain, 'denied', confirmationFailure));
     if (decision.status !== 'allow' && decision.status !== 'needs_confirmation') {
       if (pending) await c.query('UPDATE tool_confirmations_v2 SET invalidated=true WHERE id=$1', [pending.id]);
-      return finish(result(name, entry.tool.domain, decision.status, decision.denialCode ?? 'DENIED_POLICY'));
+      if(decision.status==='needs_clarification')await openTimeClarificationV2(context,name,modelArgs,decision.denialCode ?? '');
+      const data:Record<string,unknown>={};
+      if(decision.denialCode==='DENIED_INSUFFICIENT_XP'){
+        const balance=(await c.query<{balance:number}>('SELECT balance FROM wallets WHERE user_id=$1',[context.actorId])).rows[0]?.balance ?? 0;
+        const cost=Number(decision.resolvedArgs.bet ?? decision.resolvedArgs.amount ?? 0);
+        if(cost>0){data.balance=balance;data.shortfall=Math.max(0,cost-balance);}
+      }
+      return finish(result(name, entry.tool.domain, decision.status, decision.denialCode ?? 'DENIED_POLICY',data));
     }
     if (decision.status === 'needs_confirmation' && !pending) {
       // Terminal parent must exist before confirmation FK; no business handler has run.
       const confirmationId = await createPendingConfirmation(c, context, id, name, entry.tool.permission, decision);
-      return finish(result(name, entry.tool.domain, 'needs_confirmation', 'NEEDS_CONFIRMATION', { confirmationId, summary: decision.confirmationSummary }));
+      return finish(result(name, entry.tool.domain, 'needs_confirmation', 'NEEDS_CONFIRMATION', { confirmationId, prompt:await confirmationPromptV2(context,name,decision) }));
     }
     await c.query('SAVEPOINT v2_handler');
     let normalized: ToolResult;
     try {
       let outcome;
-      if (['bulk.nuclear','bulk.broadcast','messaging.send'].includes(name)) {
+      if(name==='media.process')outcome=await runMediaBridgeV2(context,decision);
+      else if (['bulk.nuclear','bulk.broadcast','messaging.send'].includes(name)) {
         const kind = name === 'bulk.nuclear' ? 'nuclear' : name === 'bulk.broadcast' ? 'broadcast' : 'message';
         const prepared = await draft(context.legacy, kind, String(decision.resolvedArgs.text),
           Array.isArray(decision.resolvedArgs.destinations) ? decision.resolvedArgs.destinations as string[] : [],
@@ -149,7 +160,8 @@ export async function executeToolV2(ctx: ToolCtx, name: string, modelArgs: unkno
       normalized = await normalizeLegacyResult(context, entry.tool, outcome, decision.resolvedArgs);
       if (!outcome.ok) {
         await c.query('ROLLBACK TO SAVEPOINT v2_handler');
-        normalized = result(name, entry.tool.domain, 'error', 'LEGACY_REJECTED', { kind: outcome.kind });
+        // Keep the sanitized user-facing failure; the rolled-back handler produced no effect.
+        normalized = {...normalized,status:'error',code:'LEGACY_REJECTED'};
       } else if (risk !== 'read') await c.query('INSERT INTO audit_log(actor_id,chat_id,action) VALUES($1,$2,$3)', [context.actorId, context.chatId, name]);
     } catch (error) {
       await c.query('ROLLBACK TO SAVEPOINT v2_handler');

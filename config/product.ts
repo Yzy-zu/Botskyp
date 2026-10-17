@@ -7,6 +7,10 @@ export const product = {
   artifactWindowMs: 86_400_000,
 
   maxToolsPerTurn: 20,
+  maxToolCallsPerTurn: 3,
+  maxMutationRetriesPerTurn: 1,
+  mediaProgressDelayMs: 2_500,
+  mediaChatTextChars: 3_000,
   maxCapabilityExpansionsPerTurn: 1,
   llmMaxConfiguredRpm: 10_000,
   llmMaxConfiguredDaily: 1_000_000,

@@ -1,3 +1,6 @@
+import { sanitizeOutputV2 } from '../core/output-sanitizer-v2.js';
+import { mediaAllowed } from '../modules/media/access.js';
+import { transaction } from '../db/client.js';
 import { artifactResendDelivery } from '../core/artifact-resend-v2.js';
 import { moduleEnabled,type Chat } from '../core/permissions.js';
 import { driveDelivery } from '../modules/drive/delivery.js';
@@ -73,6 +76,18 @@ export async function sendNext(db:Db, transport:Transport, config:Config):Promis
     if(!media){await db.query("UPDATE outbox SET status='failed',last_error='artifact_delivery_not_allowed' WHERE id=$1 AND status='queued'",[row.id]);return true;}
     delivery.media=media;
   }
+  if(row.kind==='media_progress'){
+    const progress=z.object({jobId:z.string(),actorId:z.string()}).safeParse(row.payload);
+    const active=progress.success && (await db.query("SELECT 1 FROM jobs WHERE id=$1 AND chat_id=$2 AND owner_id=$3 AND status IN ('queued','running')",[progress.data.jobId,row.chat_id,progress.data.actorId])).rowCount;
+    if(!active || !progress.success || !await transaction(db,c=>mediaAllowed(c,config,row.chat_id,progress.data.actorId))){
+      await db.query("UPDATE outbox SET status='failed',last_error='progress_superseded' WHERE id=$1 AND status='queued'",[row.id]);return true;
+    }
+  }
+  if(row.kind==='media_text'){
+    const media=await mediaDelivery(db,config,row);
+    if(!media || media.mime!=='text/plain'){await db.query("UPDATE outbox SET status='failed',last_error='media_delivery_not_allowed' WHERE id=$1 AND status='queued'",[row.id]);return true;}
+    delete delivery.attachmentId;
+  }
   if(row.kind==='media_result'){
     const media=await mediaDelivery(db,config,row);
     if(!media){await db.query("UPDATE outbox SET status='failed',last_error='media_delivery_not_allowed' WHERE id=$1 AND status='queued'",[row.id]);return true;}
@@ -89,8 +104,9 @@ export async function sendNext(db:Db, transport:Transport, config:Config):Promis
     if(drive.media)delivery.media=drive.media;
     delivery.requireReceipt=true;
   }
+  if(config.ROUTER_MODE==='v1_1')delivery.text=sanitizeOutputV2(delivery.text);
   // Persist uncertainty BEFORE crossing the network boundary.
-  const claimed=row.kind==='bulk_text'?{rowCount:await claimBulk(db,config,row)?1:0}:await db.query("UPDATE outbox SET status='sending',sending_at=now(),attempts=attempts+1 WHERE id=$1 AND status='queued' AND (chat_id NOT LIKE '%@g.us' OR EXISTS(SELECT 1 FROM chats ch WHERE ch.id=outbox.chat_id AND ch.enabled AND ch.is_group)) RETURNING id",[row.id]);
+  const claimed=row.kind==='bulk_text'?{rowCount:await claimBulk(db,config,row)?1:0}:await db.query("UPDATE outbox SET status='sending',sending_at=now(),attempts=attempts+1 WHERE id=$1 AND status='queued' AND (kind<>'media_progress' OR EXISTS(SELECT 1 FROM jobs j WHERE j.id::text=outbox.payload->>'jobId' AND j.status IN ('queued','running'))) AND (chat_id NOT LIKE '%@g.us' OR EXISTS(SELECT 1 FROM chats ch WHERE ch.id=outbox.chat_id AND ch.enabled AND ch.is_group)) RETURNING id",[row.id]);
   if (!claimed.rowCount) return false;
   let sent;
   try { sent=await transport.send(delivery); }

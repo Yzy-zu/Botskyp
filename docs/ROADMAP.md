@@ -219,3 +219,18 @@ Solo encuestas por texto y pulido final de producción; alcance DEC-055 y FASE-8
 Un constructor sin paralelización. La autorización actual sustituye los bloqueos
 históricos de este documento. Sin merge, sin activaciones de grupos reales por
 el constructor y sin declaración de Botsky v1 terminado. Auditoría final pendiente.
+
+## 11. Autorización vigente de v1.1 — R1 (17-10-2026)
+
+El dueño aprueba el baseline `main=0c1a19ef919f759ac65bee7117ec26c2d70a286b`
+y la arquitectura Natural-First conceptual. Se congela v1.0.0 con tag anotado
+sobre ese commit. Solo se autoriza R1 en `feat/v1.1-natural-router`, un constructor
+sin delegación: persistencia, contratos, validación de configuración y pruebas
+focalizadas. Plan y decisiones en docs/v1.1 y DEC-058.
+
+No se implementa Natural Router completo ni se migran las 98 herramientas.
+El router visible continúa v1 con cualquiera de los tres modos configurables.
+**Sin R2, despliegue, merge a main, activaciones ni cambios a Evolution.**
+Al completar checks, documentación y commit/push a la rama autorizada, detenerse.
+Esta instrucción prevalece sobre los flujos históricos de deploy/avance por fase;
+la historia de Fases 0–8 permanece intacta.

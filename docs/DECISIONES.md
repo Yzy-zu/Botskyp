@@ -1156,3 +1156,32 @@ y restore temporal aislado con diez migraciones; solo Lab habilitado, tablas pol
 vacías. Datos persistentes comparados conservados, salvo nombre de grupo autenticado; Evolution
 sin cambios de imagen/arranque. Sin merge, activaciones fuera de Lab ni declaración
 v1 terminado. Auditoría FINAL pendiente y bloqueo histórico de JIDs explícito.
+
+## 12. Botsky v1.1 — R1 (17-10-2026)
+
+### DEC-058: Fundamentos aislados de Natural-First
+
+Instrucción directa del dueño: baseline aprobado
+`main=0c1a19ef919f759ac65bee7117ec26c2d70a286b`. Tag anotado `v1.0.0`
+creado/publicado exactamente allí; rama `feat/v1.1-natural-router`.
+La autorización actual supera los bloqueos históricos únicamente para R1;
+no autoriza R2, deploy, merge ni cambios visibles del router v1.
+
+011 es aditiva: inbox.turn_id con backfill y registro message_turns independiente
+de retención; ledger tool_executions con cuatro orígenes, IDs proveedor opcionales,
+clave interna determinista, dedupe de efecto y confirmación hija en turno nuevo;
+chat_artifacts con parent chain, backing real media/escolar UUID y ownership FK.
+Se distinguen chat crudo y chat resuelto por la canonicalización privada ya
+existente en v1, sin cambiar actorFor/permisos ni reglas @lid.
+
+Se añaden contratos ToolResult, SafeRefs y SemanticTime sin migrar tools ni
+conectarlos al router. Adapter Gemini REST conserva content/parts completos,
+call IDs y firmas opacas para un loop futuro. Flag ROUTER_MODE válido pero inerte;
+cuotas por entorno mantienen topes locales históricos y solo admiten reducciones
+en R1. Compose versionado reenvía esas variables; no se aplica a servicios.
+Sin dependencia nueva, facturación, cuota real de proveedor ni mensajes WhatsApp.
+
+Esquema, decisiones, límites, fuentes y evidencia en
+[ARQUITECTURA](v1.1/ARQUITECTURA.md) y
+[R1-FUNDAMENTOS](v1.1/R1-FUNDAMENTOS.md). La revisión crítica previa a merge sigue
+siendo un paso futuro; no se afirma revisión independiente ni activación de v1.1.

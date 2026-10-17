@@ -12,6 +12,8 @@ export function localPresenterV2(result: ToolResult): string {
     if(code==='DENIED_MODULE_DISABLED' || code==='DENIED_DRIVE_DISABLED')return `El módulo de ${moduleNames[name.split('.')[0]!] ?? moduleNames[result.domain] ?? 'esa función'} está apagado en este chat.`;
     if(code==='DENIED_ADAPTER_UNAVAILABLE')return 'Esa función todavía no está disponible de forma segura. No hice cambios.';
     if(code==='DENIED_INSUFFICIENT_XP')return typeof data.balance==='number' && typeof data.shortfall==='number'?`Te faltan ${data.shortfall} XP para eso; tienes ${data.balance}.`:'No tienes suficientes XP para eso.';
+    if(code==='DENIED_SOURCE_MESSAGE_CONFLICT')return 'Solo puedo tramitar una acción de ese tipo por mensaje. Pídeme la otra en un mensaje nuevo.';
+    if(code==='DENIED_MEDIA_TURN_LIMIT')return 'Solo puedo preparar un archivo por mensaje. Pídeme el siguiente paso cuando termine este.';
     if(code==='DENIED_DAILY_COOLDOWN')return 'Ya cobraste tu premio diario. Vuelve cuando se cumplan las 24 horas.';
     if(code==='DENIED_PRIVATE_ONLY')return 'Pídemelo por privado para cuidar tu información.';
     if(code==='DENIED_SENSITIVE_MEMORY')return 'No guardo contraseñas, tokens ni datos sensibles.';
@@ -78,11 +80,16 @@ export const conversationalOutcomeV2=z.strictObject({
 });
 /** Plain provider prose has no authority. Local mutation templates always come from current receipts. */
 export function conversationTextV2(text: string): { text: string; retry: boolean } {
-  let value: unknown;
-  try { value=JSON.parse(text); } catch { return {text:'No ejecuté ninguna acción para esa solicitud.',retry:true}; }
-  const parsed=conversationalOutcomeV2.safeParse(value);
-  if(!parsed.success || parsed.data.effects.length || parsed.data.outcome==='action_required')return {text:'No ejecuté ninguna acción para esa solicitud.',retry:true};
   // Secondary diagnostic for a provider violating its structured no-effects declaration.
-  if(/\b(?:guardad[oa]|registrad[oa]|(?:te )?di \d+\s*XP|recordatorio creado|mensaje enviado|ya (?:guardé|envié|creé|borré|cancelé|te di|quedó))\b/iu.test(parsed.data.text))return {text:'No ejecuté ninguna acción para esa solicitud.',retry:true};
+  const mutationClaim=/(?<![\p{L}\p{N}_])(?:guardad[oa]|registrad[oa]|(?:te )?di \d+\s*XP|recordatorio creado|mensaje enviado|ya (?:guardé|envié|creé|borré|cancelé|registré|programé|anoté|actualicé|otorgué|te di|quedó))(?![\p{L}\p{N}_])/iu;
+  const noAction={text:'No ejecuté ninguna acción para esa solicitud.',retry:false};
+  const invalid={text:'No pude preparar una respuesta clara. Inténtalo otra vez.',retry:false};
+  let value: unknown;
+  try { value=JSON.parse(text); } catch { return mutationClaim.test(text)?noAction:invalid; }
+  const parsed=conversationalOutcomeV2.safeParse(value);
+  if(!parsed.success)return mutationClaim.test(text)?noAction:invalid;
+  if(parsed.data.effects.length)return noAction;
+  if(parsed.data.outcome==='action_required')return {...noAction,retry:true};
+  if(mutationClaim.test(parsed.data.text))return noAction;
   return {text:parsed.data.text,retry:false};
 }

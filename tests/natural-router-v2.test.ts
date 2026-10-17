@@ -1,3 +1,4 @@
+import { DateTime } from 'luxon';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -15,6 +16,7 @@ import { libraryFiles } from './library-harness.js';
 import { transaction } from '../src/db/client.js';
 import * as minecraft from '../src/modules/minecraft/client.js';
 import { claimMedia,processMedia,retainMedia, type WorkerDeps } from '../src/modules/media/worker.js';
+import { reportMediaDeliveries } from '../src/modules/media/delivery.js';
 import { sendNext } from '../src/wa/outbox.js';
 import type { ToolCtx } from '../src/core/tools.js';
 import type { Msg,Transport } from '../src/wa/types.js';
@@ -23,7 +25,7 @@ const clean=(text:string)=>expect(text).not.toMatch(/@s\.whatsapp\.net|@g\.us|[a
 const reply=(calls:{name:string;args?:unknown;id?:string}[]):LlmReply=>({text:'',calls,content:{role:'model',extra:'keep',parts:[{thought:true,text:'hidden',thoughtSignature:'opaque-before'},...calls.map(functionCall=>({functionCall,thoughtSignature:'opaque-call',custom:{keep:true}}))]}});
 const say=(text:string,structured=true):LlmReply=>{const out=structured?JSON.stringify({outcome:'conversation',text,effects:[]}):text;return {text:out,calls:[],content:{role:'model',parts:[{text:out}]}};};
 function scripted(...outputs:(LlmReply|((input:LlmInput)=>LlmReply))[]){return {generate:vi.fn<Llm['generate']>(async input=>{const next=outputs.shift();if(!next)throw new Error('Unexpected provider call');return typeof next==='function'?next(input):next;})};}
-const envelope=(input:LlmInput)=>JSON.parse((input.contents[0] as {parts:{text:string}[]}).parts[0]!.text) as {REFERENCE_DATA:{poll?:{pollRef:string};notes:{ref:string}[];reminders:{ref:string}[]}};
+const envelope=(input:LlmInput)=>JSON.parse((input.contents[0] as {parts:{text:string}[]}).parts[0]!.text) as {REFERENCE_DATA:{nowLocal:string;poll?:{pollRef:string};notes:{ref:string}[];reminders:{ref:string}[]}};
 async function turn(text:string,llm:Llm,setup?:(ctx:ToolCtx)=>Promise<void>,input:Partial<Msg>={}){
   return context({text,...input},async ctx=>{await setup?.(ctx);const result=await route(ctx,llm);if(result)clean(result);return {text:result,turnId:ctx.turnId};});
 }
@@ -44,7 +46,7 @@ it.each(naturalR5)('natural provider selection: $text → $tool',async fixture=>
   const llm=scripted(input=>{
     const name=fixture.tool.replaceAll('.','_');
     expect(input.tools.map(t=>t.name)).toContain(name);
-    const args={...fixture.args,...('poll' in fixture?{pollRef:envelope(input).REFERENCE_DATA.poll!.pollRef}:{})};
+    const args={...fixture.args,...(fixture.tool==='school.schedule'?{weekday:DateTime.fromISO(envelope(input).REFERENCE_DATA.nowLocal).plus({days:1}).weekday}:{}),...('poll' in fixture?{pollRef:envelope(input).REFERENCE_DATA.poll!.pollRef}:{})};
     return reply([{id:'Provider-ID/Exact==',name,args}]);
   });
   const output=await turn(fixture.text,llm,undefined,'private' in fixture?{chatId:owner,isGroup:false}:{});
@@ -56,12 +58,12 @@ it.each(naturalR5)('natural provider selection: $text → $tool',async fixture=>
   if(fixture.tool==='memory.remember')expect(await count('notes')).toBe(0);
 });
 
-it.each(['Ya quedó guardado.','Voto registrado por tacos.','Ya te di 25 XP.','Recordatorio creado.','Mensaje enviado.'])('blocks false success without any current receipt: %s',async text=>{
+it.each(['Ya quedó guardado.','Voto registrado por tacos.','Ya te di 25 XP.','Recordatorio creado.','Mensaje enviado.','Ya guardé ese dato.','Ya envié el mensaje.','Ya registré tu voto.','Ya programé el recordatorio.'])('blocks false success without any current receipt: %s',async text=>{
   for(const structured of [false,true]){
     const llm=scripted(say(text,structured),say(text,structured));
     const result=await turn('botsky haz esa acción',llm);
     expect(result.text).toBe('No ejecuté ninguna acción para esa solicitud.');
-    expect(llm.generate).toHaveBeenCalledTimes(2);
+    expect(llm.generate).toHaveBeenCalledOnce();
     expect((await db.query('SELECT 1 FROM tool_executions WHERE turn_id=$1',[result.turnId])).rowCount).toBe(0);
   }
 });
@@ -188,7 +190,7 @@ it.each(['100@s.whatsapp.net','123e4567-e89b-12d3-a456-426614174000','2026-10-17
 it('function responses never export IDs, paths, hashes, exceptions or secrets',()=>{
   const result=visibleToolResultV2({status:'ok',toolName:'notes.list',domain:'productivity',code:'NOTES_LIST',data:{notes:[{id:'12',body:'tortillas',actorId:owner}],confirmationHash:'secret',path:'/etc/passwd',exception:'SQL SELECT secret'}});
   expect(JSON.stringify(result)).toContain('tortillas');expect(JSON.stringify(result)).not.toMatch(/actorId|confirmationHash|secret|\/etc|exception|"id"/);
-  expect(conversationTextV2(JSON.stringify({outcome:'conversation',text:'Listo',effects:[{action:'memory.remember',status:'ok'}]})).retry).toBe(true);
+  expect(conversationTextV2(JSON.stringify({outcome:'conversation',text:'Listo',effects:[{action:'memory.remember',status:'ok'}]})).retry).toBe(false);
 });
 it('full inbox commits tool effect, receipt, sanitized reply and dedupe together without crossed locks',async()=>{
   vi.spyOn(Gemini.prototype,'generate').mockResolvedValue(reply([{name:'memory_remember',id:'current',args:{body:'estudio sistemas'}}]));
@@ -283,6 +285,9 @@ it('media delivery rechecks retention and cannot send expired text backing',asyn
   expect((await db.query("SELECT payload->>'text' text FROM outbox WHERE kind='media_text'")).rows[0]?.text).not.toContain('Texto privado.');
   const transport=sentTransport();await sendNext(db,transport,config);expect(transport.send).not.toHaveBeenCalled();
   expect((await db.query("SELECT status FROM outbox WHERE kind='media_text'")).rows[0]?.status).toBe('failed');
+  await reportMediaDeliveries(db,'v1_1');
+  const notice=(await db.query("SELECT payload->>'text' text FROM outbox WHERE dedupe_key LIKE 'media:delivery-problem:%'")).rows[0]?.text as string;
+  expect(notice).toContain('No pude confirmar');clean(notice);
 });
 it('real REST adapter preserves full signed model content, response IDs, turn accounting and safe synthesis payload',async()=>{
   const first=reply([{name:'web_search',id:'Exact/Provider-ID==',args:{query:'ganador mundial 2022'}}]);
@@ -352,4 +357,78 @@ it('a provider ID reused for a different tool cannot masquerade as an ok mutatio
   const output=await turn('botsky acuérdate de que estudio sistemas y dime mis xp',llm);
   expect(output.text).toContain('XP');expect(output.text).not.toContain('guardé');
   expect(await count('user_memories')).toBe(0);expect(await count('tool_executions')).toBe(1);expect(llm.generate).toHaveBeenCalledOnce();
+});
+
+it('malformed conversational output cannot induce an action-selection retry',async()=>{
+  const llm=scripted(say('Hola.',false));
+  expect((await turn('hola',llm)).text).toContain('No pude preparar una respuesta clara');
+  expect(llm.generate).toHaveBeenCalledOnce();expect(await count('tool_executions')).toBe(0);
+});
+
+it('distinct media operations in one turn cannot claim the same durable job as two effects',async()=>{
+  const llm=scripted(reply([{id:'compress',name:'media_process',args:{operation:'pdf_compress'}},{id:'read',name:'media_process',args:{operation:'read'}}]));
+  const output=await turn('comprime el PDF y léelo',llm,async ctx=>{await backing(ctx);});
+  expect(output.text).toContain('un archivo por mensaje');expect(await count('jobs')).toBe(1);
+  expect((await db.query('SELECT status FROM tool_executions WHERE turn_id=$1 ORDER BY created_at',[output.turnId])).rows).toEqual([{status:'queued'},{status:'denied'}]);
+});
+it('selected artifact identity is part of admission and distinct resends do not alias one receipt',async()=>{
+  await context({},ctx=>backing(ctx));await context({},ctx=>backing(ctx));
+  const llm=scripted(input=>{
+    const data=JSON.parse((input.contents[0] as {parts:{text:string}[]}).parts[0]!.text) as {REFERENCE_DATA:{recentArtifacts:{ref:string}[]}};
+    const refs=data.REFERENCE_DATA.recentArtifacts;
+    return reply(refs.slice(0,2).map((a,index)=>({id:`resend-${index}`,name:'media_process',args:{operation:'resend',artifactRef:a.ref}})));
+  });
+  const output=await turn('pásame esos dos archivos',llm);
+  expect(output.text).toContain('un archivo por mensaje');
+  expect((await db.query('SELECT status,args_hash FROM tool_executions WHERE turn_id=$1 ORDER BY created_at',[output.turnId])).rows.map(r=>r.status)).toEqual(['queued','denied']);
+  expect((await db.query("SELECT 1 FROM outbox WHERE kind='artifact_resend'")).rowCount).toBe(1);
+});
+
+it('two different votes in a message cannot report a vote the historical dedupe did not cast',async()=>{
+  await db.query(`WITH p AS (INSERT INTO polls(chat_id,author_id,source_id,question,status,closes_at) VALUES($1,$2,$3,'¿Comida?','open',now()+interval '1 day') RETURNING id)
+    INSERT INTO poll_options(poll_id,idx,label) SELECT id,1,'Tacos' FROM p UNION ALL SELECT id,2,'Pizza' FROM p`,[chat,owner,randomUUID()]);
+  const llm=scripted(input=>{
+    const pollRef=envelope(input).REFERENCE_DATA.poll!.pollRef;
+    return reply([{id:'tacos',name:'polls_vote',args:{pollRef,option:'Tacos'}},{id:'pizza',name:'polls_vote',args:{pollRef,option:'Pizza'}}]);
+  });
+  const output=await turn('voto tacos y después pizza',llm);
+  expect(output.text).toContain('por Tacos');expect(output.text).not.toContain('por Pizza');
+  expect((await db.query('SELECT option_idx FROM poll_votes')).rows).toEqual([{option_idx:1}]);
+  expect((await db.query('SELECT status FROM tool_executions WHERE turn_id=$1 ORDER BY created_at',[output.turnId])).rows).toEqual([{status:'ok'},{status:'denied'}]);
+});
+it('two task creations cannot claim the first source-bound task as a second one',async()=>{
+  await db.query("INSERT INTO school_subjects(chat_id,name) VALUES($1,'Matemáticas')",[chat]);
+  const output=await turn('anota dos tareas de Matemáticas',scripted(reply([{id:'task-one',name:'school_task_create',args:{subject:'Matemáticas',title:'primera tarea'}},{id:'task-two',name:'school_task_create',args:{subject:'Matemáticas',title:'segunda tarea'}}])));
+  expect(output.text).toContain('una acción de ese tipo');
+  expect((await db.query('SELECT title FROM school_tasks')).rows).toEqual([{title:'primera tarea'}]);
+  expect((await db.query('SELECT status FROM tool_executions WHERE turn_id=$1 ORDER BY created_at',[output.turnId])).rows).toEqual([{status:'ok'},{status:'denied'}]);
+});
+it('a game status and move cannot reuse one historical game action as two current effects',async()=>{
+  const {initialState}=await import('../src/modules/games/state.js');
+  const state=initialState(20),id=randomUUID();
+  state.players=[{id:owner,bet:20,hand:[2,3],stood:false}];state.deck=[9,8,7,6];state.dealer=[4,5];
+  await db.query("INSERT INTO games(id,chat_id,owner_id,kind,status,state,source_id,expires_at) VALUES($1,$2,$3,'blackjack','playing',$4,'fixture-game',now()+interval '1 minute')",[id,chat,owner,JSON.stringify(state)]);
+  await db.query('INSERT INTO game_players(game_id,chat_id,user_id) VALUES($1,$2,$3)',[id,chat,owner]);
+  const output=await turn('cómo voy y dame otra carta',scripted(reply([{id:'status',name:'games_status',args:{}},{id:'hit',name:'games_play',args:{move:'hit'}}])));
+  expect(output.text).toContain('una acción de ese tipo');
+  expect((await db.query('SELECT state FROM games WHERE id=$1',[id])).rows[0]?.state.players[0].hand).toEqual([2,3]);
+  expect((await db.query('SELECT status FROM tool_executions WHERE turn_id=$1 ORDER BY created_at',[output.turnId])).rows).toEqual([{status:'ok'},{status:'denied'}]);
+});
+it('source admission preserves exact poll replay instead of casting or denying an identical vote twice',async()=>{
+  await db.query(`WITH p AS (INSERT INTO polls(chat_id,author_id,source_id,question,status,closes_at) VALUES($1,$2,$3,'¿Comida?','open',now()+interval '1 day') RETURNING id)
+    INSERT INTO poll_options(poll_id,idx,label) SELECT id,1,'Tacos' FROM p UNION ALL SELECT id,2,'Pizza' FROM p`,[chat,owner,randomUUID()]);
+  const output=await turn('voto tacos',scripted(input=>{
+    const args={pollRef:envelope(input).REFERENCE_DATA.poll!.pollRef,option:'Tacos'};
+    return reply([{id:'one',name:'polls_vote',args},{id:'retry',name:'polls_vote',args}]);
+  }));
+  expect(output.text).toContain('por Tacos');expect(output.text).not.toContain('una acción de ese tipo');
+  expect((await db.query('SELECT status FROM tool_executions WHERE turn_id=$1',[output.turnId])).rows).toEqual([{status:'ok'}]);
+  expect(await count('poll_vote_events')).toBe(1);
+});
+
+it('multiple results never send authoritative XP or wagers back for model rewriting',async()=>{
+  const llm=scripted(reply([{name:'xp_balance',id:'xp',args:{}},{name:'web_search',id:'web',args:{query:'ganador mundial 2022'}}]),say('Tienes 999999 XP.'));
+  const text=await context({text:'cuánto xp tengo y quién ganó el mundial de 2022?'},ctx=>route({...ctx,search:async()=> 'FIFA\nArgentina ganó el Mundial de 2022.\nhttps://www.fifa.com/'},llm));
+  expect(text).toContain('1000 XP');expect(text).toContain('Argentina ganó');expect(text).not.toContain('999999');
+  expect(llm.generate).toHaveBeenCalledOnce();
 });

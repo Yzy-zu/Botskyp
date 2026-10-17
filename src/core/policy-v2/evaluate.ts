@@ -68,6 +68,7 @@ export async function evaluateToolPolicy(ctx: ExecutionContextV2, tool: ToolMeta
   for (const resource of ownership) {
     const live = await liveResource(ctx, resource.kind, resource.id);
     if (!live) return decision('not_found', 'REF_NOT_FOUND');
+    if(resource.kind==='artifactRef')resourceState.push(argumentHash('artifact_selection',{id:resource.id}));
     if (live.state) resourceState.push(argumentHash('resource_version', { kind: resource.kind, id: resource.id, state: live.state }));
   }
   resourceState.sort();

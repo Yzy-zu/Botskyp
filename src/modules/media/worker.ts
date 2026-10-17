@@ -18,16 +18,16 @@ import { mediaFailure } from './messages.js';
 export type MediaJob={id:string;chat_id:string;owner_id:string;source_message_id:string;payload:unknown;attempts:number};
 export type WorkerDeps={download:typeof fetchPublic;attachment:typeof fetchAttachment;process:typeof runProcess;root?:string};
 const defaults:WorkerDeps={download:fetchPublic,attachment:fetchAttachment,process:runProcess};
-async function notify(c:import('pg').PoolClient,job:MediaJob,text:string):Promise<string>{
+async function notify(c:import('pg').PoolClient,job:MediaJob,text:string,mode:Config['ROUTER_MODE']='v1'):Promise<string>{
   return (await c.query<{id:string}>(`INSERT INTO outbox(chat_id,payload,dedupe_key) VALUES($1,$2,$3)
-    ON CONFLICT(dedupe_key) DO UPDATE SET dedupe_key=excluded.dedupe_key RETURNING id`,[job.chat_id,JSON.stringify({text,sourceId:job.source_message_id}),`media:result:${job.id}:error`])).rows[0]!.id;
+    ON CONFLICT(dedupe_key) DO UPDATE SET dedupe_key=excluded.dedupe_key RETURNING id`,[job.chat_id,JSON.stringify({text:mode==='v1_1'?text:`Trabajo #${job.id}: ${text}`,sourceId:job.source_message_id}),`media:result:${job.id}:error`])).rows[0]!.id;
 }
-export async function recoverMedia(db:Db):Promise<void>{
+export async function recoverMedia(db:Db,mode:Config['ROUTER_MODE']='v1'):Promise<void>{
   await transaction(db,async c=>{
     const rows=(await c.query<MediaJob>("SELECT * FROM jobs WHERE kind='media' AND status='running' FOR UPDATE")).rows;
     for(const job of rows){
       const failed=job.attempts>=product.mediaMaxAttempts;
-      let outboxId:string|null=null;if(failed)outboxId=await notify(c,job,mediaFailure('interrupted'));
+      let outboxId:string|null=null;if(failed)outboxId=await notify(c,job,mediaFailure('interrupted'),mode);
       await c.query("UPDATE jobs SET status=$2,error='interrupted',outbox_id=$3,updated_at=now() WHERE id=$1",[job.id,failed?'failed':'queued',outboxId]);
       await c.query("INSERT INTO audit_log(actor_id,chat_id,action,detail) VALUES($1,$2,'media.recovered',jsonb_build_object('jobId',$3::text,'result',$4::text))",[job.owner_id,job.chat_id,job.id,failed?'failed':'queued']);
     }
@@ -155,13 +155,13 @@ export async function processMedia(db:Db,config:Config,job:MediaJob,deps:WorkerD
     await finish(db,config,job,artifacts,source);
   }catch(error){
     const rawCode=error instanceof z.ZodError?'invalid_payload':error instanceof Error && /^[a-z_]+$/.test(error.message)?error.message:'processing_failed';
-    const code=rawCode==='no_text_found'?(operation==='ocr'?'ocr_empty':operation==='qr_read'?'qr_empty':'read_empty'):rawCode;
+    const code=config.ROUTER_MODE==='v1_1' && rawCode==='no_text_found'?(operation==='ocr'?'ocr_empty':operation==='qr_read'?'qr_empty':'read_empty'):rawCode;
     await transaction(db,async c=>{
       const current=(await c.query<{status:string}>('SELECT status FROM jobs WHERE id=$1 FOR UPDATE',[job.id])).rows[0];
       // A lost COMMIT response cannot turn an already committed result into a false failure notice.
       if(current?.status!=='running')return;
       await c.query("UPDATE outbox SET status='failed',last_error='progress_superseded' WHERE kind='media_progress' AND payload->>'jobId'=$1 AND status='queued'",[job.id]);
-      const outboxId=await notify(c,job,mediaFailure(code));
+      const outboxId=await notify(c,job,mediaFailure(code),config.ROUTER_MODE);
       await c.query("UPDATE jobs SET status='failed',error=$2,outbox_id=$3,updated_at=now() WHERE id=$1 AND status='running'",[job.id,code,outboxId]);
       await c.query("INSERT INTO audit_log(actor_id,chat_id,action,detail) VALUES($1,$2,'media.failed',jsonb_build_object('jobId',$3::text,'result',$4::text))",[job.owner_id,job.chat_id,job.id,code]);
     });

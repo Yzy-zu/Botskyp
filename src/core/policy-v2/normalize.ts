@@ -33,8 +33,10 @@ export async function normalizeLegacyResult(ctx: ExecutionContextV2, tool: ToolM
   }
   if (tool.name === 'polls.results') return { ...base, status: 'ok', code, data: result.facts };
   if (tool.name === 'polls.vote') {
-    const option=(await c.query<{label:string}>('SELECT label FROM poll_options WHERE poll_id=$1 AND idx=$2',[args.id,args.option])).rows[0];
-    return { ...base, status: 'ok', code, data: { pollId: args.id, option: args.option,label:option?.label } };
+    const vote=(await c.query<{label:string;option_idx:number}>(`SELECT o.label,v.option_idx FROM poll_votes v JOIN poll_options o ON o.poll_id=v.poll_id AND o.idx=v.option_idx
+      WHERE v.poll_id=$1 AND v.voter_id=$2`,[args.id,ctx.actorId])).rows[0];
+    if(!vote || vote.option_idx!==args.option)return {...base,status:'uncertain',code:'VOTE_NOT_MATCHED',data:{}};
+    return { ...base, status: 'ok', code, data: { pollId: args.id, option: vote.option_idx,label:vote.label } };
   }
   if(tool.name.startsWith('games.')){
     const game=(await c.query<{kind:string;status:string;state:unknown}>(`SELECT g.kind,g.status,g.state FROM games g JOIN game_actions a ON a.game_id=g.id

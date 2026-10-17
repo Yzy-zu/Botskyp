@@ -71,7 +71,7 @@ function eligible(tool: ToolMetadataV2, input: ToolExposureInput): boolean {
     // Token optimization only. Other restricted actions remain understandable to members.
     && (tool.domain !== 'admin' || input.actorRole === 'owner');
 }
-const preferred: readonly string[] = ['minecraft.status','minecraft.players','minecraft.restart','games.play','games.status','polls.vote','polls.results','cooperacha.status','cooperacha.contribute','bulk.nuclear','media.process'];
+const preferred: readonly string[] = ['minecraft.status','minecraft.players','minecraft.restart','games.play','games.status','polls.vote','polls.results','cooperacha.status','cooperacha.contribute','bulk.nuclear','media.process','school.schedule','school.tasks','school.task_create'];
 function domainTools(catalog: readonly ToolMetadataV2[], domain: CapabilityDomain, input: ToolExposureInput): ToolMetadataV2[] {
   const rank = (name: string) => { const index = preferred.indexOf(name); return index < 0 ? preferred.length : index; };
   return catalog.filter(tool => tool.domain === domain && eligible(tool, input))

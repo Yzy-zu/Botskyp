@@ -18,7 +18,7 @@ export const naturalR5 = [
   {text:'jalo blackjack de 20',tool:'games.blackjack',args:{bet:20},table:'games',expected:'Blackjack'},
   {text:'hay alguien jugando minecraft?',tool:'minecraft.players',args:{},expected:'Jugadores: 2/10'},
   {text:'está prendido minecraft?',tool:'minecraft.status',args:{},expected:'online'},
-  {text:'qué clases tengo mañana?',tool:'school.schedule',args:{weekday:1},expected:'No hay clases'},
+  {text:'qué clases tengo mañana?',tool:'school.schedule',args:{},expected:'No hay clases'},
   {text:'qué tareas hay?',tool:'school.tasks',args:{},expected:'No hay tareas'},
   {text:'cuánto lleva la cooperacha?',tool:'cooperacha.status',args:{},expected:'No hay cooperacha'},
   {text:'busca en la biblioteca',tool:'library.categories',args:{},expected:'Biblioteca sin contenido'},

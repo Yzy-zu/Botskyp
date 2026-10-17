@@ -16,7 +16,7 @@ const lock=await db.connect();
 const held=await lock.query<{locked:boolean}>("SELECT pg_try_advisory_lock(hashtext('botsky-worker')) AS locked");
 if (!held.rows[0]?.locked) throw new Error('Another worker is active');
 lock.on('error',()=>process.exit(1));
-await recoverMedia(db);await recoverLibrarySync(db);await recoverDrive(db);
+await recoverMedia(db,config.ROUTER_MODE);await recoverLibrarySync(db);await recoverDrive(db);
 await cleanOrphanTemporaries();
 let stop=false;
 process.on('SIGTERM',()=>{stop=true;});
@@ -27,7 +27,7 @@ while (!stop) {
   try{
     await scheduleSync(db,config);
     if(await syncLibrary(db,config))continue;
-    await retainMedia(db);await reportMediaDeliveries(db);
+    await retainMedia(db);await reportMediaDeliveries(db,config.ROUTER_MODE);
     const drive=await claimDrive(db);if(drive){await processDrive(db,config,drive);continue;}
     const job=await claimMedia(db);
     if(job)await processMedia(db,config,job);

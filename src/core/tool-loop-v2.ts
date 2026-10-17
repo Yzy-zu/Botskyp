@@ -100,7 +100,8 @@ export async function naturalToolLoopV2(ctx:ToolCtx,llm:Llm,catalog:readonly Too
       if(expanded){if(metrics.toolCount>=product.maxToolCallsPerTurn)break;continue;}
       // Deterministic/mutating results never need another provider call to report success.
       const onlyReads=results.every(r=>catalog.find(t=>t.name===r.toolName)?.risk==='READ' || r.toolName==='web.search');
-      const synthesis=onlyReads && results.every(r=>r.status==='ok') && (results.some(r=>r.requiresLlmSynthesis) || results.length>1);
+      const protectedEconomy=results.some(r=>['economy','games','library'].includes(r.domain));
+      const synthesis=onlyReads && !protectedEconomy && results.every(r=>r.status==='ok') && (results.some(r=>r.requiresLlmSynthesis) || results.length>1);
       if(!synthesis)return local();
       if(metrics.callsPerTurn>=product.llmMaxCalls)break;
       metrics.synthesisUsed=true;

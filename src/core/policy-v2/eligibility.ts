@@ -1,3 +1,4 @@
+import { sourceAdmissionV2 } from './source-admission.js';
 import { privateLibraryDestination } from '../../modules/library/access.js';
 import { driveAllowed } from '../../modules/drive/service.js';
 import { product } from '../../../config/product.js';
@@ -8,6 +9,8 @@ import { explicitMemoryRequest, sensitiveMemory } from '../../modules/memory/ind
 export async function businessEligibility(ctx: ExecutionContextV2, name: string, args: Record<string, unknown>): Promise<string | null> {
   const c = ctx.legacy.c;
   if (['bulk.nuclear','bulk.broadcast','messaging.send'].includes(name) && (await c.query("SELECT 1 FROM system_flags WHERE key='maintenance' AND value='true'::jsonb")).rowCount) return 'DENIED_MAINTENANCE';
+  const sourceConflict=await sourceAdmissionV2(ctx,name);
+  if(sourceConflict)return sourceConflict;
   if (name === 'memory.list' && ctx.chat.isGroup) return 'DENIED_PRIVATE_ONLY';
   if (name === 'memory.remember') {
     if (!explicitMemoryRequest(ctx.legacy.msg.text)) return 'DENIED_EXPLICIT_MEMORY_REQUIRED';

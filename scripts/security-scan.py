@@ -62,7 +62,7 @@ def main():
     secrets = []
     for key, value in values.items():
         if re.search(r'KEY|TOKEN|SECRET|PASSWORD|JIDS|CHAT_ID', key):
-            secrets.extend(v for v in value.split(',') if len(v) >= 12)
+            secrets.extend(v.strip() for v in value.split(',') if len(v.strip()) >= 12)
             if re.search(r'JIDS|CHAT_ID', key):
                 secrets.extend(v.split('@')[0] for v in value.split(',') if re.fullmatch(r'\d{8,}@(s\.whatsapp\.net|g\.us|lid)', v))
     paths = subprocess.check_output(['git', 'ls-files', '-z'], cwd=ROOT).decode().split('\0')

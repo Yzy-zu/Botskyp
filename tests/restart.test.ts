@@ -114,7 +114,7 @@ it('blackjack preserves its exact deck, hands and deadline through SIGKILL and p
     await db.query('TRUNCATE mock_deliveries,mock_control');await db.query('INSERT INTO mock_control VALUES(false)');
     await db.query("INSERT INTO chats(id,is_group,enabled) VALUES('300@g.us',true,true)");
     const input={DATABASE_URL:url,EVOLUTION_URL:'http://mock',EVOLUTION_APIKEY:'test',INSTANCE:'test',WEBHOOK_SECRET:'x'.repeat(32),OWNER_JIDS:'100@s.whatsapp.net',BOT_JIDS:'200@s.whatsapp.net',LAB_CHAT_ID:'300@g.us',TRANSPORT:'mock'};
-    const config=readConfig(input);writeFileSync('.local/runtime-test.json',JSON.stringify(input),{mode:0o600});
+    const config=readConfig({GEMINI_API_KEY:'fixture-gemini-key',...input});writeFileSync('.local/runtime-test.json',JSON.stringify(input),{mode:0o600});
     await transaction(db,async c=>{
       await moveXp(c,'100@s.whatsapp.net',200,'seed','restart','300@g.us');
       await gameCommand({c,db,config,actor:{id:'100@s.whatsapp.net',role:'owner'},chat:{id:'300@g.us',isGroup:true,enabled:true,settings:{}},msg:{id:'game-before-crash',chatId:'300@g.us',senderId:'100@s.whatsapp.net',isGroup:true,ts:new Date(),text:'bot blackjack',fromMe:false,mentions:[],attachments:[]},now:new Date(),search:async()=>''},{action:'solo'},max=>max-1);

@@ -13,7 +13,7 @@ import { registerArtifactV2 } from '../src/core/artifact-registration-v2.js';
 export const { url } = JSON.parse(readFileSync('.local/test-db.json', 'utf8')) as { url: string };
 if (!new URL(url).pathname.startsWith('/botsky_test_')) throw new Error('Unsafe test database');
 export const db = createDb(url), owner = '100@s.whatsapp.net', member = '101@s.whatsapp.net', chat = '300@g.us';
-export const config = readConfig({ DATABASE_URL: url, EVOLUTION_URL: 'http://mock', EVOLUTION_APIKEY: 'test', INSTANCE: 'test', WEBHOOK_SECRET: 'x'.repeat(32), OWNER_JIDS: owner, BOT_JIDS: '200@s.whatsapp.net', LAB_CHAT_ID: chat, TRANSPORT: 'mock', ROUTER_MODE: 'v1_1', MINECRAFT_ENABLED: 'true' });
+export const config = readConfig({GEMINI_API_KEY:'fixture-gemini-key', DATABASE_URL: url, EVOLUTION_URL: 'http://mock', EVOLUTION_APIKEY: 'test', INSTANCE: 'test', WEBHOOK_SECRET: 'x'.repeat(32), OWNER_JIDS: owner, BOT_JIDS: '200@s.whatsapp.net', LAB_CHAT_ID: chat, TRANSPORT: 'mock', ROUTER_MODE: 'v1_1', MINECRAFT_ENABLED: 'true' });
 export const pdf = Buffer.from('%PDF-1.7\nfixture');
 export const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jh1sAAAAASUVORK5CYII=', 'base64');
 export const initialize = () => migrate(db);

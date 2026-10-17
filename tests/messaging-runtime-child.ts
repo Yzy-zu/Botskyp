@@ -10,7 +10,7 @@ import { DriveClient } from '../src/modules/drive/client.js';
 import { driveConfigSchema } from '../src/modules/drive/config.js';
 import { msgSchema,type Transport } from '../src/wa/types.js';
 const input=JSON.parse(readFileSync('.local/messaging-runtime-test.json','utf8')) as {env:NodeJS.ProcessEnv;mode:string};
-const config=readConfig(input.env);const db=createDb(config.DATABASE_URL);
+const config=readConfig({GEMINI_API_KEY:'fixture-gemini-key',...input.env});const db=createDb(config.DATABASE_URL);
 if(!new URL(config.DATABASE_URL).pathname.startsWith('/botsky_test_'))throw new Error('Unsafe test database');
 const transport:Transport={
   async state(){return true;},

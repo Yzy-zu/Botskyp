@@ -1,10 +1,10 @@
-import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
 import type { Config } from '../config.js';
 import type { Db } from '../db/client.js';
 import { product } from '../../config/product.js';
 import { geminiContentSchema, geminiToolContext, type GeminiFunctionCall, type ProviderToolContext } from './provider-tool-context.js';
-import { coolDown,LlmUnavailable,reserveCall } from './quota.js';
+import { LlmUnavailable,reserveCall } from './quota.js';
+import { GeminiAttemptError, geminiKeyPool, retryAfterMs } from './gemini-key-pool.js';
 export { LlmUnavailable } from './quota.js';
 export type Image={mimeType:string;data:string};
 export type Declaration={name:string;description:string;parametersJsonSchema:Record<string,unknown>};
@@ -17,6 +17,7 @@ const responseSchema=z.object({
   candidates:z.array(z.object({finishReason:z.string().optional(),content:geminiContentSchema.optional(),groundingMetadata:z.object({groundingChunks:z.array(z.object({web:z.object({uri:z.string(),title:z.string().optional()}).optional()})).optional()}).optional()})).optional(),
   usageMetadata:z.object({promptTokenCount:z.number().optional(),candidatesTokenCount:z.number().optional()}).optional(),
 });
+const errorSchema=z.object({error:z.object({details:z.array(z.object({reason:z.string().optional()})).optional()})});
 // Official adjustable filters only. Inherent provider protections still apply.
 const safetySettings=['HATE_SPEECH','SEXUALLY_EXPLICIT','DANGEROUS_CONTENT','HARASSMENT'].map(category=>({category:`HARM_CATEGORY_${category}`,threshold:'OFF'}));
 const blockedReasons=new Set(['SAFETY','BLOCKLIST','PROHIBITED_CONTENT','RECITATION','SPII','IMAGE_SAFETY','IMAGE_PROHIBITED_CONTENT','IMAGE_RECITATION','ESCALATION','PUP_LIMITED_DISABLED']);
@@ -36,23 +37,24 @@ export class Gemini implements Llm {
   readonly counters={calls:0,inputTokens:0,outputTokens:0};
   constructor(private db:Db,private config:Config,private actor:string,private budget:CallBudget={used:0},private http:typeof fetch=fetch,private parentSignal?:AbortSignal){}
   private async request(input:LlmInput,search=false):Promise<z.infer<typeof responseSchema>>{
-    if(!this.config.GEMINI_API_KEY || !this.config.GEMINI_FREE_TIER_CONFIRMED)throw new LlmUnavailable('disabled');
+    if(!this.config.GEMINI_FREE_TIER_CONFIRMED)throw new LlmUnavailable('disabled');
     const textOnly=JSON.stringify({...input,contents:input.contents},(key,value:unknown)=>key==='data'?'[image]':value);
     if(textOnly.length>product.llmMaxRequestChars)throw new LlmUnavailable('invalid');
     const model=search?product.llmLegacySearchModel:this.config.GEMINI_MODEL;
     // No paid grounding with Gemini 3.x; this route is exclusively for the legacy free allowance.
-    for(let attempt=0;attempt<product.llmMaxAttempts;attempt++){
-      if(this.budget.used>=product.llmMaxCalls)throw new LlmUnavailable('local_limit','message');
+    if(this.budget.used>=product.llmMaxCalls)throw new LlmUnavailable('local_limit','message');
+    this.budget.used++;
+    return geminiKeyPool(this.config).run(async apiKey=>{
       const hasImage=JSON.stringify(input.contents,(key,value:unknown)=>key==='data'?'[bytes]':value).includes('"inlineData"');
       const id=await reserveCall(this.db,this.actor,model,search?'web':hasImage?'vision':'router',estimateInputTokens(input),{
-        userRpm:this.config.GEMINI_USER_RPM, globalRpm:this.config.GEMINI_GLOBAL_RPM,
-        dailyLimit:this.config.GEMINI_DAILY_LIMIT, inputTokensPerMinute:this.config.GEMINI_INPUT_TPM, reservedInputTokens:this.config.LLM_RESERVED_INPUT_TOKENS,
-      },input.turnId);this.budget.used++;this.counters.calls++;
+        userRpm:this.config.LLM_LOCAL_USER_RPM, globalRpm:this.config.LLM_LOCAL_GLOBAL_RPM,
+        dailyLimit:this.config.LLM_LOCAL_DAILY_LIMIT, inputTokensPerMinute:this.config.LLM_INPUT_TOKENS_PER_MINUTE, reservedInputTokens:this.config.LLM_RESERVED_INPUT_TOKENS,
+      },input.turnId);this.counters.calls++;
       const signal=AbortSignal.any([AbortSignal.timeout(hasImage?product.llmVisionTimeoutMs:product.llmTimeoutMs),...(this.parentSignal?[this.parentSignal]:[])]);
       let response:Response;
       try {
         response=await this.http(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,{
-          method:'POST',headers:{'x-goog-api-key':this.config.GEMINI_API_KEY,'content-type':'application/json'},
+          method:'POST',headers:{'x-goog-api-key':apiKey,'content-type':'application/json'},
           body:JSON.stringify({systemInstruction:{parts:[{text:input.system}]},contents:input.contents,
             safetySettings,
             generationConfig:{maxOutputTokens:product.llmMaxOutputTokens,...(input.responseJsonSchema?{responseMimeType:'application/json',responseJsonSchema:input.responseJsonSchema}:{})},
@@ -63,23 +65,34 @@ export class Gemini implements Llm {
       }catch(error){
         const timeout=isTimeout(error,signal);
         await this.db.query('UPDATE llm_usage SET status=$2 WHERE id=$1',[id,timeout?'timeout':'network_error']);
-        throw new LlmUnavailable(timeout?'timeout':'provider');
+        throw new GeminiAttemptError(timeout?'timeout':'provider');
       }
       if(!response.ok){
-        await response.body?.cancel();
-        await this.db.query('UPDATE llm_usage SET status=$2 WHERE id=$1',[id,`http_${response.status}`]);
-        if(response.status===429){
-          if(attempt+1<product.llmMaxAttempts){await delay(product.llmBackoffMs);continue;}
-          await coolDown(this.db,model);throw new LlmUnavailable('quota');
+        let invalidKey=false;
+        if(response.status===400){
+          try{
+            const details=errorSchema.safeParse(await response.json());
+            invalidKey=details.success && Boolean(details.data.error.details?.some(detail=>detail.reason==='API_KEY_INVALID'));
+          }catch(error){
+            if(isTimeout(error,signal)){
+              await this.db.query('UPDATE llm_usage SET status=$2 WHERE id=$1',[id,'timeout']);
+              throw new GeminiAttemptError('timeout');
+            }
+            // An unreadable error body carries no trusted authentication metadata.
+          }
+        }else{
+          // The HTTP status is already known; a disposal error must not hide its cooldown.
+          await response.body?.cancel().catch(()=>undefined);
         }
-        throw new LlmUnavailable('provider');
+        await this.db.query('UPDATE llm_usage SET status=$2 WHERE id=$1',[id,`http_${response.status}`]);
+        throw new GeminiAttemptError(response.status===429?'quota':'provider',invalidKey?401:response.status,retryAfterMs(response.headers.get('retry-after')));
       }
       let result:z.infer<typeof responseSchema>;
       try{result=responseSchema.parse(await response.json());}
       catch(error){
         const timeout=isTimeout(error,signal);
         await this.db.query('UPDATE llm_usage SET status=$2 WHERE id=$1',[id,timeout?'timeout':'invalid']);
-        throw new LlmUnavailable(timeout?'timeout':'invalid');
+        throw new GeminiAttemptError(timeout?'timeout':'invalid');
       }
       const finish=result.candidates?.[0]?.finishReason;
       const blocked=Boolean(result.promptFeedback?.blockReason) || blockedReasons.has(finish ?? '');
@@ -89,11 +102,10 @@ export class Gemini implements Llm {
         :finish==='MAX_TOKENS'?'invalid_max_tokens':!result.candidates?.[0]?.content?'invalid_content':'ok';
       await this.db.query('UPDATE llm_usage SET status=$4,input_tokens=$2,output_tokens=$3 WHERE id=$1',[id,result.usageMetadata?.promptTokenCount ?? 0,result.usageMetadata?.candidatesTokenCount ?? 0,status]);
       this.counters.inputTokens+=result.usageMetadata?.promptTokenCount ?? 0;this.counters.outputTokens+=result.usageMetadata?.candidatesTokenCount ?? 0;
-      if(blocked)throw new LlmUnavailable('blocked');
-      if(result.candidates?.[0]?.finishReason==='MAX_TOKENS')throw new LlmUnavailable('invalid');
+      if(blocked)throw new GeminiAttemptError('blocked');
+      if(status!=='ok')throw new GeminiAttemptError('invalid');
       return result;
-    }
-    throw new LlmUnavailable('quota');
+    },this.parentSignal);
   }
   async generate(input:LlmInput):Promise<LlmReply>{
     const result=await this.request(input);

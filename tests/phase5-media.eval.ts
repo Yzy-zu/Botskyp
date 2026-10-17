@@ -23,7 +23,7 @@ import {processMedia,claimMedia} from '/app/dist/src/modules/media/worker.js';
 import {sendNext} from '/app/dist/src/wa/outbox.js';
 const db=createDb(process.env.DATABASE_URL);
 if(!/^\\/botsky_test_\\d+_\\d+$/.test(new URL(process.env.DATABASE_URL).pathname))throw new Error('Unsafe database');
-const config=readConfig({DATABASE_URL:process.env.DATABASE_URL,EVOLUTION_URL:'http://mock',EVOLUTION_APIKEY:'test',INSTANCE:'test',WEBHOOK_SECRET:'x'.repeat(32),OWNER_JIDS:'100@s.whatsapp.net',BOT_JIDS:'200@s.whatsapp.net',LAB_CHAT_ID:'300@g.us',TRANSPORT:'mock'});
+const config=readConfig({GEMINI_API_KEY:'fixture-gemini-key',DATABASE_URL:process.env.DATABASE_URL,EVOLUTION_URL:'http://mock',EVOLUTION_APIKEY:'test',INSTANCE:'test',WEBHOOK_SECRET:'x'.repeat(32),OWNER_JIDS:'100@s.whatsapp.net',BOT_JIDS:'200@s.whatsapp.net',LAB_CHAT_ID:'300@g.us',TRANSPORT:'mock'});
 try{
 await migrate(db);await db.query("INSERT INTO chats(id,is_group,enabled) VALUES('300@g.us',true,true)");
 let sends=0;

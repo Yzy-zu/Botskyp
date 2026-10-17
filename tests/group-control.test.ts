@@ -1,7 +1,7 @@
 import { beforeEach,expect,it,vi } from 'vitest';
 import { EvolutionGroups } from '../src/wa/group-control.js';
 import { readConfig } from '../src/config.js';
-const config=readConfig({DATABASE_URL:'postgresql://test:test@localhost/test',EVOLUTION_URL:'http://provider',EVOLUTION_APIKEY:'test-key',INSTANCE:'botsky',WEBHOOK_SECRET:'x'.repeat(32),OWNER_JIDS:'100@s.whatsapp.net',BOT_JIDS:'200@s.whatsapp.net',LAB_CHAT_ID:'300@g.us',TRANSPORT:'mock'});
+const config=readConfig({GEMINI_API_KEY:'fixture-gemini-key',DATABASE_URL:'postgresql://test:test@localhost/test',EVOLUTION_URL:'http://provider',EVOLUTION_APIKEY:'test-key',INSTANCE:'botsky',WEBHOOK_SECRET:'x'.repeat(32),OWNER_JIDS:'100@s.whatsapp.net',BOT_JIDS:'200@s.whatsapp.net',LAB_CHAT_ID:'300@g.us',TRANSPORT:'mock'});
 const adapter=new EvolutionGroups(config);
 beforeEach(()=>vi.restoreAllMocks());
 it('uses authenticated GET roster with exact group scope',async()=>{

@@ -1399,3 +1399,26 @@ calls dentro de JSON. La detección de éxito dejó de considerar la palabra ais
 La apuesta mínima se explica sin aumentar el importe pedido; las reglas económicas
 permanecen intactas. La persona reduce humillación automática y conserva cotorreo,
 groserías y temas adultos. No se añaden filtros de contenido.
+
+
+## 18. R5.1 — Gemini multi-key (17-10-2026)
+
+### DEC-064: Pool por proceso, cuotas locales opcionales y concurrencia técnica
+
+El dueño autoriza exclusivamente multi-key y retiro de cuotas artificialmente bajas
+desde `399cd9d` en `feat/v1.1-natural-router`; sin deploy ni merge. Sustituye solo
+la conservación de defaults 20/día y 5 RPM de decisiones previas. No cambia R5,
+Policy, Registry ni efectos. Un constructor, sin delegación.
+
+`GEMINI_API_KEYS` prevalece sobre la key legacy; trim/dedupe/fail-fast sin secretos.
+Pool compartido por Config/proceso con round-robin, cooldown por credencial,
+Retry-After, una pasada secuencial y deshabilitación inmediata en 401/403 o
+API_KEY_INVALID. Red/timeout/5xx pueden fallar hacia otra key; bloqueos y payloads
+inválidos no. Los reintentos solo abarcan HTTP Gemini; R3 conserva autoridad.
+
+Nuevos LLM_LOCAL_* tienen precedencia sobre aliases y default cero ilimitado;
+TPM local también es opcional (cero), conservando accounting/reservas. Concurrencia
+4, cola FIFO acotada en memoria. CallBudget cuenta generaciones lógicas; métricas
+cuentan HTTP reales. Keys nunca en PostgreSQL; métricas por key son índices y
+estado del proceso. Google limita por proyecto, no por key; no se promete cuota
+adicional si comparten proyecto. Detalles y evidencia en R5.1-GEMINI-KEY-POOL.md.

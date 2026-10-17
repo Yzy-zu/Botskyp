@@ -15,7 +15,7 @@ import { reserveCall } from '../src/core/quota.js';
 const { url } = JSON.parse(readFileSync('.local/test-db.json', 'utf8')) as { url: string };
 if (!new URL(url).pathname.startsWith('/botsky_test_')) throw new Error('Unsafe test database');
 const db = createDb(url);
-const config = readConfig({ DATABASE_URL: url, EVOLUTION_URL: 'http://mock', EVOLUTION_APIKEY: 'test', INSTANCE: 'test', WEBHOOK_SECRET: 'x'.repeat(32), OWNER_JIDS: '100@s.whatsapp.net', BOT_JIDS: '200@s.whatsapp.net', LAB_CHAT_ID: '300@g.us', TRANSPORT: 'mock' });
+const config = readConfig({GEMINI_API_KEY:'fixture-gemini-key', DATABASE_URL: url, EVOLUTION_URL: 'http://mock', EVOLUTION_APIKEY: 'test', INSTANCE: 'test', WEBHOOK_SECRET: 'x'.repeat(32), OWNER_JIDS: '100@s.whatsapp.net', BOT_JIDS: '200@s.whatsapp.net', LAB_CHAT_ID: '300@g.us', TRANSPORT: 'mock' });
 const catalog = createToolRegistryV2(createRegistry());
 beforeAll(() => migrate(db));
 afterAll(() => db.end());
@@ -92,7 +92,7 @@ it('retains visible legacy shortcuts in shadow while v2 only observes the memory
   expect((await db.query('SELECT count(*)::int AS n FROM tool_executions')).rows[0]?.n).toBe(0);
 });
 it('uses a configured fallback token reservation without overriding explicit v1 estimates', async () => {
-  const configured = readConfig({ DATABASE_URL: url, EVOLUTION_URL: 'http://mock', EVOLUTION_APIKEY: 'test', INSTANCE: 'test', WEBHOOK_SECRET: 'x'.repeat(32), OWNER_JIDS: '100@s.whatsapp.net', BOT_JIDS: '200@s.whatsapp.net', LAB_CHAT_ID: '300@g.us', TRANSPORT: 'mock', LLM_RESERVED_INPUT_TOKENS: '1000' });
+  const configured = readConfig({GEMINI_API_KEY:'fixture-gemini-key', DATABASE_URL: url, EVOLUTION_URL: 'http://mock', EVOLUTION_APIKEY: 'test', INSTANCE: 'test', WEBHOOK_SECRET: 'x'.repeat(32), OWNER_JIDS: '100@s.whatsapp.net', BOT_JIDS: '200@s.whatsapp.net', LAB_CHAT_ID: '300@g.us', TRANSPORT: 'mock', LLM_RESERVED_INPUT_TOKENS: '1000' });
   const limits = { userRpm: 8, globalRpm: 5, dailyLimit: 20, inputTokensPerMinute: 65536, reservedInputTokens: configured.LLM_RESERVED_INPUT_TOKENS };
   await reserveCall(db, 'actor', 'mock', 'test', undefined, limits);
   await reserveCall(db, 'actor', 'mock', 'test', 600, limits);

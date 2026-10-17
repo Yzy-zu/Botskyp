@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { beforeAll,beforeEach,afterAll,afterEach,it,expect,vi } from 'vitest';
 import { db,config,owner,member,chat,initialize,reset,context,backing,png,pdf,count } from './r4-harness.js';
+import { geminiKeyPool } from '../src/core/gemini-key-pool.js';
 import { route } from '../src/core/router.js';
 import { Gemini, LlmUnavailable, type Llm, type LlmReply, type LlmInput } from '../src/core/llm.js';
 import { receive,processNext } from '../src/core/inbox.js';
@@ -479,4 +480,58 @@ it('changes only the hour of a reminder while keeping its existing text and date
 it('keeps an honest missing-file explanation containing guardado',()=>{
   const text='No hay ningún QR anterior guardado ni archivo al que referirme. Mándalo otra vez.';
   expect(conversationTextV2(JSON.stringify({outcome:'conversation',text,effects:[]})).text).toBe(text);
+});
+
+it.each([false,true])('R5 continues signed content on key 2 without paying xp.daily twice (exhausted=%s)',async exhaust=>{
+  const pooled={...config,GEMINI_API_KEYS:['fixture-one','fixture-two'],GEMINI_FREE_TIER_CONFIRMED:true};
+  const first=reply([{name:'xp_daily',id:'Daily/Exact==',args:{}},{name:'core_load_capability',id:'Load/Exact==',args:{domain:'library'}}]);
+  const mainRequests:{key:string|null;body:string}[]=[];
+  let firstRequest=true;
+  const http=vi.fn<typeof fetch>(async(_url,init)=>{
+    const body=String(init?.body),key=new Headers(init?.headers).get('x-goog-api-key');
+    if(body.includes('Unrelated actor request'))return Response.json({candidates:[{content:say('Hola.').content}]});
+    mainRequests.push({key,body});
+    if(firstRequest){
+      firstRequest=false;
+      // A second actor uses key 2 between this turn's calls; the shared round-robin next selects key 1.
+      await new Gemini(db,pooled,member,{used:0},http).generate({system:'Unrelated actor request',contents:[{role:'user',parts:[{text:'hola'}]}],tools:[]});
+      return Response.json({candidates:[{content:first.content}],usageMetadata:{promptTokenCount:120,candidatesTokenCount:30}});
+    }
+    if(key==='fixture-one' || exhaust)return new Response(null,{status:429,headers:{'retry-after':'120'}});
+    return Response.json({candidates:[{content:say('Entendido.').content}],usageMetadata:{promptTokenCount:150,candidatesTokenCount:20}});
+  });
+  const adapter=new Gemini(db,pooled,owner,{used:0},http);
+  const output=await turn('botsky dame mi premio diario plis',adapter);
+  expect(output.text).toContain('premio diario');
+  expect(mainRequests.map(r=>r.key)).toEqual(['fixture-one','fixture-one','fixture-two']);
+  expect(mainRequests[1]?.body).toBe(mainRequests[2]?.body);
+  const continued=JSON.parse(mainRequests[2]!.body) as {contents:unknown[]};
+  expect(continued.contents[1]).toEqual(first.content);
+  expect(JSON.stringify(continued.contents[2])).toContain('Daily/Exact==');
+  expect(JSON.stringify(continued.contents[2])).toContain('Load/Exact==');
+  const executions=await db.query('SELECT tool_name,status,provider_call_id FROM tool_executions WHERE turn_id=$1',[output.turnId]);
+  expect(executions.rows).toEqual([{tool_name:'xp.daily',status:'ok',provider_call_id:'Daily/Exact=='}]);
+  expect((await db.query("SELECT count(*)::int n FROM xp_ledger WHERE user_id=$1 AND reason='daily'",[owner])).rows[0]?.n).toBe(1);
+  expect((await db.query('SELECT status FROM llm_usage WHERE turn_id=$1 ORDER BY at',[output.turnId])).rows).toEqual([{status:'ok'},{status:'http_429'},{status:exhaust?'http_429':'ok'}]);
+  expect(adapter.counters).toEqual({calls:3,inputTokens:exhaust?120:270,outputTokens:exhaust?30:50});
+  expect(geminiKeyPool(pooled).snapshot()).toMatchObject({failovers:1,rateLimited:exhaust?2:1,cooldown:exhaust?2:1});
+});
+it('R5 web synthesis fails over transparently and exhausted synthesis uses existing local results',async()=>{
+  for(const exhaust of [false,true]){
+    const pooled={...config,GEMINI_API_KEYS:['fixture-one','fixture-two'],GEMINI_FREE_TIER_CONFIRMED:true};
+    const first=reply([{name:'web_search',id:'Search/Exact==',args:{query:'Argentina mundial 2022'}}]);
+    let attempts=0;
+    const http=vi.fn<typeof fetch>(async()=>{
+      if(++attempts===1)return Response.json({candidates:[{content:first.content}]});
+      if(exhaust || attempts===2)return new Response(null,{status:429});
+      return Response.json({candidates:[{content:say('Argentina ganó. Fuente: https://www.fifa.com/').content}]});
+    });
+    const llm=new Gemini(db,pooled,owner,{used:0},http);
+    let searches=0;
+    const output=await context({text:'quién ganó mundial 2022?'},async ctx=>({turnId:ctx.turnId,text:await route({...ctx,search:async()=>{searches++;return 'FIFA\nArgentina ganó.\nhttps://www.fifa.com/';}},llm)}));
+    expect(output.text).toContain('Argentina ganó');expect(searches).toBe(1);
+    expect(http).toHaveBeenCalledTimes(3);
+    expect(http.mock.calls[1]?.[1]?.body).toBe(http.mock.calls[2]?.[1]?.body);
+    expect((await db.query('SELECT tool_name,status FROM tool_executions WHERE turn_id=$1',[output.turnId])).rows).toEqual([{tool_name:'web.search',status:'ok'}]);
+  }
 });

@@ -6,6 +6,7 @@ import { migrate } from '../src/db/migrate.js';
 import { readConfig } from '../src/config.js';
 import { receive,processNext } from '../src/core/inbox.js';
 import { route,llmError,rememberContext } from '../src/core/router.js';
+import { geminiKeyPool, GeminiAttemptError } from '../src/core/gemini-key-pool.js';
 import { LlmUnavailable } from '../src/core/llm.js';
 import { createRegistry } from '../src/core/registry.js';
 import { actorFor,permitted,type Actor,type Chat } from '../src/core/permissions.js';
@@ -20,7 +21,7 @@ import type { Msg } from '../src/wa/types.js';
 const {url}=JSON.parse(readFileSync('.local/test-db.json','utf8')) as {url:string};
 if(!new URL(url).pathname.startsWith('/botsky_test_'))throw new Error('Unsafe test database');
 const db=createDb(url);
-const config=readConfig({DATABASE_URL:url,EVOLUTION_URL:'http://mock',EVOLUTION_APIKEY:'test',INSTANCE:'test',WEBHOOK_SECRET:'x'.repeat(32),OWNER_JIDS:'100@s.whatsapp.net',BOT_JIDS:'200@s.whatsapp.net',LAB_CHAT_ID:'300@g.us',TRANSPORT:'mock'});
+const config=readConfig({GEMINI_API_KEY:'fixture-gemini-key',DATABASE_URL:url,EVOLUTION_URL:'http://mock',EVOLUTION_APIKEY:'test',INSTANCE:'test',WEBHOOK_SECRET:'x'.repeat(32),OWNER_JIDS:'100@s.whatsapp.net',BOT_JIDS:'200@s.whatsapp.net',LAB_CHAT_ID:'300@g.us',TRANSPORT:'mock'});
 const msg=(text:string,senderId='100@s.whatsapp.net',chatId=config.LAB_CHAT_ID):Msg=>({id:randomUUID(),chatId,senderId,isGroup:chatId.endsWith('@g.us'),ts:new Date(),text,fromMe:false,mentions:[],attachments:[]});
 async function command(text:string,sender='100@s.whatsapp.net',chat=config.LAB_CHAT_ID):Promise<string|undefined>{
   const input=msg(text,sender,chat);await receive(db,config,input);await processNext(db,config);
@@ -388,4 +389,16 @@ it('keeps sensitive user turns and filtered responses out of context without dis
   expect((await db.query('SELECT * FROM context_msgs')).rowCount).toBe(0);
   await withContext('bot busca noticias',ctx=>rememberContext(ctx,'El token es ejemplo-no-real'));
   expect((await db.query('SELECT role,text FROM context_msgs')).rows).toEqual([{role:'user',text:'bot busca noticias'}]);
+});
+
+it('diag.cuota reports configured protection and pool metrics without credentials',async()=>{
+  const pooled={...config,GEMINI_API_KEYS:['fixture-one','fixture-two','fixture-three'],LLM_LOCAL_GLOBAL_RPM:19,LLM_LOCAL_USER_RPM:0,LLM_LOCAL_DAILY_LIMIT:0};
+  const pool=geminiKeyPool(pooled);
+  await pool.run(async(_,index)=>{if(index===1)throw new GeminiAttemptError('quota',429,120000);return 'ok';});
+  await pool.run(async(_,index)=>{if(index===3)throw new GeminiAttemptError('provider',401);return 'ok';});
+  const output=await withContext('bot diag cuota',ctx=>route({...ctx,config:pooled}));
+  expect(output).toContain('19 llamadas/min');expect(output).toContain('sin límite local');
+  expect(output).toContain('3 configuradas / 2 saludables / 1 disponibles / 1 cooldown');
+  expect(output).toContain('failovers: 2');expect(output).toContain('rate limits: 1');expect(output).toContain('gemini-key-3');
+  for(const secret of [...pooled.GEMINI_API_KEYS,pooled.EVOLUTION_APIKEY])expect(output).not.toContain(secret);
 });

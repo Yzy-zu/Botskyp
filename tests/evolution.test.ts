@@ -17,7 +17,7 @@ let adapter:Evolution;
 const delivery={id:'1',chatId:'300@g.us',text:'pong',sourceId:'inbound-1'};
 beforeAll(async()=>{
   const url=await provider.listen({host:'127.0.0.1',port:0});
-  adapter=new Evolution(readConfig({DATABASE_URL:'postgresql://test:test@localhost/test',EVOLUTION_URL:url,EVOLUTION_APIKEY:'test-api-key',INSTANCE:'botsky',WEBHOOK_SECRET:'x'.repeat(32),OWNER_JIDS:'100@s.whatsapp.net',BOT_JIDS:'200@s.whatsapp.net',LAB_CHAT_ID:'300@g.us',TRANSPORT:'mock'}));
+  adapter=new Evolution(readConfig({GEMINI_API_KEY:'fixture-gemini-key',DATABASE_URL:'postgresql://test:test@localhost/test',EVOLUTION_URL:url,EVOLUTION_APIKEY:'test-api-key',INSTANCE:'botsky',WEBHOOK_SECRET:'x'.repeat(32),OWNER_JIDS:'100@s.whatsapp.net',BOT_JIDS:'200@s.whatsapp.net',LAB_CHAT_ID:'300@g.us',TRANSPORT:'mock'}));
 });
 afterAll(()=>provider.close());
 beforeEach(()=>{mode=200;sends=0;received=undefined;rows=[];vi.restoreAllMocks();});

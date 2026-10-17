@@ -4,7 +4,7 @@ import { createDb } from '../src/db/client.js';
 import { migrate } from '../src/db/migrate.js';
 import { readConfig } from '../src/config.js';
 import { Gemini,estimateInputTokens } from '../src/core/llm.js';
-import { reserveCall } from '../src/core/quota.js';
+import { defaultQuotaLimits, reserveCall } from '../src/core/quota.js';
 import { product } from '../config/product.js';
 import { searxSearch } from '../src/modules/web/index.js';
 import { currentImage } from '../src/wa/media.js';
@@ -12,10 +12,10 @@ import type { Msg } from '../src/wa/types.js';
 const {url}=JSON.parse(readFileSync('.local/test-db.json','utf8')) as {url:string};
 if(!new URL(url).pathname.startsWith('/botsky_test_'))throw new Error('Unsafe test database');
 const db=createDb(url);
-const config=readConfig({DATABASE_URL:url,EVOLUTION_URL:'http://mock',EVOLUTION_APIKEY:'test',INSTANCE:'test',WEBHOOK_SECRET:'x'.repeat(32),OWNER_JIDS:'100@s.whatsapp.net',BOT_JIDS:'200@s.whatsapp.net',LAB_CHAT_ID:'300@g.us',TRANSPORT:'mock',GEMINI_API_KEY:'test-key-never-log',GEMINI_FREE_TIER_CONFIRMED:'true'});
+let config=readConfig({DATABASE_URL:url,EVOLUTION_URL:'http://mock',EVOLUTION_APIKEY:'test',INSTANCE:'test',WEBHOOK_SECRET:'x'.repeat(32),OWNER_JIDS:'100@s.whatsapp.net',BOT_JIDS:'200@s.whatsapp.net',LAB_CHAT_ID:'300@g.us',TRANSPORT:'mock',GEMINI_API_KEY:'test-key-never-log',GEMINI_FREE_TIER_CONFIRMED:'true'});
 const input={system:'Sistema',contents:[{role:'user',parts:[{text:'hola'}]}],tools:[]};
 const success=()=>Response.json({candidates:[{content:{role:'model',parts:[{text:'Hola, perrillo.'}]},finishReason:'STOP'}],usageMetadata:{promptTokenCount:12,candidatesTokenCount:5}});
-beforeAll(()=>migrate(db));afterAll(()=>db.end());beforeEach(()=>db.query('TRUNCATE llm_usage,llm_cooldowns').then(()=>undefined));
+beforeAll(()=>migrate(db));afterAll(()=>db.end());beforeEach(()=>{config={...config};return db.query('TRUNCATE llm_usage,llm_cooldowns').then(()=>undefined);});
 it('uses a fixed Google endpoint, header auth, typed payload and persistent accounting',async()=>{
   const http=vi.fn<typeof fetch>(async()=>success());const llm=new Gemini(db,config,'actor',{used:0},http);
   expect((await llm.generate(input)).text).toBe('Hola, perrillo.');
@@ -24,14 +24,16 @@ it('uses a fixed Google endpoint, header auth, typed payload and persistent acco
   const usage=(await db.query('SELECT status,input_tokens,output_tokens FROM llm_usage')).rows[0];expect(usage).toEqual({status:'ok',input_tokens:12,output_tokens:5});
 });
 it('quota reservations are atomic and persist across adapter instances',async()=>{
-  const results=await Promise.allSettled(Array.from({length:5},()=>reserveCall(db,'actor',config.GEMINI_MODEL,'test')));
+  const limits={...defaultQuotaLimits,inputTokensPerMinute:65_536};
+  const results=await Promise.allSettled(Array.from({length:5},()=>reserveCall(db,'actor',config.GEMINI_MODEL,'test',undefined,limits)));
   expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(2);
-  const http=vi.fn<typeof fetch>(async()=>success());await expect(new Gemini(db,config,'actor',{used:0},http).generate(input)).rejects.toMatchObject({kind:'local_limit',reason:'tokens'});expect(http).not.toHaveBeenCalled();
+  const http=vi.fn<typeof fetch>(async()=>success());await expect(new Gemini(db,{...config,LLM_INPUT_TOKENS_PER_MINUTE:65_536},'actor',{used:0},http).generate(input)).rejects.toMatchObject({kind:'local_limit',reason:'tokens'});expect(http).not.toHaveBeenCalled();
 });
-it('429 retries once with bounded backoff, then opens a persisted cooldown',async()=>{
+it('single-key 429 opens an in-memory cooldown without retrying the same key',async()=>{
   const http=vi.fn<typeof fetch>(async()=>new Response(null,{status:429}));
   await expect(new Gemini(db,config,'actor',{used:0},http).generate(input)).rejects.toMatchObject({kind:'quota'});
-  expect(http).toHaveBeenCalledTimes(2);expect((await db.query('SELECT * FROM llm_cooldowns')).rowCount).toBe(1);
+  expect(http).toHaveBeenCalledOnce();expect((await db.query('SELECT * FROM llm_cooldowns')).rowCount).toBe(0);
+  await expect(new Gemini(db,config,'other',{used:0},http).generate(input)).rejects.toMatchObject({kind:'quota'});expect(http).toHaveBeenCalledOnce();
 });
 it('provider blocking ends immediately without another call',async()=>{
   const http=vi.fn<typeof fetch>(async()=>Response.json({promptFeedback:{blockReason:'SAFETY'}}));
@@ -41,7 +43,7 @@ it('network failures and malformed payloads are honest failures without uncontro
   const network=vi.fn<typeof fetch>(async()=>{throw new Error('private-debug-details');});
   await expect(new Gemini(db,config,'actor',{used:0},network).generate(input)).rejects.toMatchObject({kind:'provider'});expect(network).toHaveBeenCalledOnce();
   const malformed=vi.fn<typeof fetch>(async()=>Response.json({candidates:'invalid'}));
-  await expect(new Gemini(db,config,'actor',{used:0},malformed).generate(input)).rejects.toMatchObject({kind:'invalid'});
+  await expect(new Gemini(db,{...config},'actor',{used:0},malformed).generate(input)).rejects.toMatchObject({kind:'invalid'});
 });
 it('disabled config and exhausted per-message budget never cross the network boundary',async()=>{
   const http=vi.fn<typeof fetch>(async()=>success());
@@ -50,7 +52,7 @@ it('disabled config and exhausted per-message budget never cross the network bou
 });
 it('daily quota resets by Pacific day and counts failed attempts too',async()=>{
   await db.query("INSERT INTO llm_usage(actor_id,model,purpose,at,status) SELECT 'other',$1,'test',date_trunc('day',clock_timestamp() AT TIME ZONE 'America/Los_Angeles') AT TIME ZONE 'America/Los_Angeles','http_429' FROM generate_series(1,20)",[config.GEMINI_MODEL]);
-  await expect(reserveCall(db,'actor',config.GEMINI_MODEL,'test')).rejects.toMatchObject({kind:'local_limit',reason:'daily'});
+  await expect(reserveCall(db,'actor',config.GEMINI_MODEL,'test',undefined,{...defaultQuotaLimits,dailyLimit:20})).rejects.toMatchObject({kind:'local_limit',reason:'daily'});
   await db.query("UPDATE llm_usage SET at=at-interval '1 day'");await expect(reserveCall(db,'actor',config.GEMINI_MODEL,'test')).resolves.toBeTypeOf('string');
 });
 it('free legacy grounding requires actual sources and never uses Gemini 3 paid grounding',async()=>{
@@ -81,13 +83,15 @@ it('uses actual confirmed input tokens so two small calls do not exhaust the nex
   expect(usage.rows.every(r=>r.reserved_input_tokens<product.llmReservedInputTokens)).toBe(true);
 });
 it('reserves in-flight and failed requests, while the global RPM cap still applies to small requests',async()=>{
-  const pending=await reserveCall(db,'actor',config.GEMINI_MODEL,'test',65_000);
-  await expect(reserveCall(db,'actor',config.GEMINI_MODEL,'test',1_000)).rejects.toMatchObject({kind:'local_limit',reason:'tokens'});
+  const limits={...defaultQuotaLimits,inputTokensPerMinute:65_536,globalRpm:5};
+  const reserve=(tokens:number)=>reserveCall(db,'actor',config.GEMINI_MODEL,'test',tokens,limits);
+  const pending=await reserve(65_000);
+  await expect(reserve(1_000)).rejects.toMatchObject({kind:'local_limit',reason:'tokens'});
   await db.query("UPDATE llm_usage SET status='network_error' WHERE id=$1",[pending]);
-  await expect(reserveCall(db,'actor',config.GEMINI_MODEL,'test',1_000)).rejects.toMatchObject({kind:'local_limit',reason:'tokens'});
+  await expect(reserve(1_000)).rejects.toMatchObject({kind:'local_limit',reason:'tokens'});
   await db.query("UPDATE llm_usage SET status='ok',input_tokens=10 WHERE id=$1",[pending]);
-  for(let i=1;i<product.llmGlobalRpm;i++)await reserveCall(db,'actor',config.GEMINI_MODEL,'test',10);
-  await expect(reserveCall(db,'actor',config.GEMINI_MODEL,'test',10)).rejects.toMatchObject({kind:'local_limit',reason:'global'});
+  for(let i=1;i<limits.globalRpm;i++)await reserve(10);
+  await expect(reserve(10)).rejects.toMatchObject({kind:'local_limit',reason:'global'});
 });
 it('counts text as UTF-8 with a safety margin and image allowance, not as base64 text',()=>{
   const a={...input,contents:[{role:'user',parts:[{text:'foto'},{inlineData:{mimeType:'image/png',data:'a'.repeat(100)}}]}]};
@@ -136,7 +140,7 @@ it('preserves exact Gemini call IDs, original ordered parts and opaque signature
 });
 it('applies environment quota reductions before making provider requests',async()=>{
   const http=vi.fn<typeof fetch>(async()=>success());
-  const llm=new Gemini(db,{...config,GEMINI_GLOBAL_RPM:1},'actor',{used:0},http);
+  const llm=new Gemini(db,{...config,LLM_LOCAL_GLOBAL_RPM:1},'actor',{used:0},http);
   await llm.generate(input);
   await expect(llm.generate(input)).rejects.toMatchObject({kind:'local_limit',reason:'global'});
   expect(http).toHaveBeenCalledOnce();
@@ -160,4 +164,72 @@ it('uses native function-calling ANY only for a requested correction with tools'
   const llm=new Gemini(db,config,'actor',{used:0},http);
   await llm.generate({...input,requireFunctionCall:true,tools:[{name:'media_process',description:'Crear QR',parametersJsonSchema:{type:'object',properties:{},additionalProperties:false}}]});
   expect(JSON.parse(String(http.mock.calls[0]?.[1]?.body)).toolConfig).toEqual({functionCallingConfig:{mode:'ANY'}});
+});
+
+it.each([1,2,3])('uses %i limited keys at most once and accounts for each provider attempt',async limited=>{
+  const pooled={...config,GEMINI_API_KEYS:['fixture-one','fixture-two','fixture-three']};
+  let attempts=0;
+  const http=vi.fn<typeof fetch>(async()=>++attempts<=limited?new Response(null,{status:429,headers:{'retry-after':'120'}}):success());
+  const budget={used:0};const llm=new Gemini(db,pooled,'actor',budget,http);
+  if(limited===3)await expect(llm.generate(input)).rejects.toMatchObject({kind:'quota'});
+  else expect((await llm.generate(input)).text).toContain('Hola');
+  expect(http).toHaveBeenCalledTimes(Math.min(limited+1,3));expect(budget.used).toBe(1);
+  expect(new Set(http.mock.calls.map(([,init])=>new Headers(init?.headers).get('x-goog-api-key'))).size).toBe(http.mock.calls.length);
+  expect((await db.query('SELECT count(*)::int n FROM llm_usage')).rows[0]?.n).toBe(http.mock.calls.length);
+  expect(llm.counters.calls).toBe(http.mock.calls.length);
+});
+it.each([401,403,400])('disables unauthorized HTTP %i keys across adapter instances',async status=>{
+  const pooled={...config,GEMINI_API_KEYS:['fixture-one','fixture-two']};
+  const http=vi.fn<typeof fetch>(async(_url,init)=>new Headers(init?.headers).get('x-goog-api-key')==='fixture-one'
+    ?Response.json({error:{details:[{reason:'API_KEY_INVALID'}],message:'Never log this fixture-one'}},{status}):success());
+  for(let n=0;n<3;n++)expect((await new Gemini(db,pooled,'actor',{used:0},http).generate(input)).text).toContain('Hola');
+  expect(http.mock.calls.filter(([,init])=>new Headers(init?.headers).get('x-goog-api-key')==='fixture-one')).toHaveLength(1);
+});
+it.each(['network','timeout','body_timeout','5xx'])('retries only Gemini on %s with an identical request body',async kind=>{
+  const pooled={...config,GEMINI_API_KEYS:['fixture-one','fixture-two']};let calls=0;
+  const http=vi.fn<typeof fetch>(async()=>{
+    if(++calls===1){
+      if(kind==='network')throw new Error('fixture-one private-debug');
+      if(kind==='timeout')throw new DOMException('fixture-one private-debug','TimeoutError');
+      if(kind==='5xx')return new Response(null,{status:503,headers:{'retry-after':'180'}});
+      const response=success();vi.spyOn(response,'json').mockRejectedValue(new DOMException('fixture-one private-debug','TimeoutError'));return response;
+    }
+    return success();
+  });
+  expect((await new Gemini(db,pooled,'actor',{used:0},http).generate(input)).text).toContain('Hola');
+  expect(http).toHaveBeenCalledTimes(2);expect(http.mock.calls[0]?.[1]?.body).toBe(http.mock.calls[1]?.[1]?.body);
+});
+it('shares concurrency protection across actors and adapter instances and accounts for queued calls',async()=>{
+  const pooled={...config,GEMINI_API_KEYS:['fixture-one','fixture-two'],LLM_MAX_CONCURRENT_CALLS:2};
+  const releases:(()=>void)[]=[];let active=0,maxActive=0;
+  const http=vi.fn<typeof fetch>(async()=>{
+    active++;maxActive=Math.max(active,maxActive);await new Promise<void>(resolve=>releases.push(resolve));active--;return success();
+  });
+  const pending=Array.from({length:7},(_,n)=>new Gemini(db,pooled,`actor-${n}`,{used:0},http).generate(input));
+  await vi.waitFor(()=>expect(releases).toHaveLength(2));
+  for(let n=0;n<7;n++){releases[n]!();if(n<5)await vi.waitFor(()=>expect(releases).toHaveLength(n+3));}
+  expect(await Promise.all(pending)).toHaveLength(7);expect(maxActive).toBe(2);expect(http).toHaveBeenCalledTimes(7);
+});
+it('does not impose the old 20/day, 5 global RPM or local TPM defaults',async()=>{
+  await db.query("INSERT INTO llm_usage(actor_id,model,purpose,reserved_input_tokens) SELECT 'actor',$1,'test',100000 FROM generate_series(1,25)",[config.GEMINI_MODEL]);
+  // Historical model-wide cooldown must not suppress healthy keys in the new pool.
+  await db.query("INSERT INTO llm_cooldowns(model,until_at) VALUES($1,now()+interval '1 hour')",[config.GEMINI_MODEL]);
+  const http=vi.fn<typeof fetch>(async()=>success());
+  expect((await new Gemini(db,config,'actor',{used:0},http).generate(input)).text).toContain('Hola');
+  expect(http).toHaveBeenCalledOnce();
+});
+it.each(['userRpm','globalRpm','dailyLimit'])('enforces configured positive %s atomically and lets zero disable it',async field=>{
+  const limits={...defaultQuotaLimits,[field]:1};
+  await reserveCall(db,'actor',config.GEMINI_MODEL,'test',10,limits);
+  await expect(reserveCall(db,'actor',config.GEMINI_MODEL,'test',10,limits)).rejects.toMatchObject({kind:'local_limit'});
+  await expect(reserveCall(db,'actor',config.GEMINI_MODEL,'test',10,{...limits,[field]:0})).resolves.toBeTypeOf('string');
+});
+it.each(['vision','grounding'])('uses the same pool and payload for %s failover',async kind=>{
+  const pooled={...config,GEMINI_API_KEYS:['fixture-one','fixture-two']};let attempts=0;
+  const http=vi.fn<typeof fetch>(async()=>++attempts===1?new Response(null,{status:429}):Response.json({candidates:[{content:{role:'model',parts:[{text:'Respuesta con fuente.'}]},groundingMetadata:{groundingChunks:[{web:{uri:'https://example.com'}}]}}]}));
+  const llm=new Gemini(db,pooled,'actor',{used:0},http);
+  if(kind==='vision')await llm.generate({...input,contents:[{role:'user',parts:[{inlineData:{mimeType:'image/png',data:'aGVsbG8='}}]}]});
+  else expect(await llm.search('consulta')).toContain('https://example.com');
+  expect(http).toHaveBeenCalledTimes(2);expect(http.mock.calls[0]?.[1]?.body).toBe(http.mock.calls[1]?.[1]?.body);
+  expect((await db.query('SELECT purpose FROM llm_usage ORDER BY at')).rows).toEqual([{purpose:kind==='vision'?'vision':'web'},{purpose:kind==='vision'?'vision':'web'}]);
 });

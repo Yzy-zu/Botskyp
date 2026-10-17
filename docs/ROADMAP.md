@@ -316,3 +316,21 @@ R5-GEMINI-REAL con consumo, resultados y límites. Checks estáticos correctos;
 primera suite 1148/1150 y repetición de seis archivos contra código fijo 190/190,
 incluidos los dos resultados afectados por cambios durante la corrida. Sin deploy
 ni merge; no avanzar de fase ni activar WhatsApp por esta autorización.
+
+
+## 17. R5.1 — Pool Gemini y protecciones locales (17-10-2026)
+
+Autorización del dueño desde `399cd9d`, exclusivamente en
+`feat/v1.1-natural-router`: multi-key con rotación/failover, cooldown, cola y
+cuotas locales opcionales. Un constructor sin delegación. DEC-064 e informe
+[v1.1/R5.1-GEMINI-KEY-POOL.md](v1.1/R5.1-GEMINI-KEY-POOL.md).
+Sin rediseño R5, cambios Policy/Registry, nuevos bridges ni correcciones ajenas.
+No modificar `.env` productivo ni Evolution. Validaciones focalizadas, checks,
+commit/push a la rama y detenerse. Sin deploy ni merge a main.
+
+
+R5.1 verificada: cierre 118/118 y cuatro regresiones dirigidas R5/crash correctas;
+checks estáticos, auditoría de secretos y Compose correctos. La tanda previa
+337/339 se cerró repitiendo los casos afectados sobre código congelado, sin
+cambiar Policy. Evidencia y límites en el informe R5.1. Tras commit/push a la
+misma rama, detenerse; no autoriza deploy, merge ni activación.

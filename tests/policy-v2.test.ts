@@ -27,7 +27,7 @@ import { product } from '../config/product.js';
 const { url } = JSON.parse(readFileSync('.local/test-db.json', 'utf8')) as { url: string };
 if (!new URL(url).pathname.startsWith('/botsky_test_')) throw new Error('Unsafe test database');
 const db = createDb(url);
-const config = readConfig({ DATABASE_URL: url, EVOLUTION_URL: 'http://mock', EVOLUTION_APIKEY: 'test', INSTANCE: 'test', WEBHOOK_SECRET: 'x'.repeat(32), OWNER_JIDS: '100@s.whatsapp.net', BOT_JIDS: '200@s.whatsapp.net', LAB_CHAT_ID: '300@g.us', TRANSPORT: 'mock', MINECRAFT_ENABLED: 'true', ROUTER_MODE: 'v1_1' });
+const config = readConfig({GEMINI_API_KEY:'fixture-gemini-key', DATABASE_URL: url, EVOLUTION_URL: 'http://mock', EVOLUTION_APIKEY: 'test', INSTANCE: 'test', WEBHOOK_SECRET: 'x'.repeat(32), OWNER_JIDS: '100@s.whatsapp.net', BOT_JIDS: '200@s.whatsapp.net', LAB_CHAT_ID: '300@g.us', TRANSPORT: 'mock', MINECRAFT_ENABLED: 'true', ROUTER_MODE: 'v1_1' });
 const owner = config.OWNER_JIDS[0]!, member = '101@s.whatsapp.net', admin = '102@s.whatsapp.net', other = '103@s.whatsapp.net';
 const chat = config.LAB_CHAT_ID;
 const registry = createRegistry(), catalog = createToolRegistryV2(registry);

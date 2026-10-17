@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { moduleEnabled } from './permissions.js';
-import { product } from '../../config/product.js';
+import { geminiKeyPool } from './gemini-key-pool.js';
 import { defineTool,ok,type Tool } from './tools.js';
 export const modules=['polls','media','messaging','drive','library','conversation','notes','reminders','memory','web','vision','minecraft','school','xp','games','moderation'] as const;
 const base={module:'core',permission:'config.global',scope:'both',modelCallable:false,risk:'write'} as const;
@@ -25,6 +25,8 @@ export const controlTools:Tool[]=[
     const r=await ctx.c.query<{model:string;calls:number;input:number;output:number}>(`SELECT model,count(*)::int AS calls,sum(input_tokens)::int AS input,sum(output_tokens)::int AS output FROM llm_usage WHERE at >= date_trunc('day',clock_timestamp() AT TIME ZONE 'America/Los_Angeles') AT TIME ZONE 'America/Los_Angeles' GROUP BY model`);
     const minute=await ctx.c.query<{calls:number;tokens:number}>(`SELECT count(*)::int AS calls,coalesce(sum(CASE WHEN input_tokens>0 THEN input_tokens ELSE reserved_input_tokens END),0)::int AS tokens FROM llm_usage WHERE at>clock_timestamp()-interval '1 minute'`);
     const usage=minute.rows[0]!;
-    return ok(`Límites de Botsky: ${product.llmGlobalRpm} llamadas/min, ${product.llmDailyLimit}/día; entrada ${usage.tokens}/${product.llmInputTokensPerMinute} tokens en el último minuto (incluye reservas pendientes).\nGemini: ${ctx.config.GEMINI_API_KEY && ctx.config.GEMINI_FREE_TIER_CONFIRMED?'configurado':'sin configurar'}\n${r.rows.map(x=>`${x.model}: ${x.calls} llamadas; entrada ${x.input}, salida ${x.output} tokens`).join('\n') || '0 llamadas hoy.'}`);}}),
+    const pool=geminiKeyPool(ctx.config).snapshot();
+    const limit=(n:number)=>n===0?'sin límite local':String(n);
+    return ok(`Límites de Botsky: ${limit(ctx.config.LLM_LOCAL_GLOBAL_RPM)} llamadas/min global, ${limit(ctx.config.LLM_LOCAL_USER_RPM)} por usuario, ${limit(ctx.config.LLM_LOCAL_DAILY_LIMIT)}/día; entrada ${usage.tokens}/${limit(ctx.config.LLM_INPUT_TOKENS_PER_MINUTE)} tokens en el último minuto (incluye reservas pendientes).\nConcurrencia: ${pool.active}/${ctx.config.LLM_MAX_CONCURRENT_CALLS}; en cola: ${pool.queued}.\nGemini: ${ctx.config.GEMINI_FREE_TIER_CONFIRMED?'configurado':'deshabilitado'}\nKeys: ${pool.configured} configuradas / ${pool.healthy} saludables / ${pool.available} disponibles / ${pool.cooldown} cooldown\nCalls hoy: ${r.rows.reduce((sum,x)=>sum+x.calls,0)}\nProceso: ${pool.requests} requests; failovers: ${pool.failovers}; rate limits: ${pool.rateLimited}; pool agotado: ${pool.exhausted}.\nLatencia reciente p50/p95: ${pool.p50Ms}/${pool.p95Ms} ms.\n${pool.keys.map(k=>`${k.id}: ${k.requests} requests, ${k.successes} ok, ${k.rateLimited} rate limits, ${k.failures} fallos${k.available?'':'; deshabilitada'}`).join('\n')}\n${r.rows.map(x=>`${x.model}: ${x.calls} llamadas; entrada ${x.input}, salida ${x.output} tokens`).join('\n') || '0 llamadas hoy.'}`);}}),
   defineTool({...base,name:'diag.errores',description:'Ver los últimos 20 errores sanitizados.',examples:['bot diag errores'],risk:'read',args:z.strictObject({}),async run(ctx){const r=await ctx.c.query<{id:string;where_:string;at:Date}>('SELECT id,where_,at FROM error_log ORDER BY id DESC LIMIT 20');return ok(r.rows.map(x=>`#${x.id} ${x.at.toISOString()} ${x.where_}`).join('\n') || 'No hay errores.');}}),
 ];

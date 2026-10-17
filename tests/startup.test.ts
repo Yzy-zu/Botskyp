@@ -12,7 +12,7 @@ import { product } from '../config/product.js';
 it('listens with Evolution unavailable, reports degraded health and later syncs members',async()=>{
   const {url}=JSON.parse(readFileSync('.local/test-db.json','utf8')) as {url:string};
   const db=createDb(url);
-  const config={...readConfig({DATABASE_URL:url,EVOLUTION_URL:'http://mock',EVOLUTION_APIKEY:'test',INSTANCE:'test',WEBHOOK_SECRET:'x'.repeat(32),OWNER_JIDS:'100@s.whatsapp.net',BOT_JIDS:'200@s.whatsapp.net',LAB_CHAT_ID:'300@g.us',TRANSPORT:'mock'}),TRANSPORT:'evolution' as const};
+  const config={...readConfig({GEMINI_API_KEY:'fixture-gemini-key',DATABASE_URL:url,EVOLUTION_URL:'http://mock',EVOLUTION_APIKEY:'test',INSTANCE:'test',WEBHOOK_SECRET:'x'.repeat(32),OWNER_JIDS:'100@s.whatsapp.net',BOT_JIDS:'200@s.whatsapp.net',LAB_CHAT_ID:'300@g.us',TRANSPORT:'mock'}),TRANSPORT:'evolution' as const};
   const transport=new MockEvolution();transport.connected=false;
   const app=makeApp(db,config,transport,()=>null);
   const warning=vi.spyOn(app.log,'warn');

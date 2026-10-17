@@ -9,7 +9,7 @@ const target = new URL(url);
 if (!target.pathname.startsWith('/botsky_test_')) throw new Error('Unsafe crash test database');
 target.searchParams.set('application_name', 'r3-policy-crash');
 const db = createDb(target.toString());
-const config = readConfig({ DATABASE_URL: target.toString(), EVOLUTION_URL: 'http://mock', EVOLUTION_APIKEY: 'test', INSTANCE: 'test', WEBHOOK_SECRET: 'x'.repeat(32), OWNER_JIDS: '100@s.whatsapp.net', BOT_JIDS: '200@s.whatsapp.net', LAB_CHAT_ID: '300@g.us', TRANSPORT: 'mock', ROUTER_MODE: 'v1_1' });
+const config = readConfig({GEMINI_API_KEY:'fixture-gemini-key', DATABASE_URL: target.toString(), EVOLUTION_URL: 'http://mock', EVOLUTION_APIKEY: 'test', INSTANCE: 'test', WEBHOOK_SECRET: 'x'.repeat(32), OWNER_JIDS: '100@s.whatsapp.net', BOT_JIDS: '200@s.whatsapp.net', LAB_CHAT_ID: '300@g.us', TRANSPORT: 'mock', ROUTER_MODE: 'v1_1' });
 const turnId = process.argv[2], mode = process.argv[3];
 const c = await db.connect();
 try {

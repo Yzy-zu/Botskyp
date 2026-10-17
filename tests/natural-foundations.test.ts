@@ -12,7 +12,7 @@ import type { Msg } from '../src/wa/types.js';
 const { url } = JSON.parse(readFileSync('.local/test-db.json', 'utf8')) as { url: string };
 if (!new URL(url).pathname.startsWith('/botsky_test_')) throw new Error('Unsafe test database');
 const db = createDb(url);
-const config = readConfig({ DATABASE_URL: url, EVOLUTION_URL: 'http://mock', EVOLUTION_APIKEY: 'test', INSTANCE: 'test', WEBHOOK_SECRET: 'x'.repeat(32), OWNER_JIDS: '100@s.whatsapp.net', BOT_JIDS: '200@s.whatsapp.net', LAB_CHAT_ID: '300@g.us', TRANSPORT: 'mock' });
+const config = readConfig({GEMINI_API_KEY:'fixture-gemini-key', DATABASE_URL: url, EVOLUTION_URL: 'http://mock', EVOLUTION_APIKEY: 'test', INSTANCE: 'test', WEBHOOK_SECRET: 'x'.repeat(32), OWNER_JIDS: '100@s.whatsapp.net', BOT_JIDS: '200@s.whatsapp.net', LAB_CHAT_ID: '300@g.us', TRANSPORT: 'mock' });
 const actor = '100@s.whatsapp.net';
 const chat = config.LAB_CHAT_ID;
 function msg(id: string = randomUUID(), chatId = chat): Msg { return { id, chatId, senderId: actor, isGroup: true, ts: new Date(), text: 'bot ping', mentions: [], fromMe: false, attachments: [] }; }

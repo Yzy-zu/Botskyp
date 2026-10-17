@@ -4,7 +4,7 @@ import { actorFor,moduleEnabled,permitted,privateEligible,type Chat } from '../.
 import { product } from '../../../config/product.js';
 export async function mediaAllowed(c:PoolClient,config:Config,chatId:string,actorId:string):Promise<boolean>{
   const row=(await c.query<{is_group:boolean;enabled:boolean;settings:Chat['settings']}>('SELECT * FROM chats WHERE id=$1',[chatId])).rows[0];
-  if(!row || (row.is_group && chatId!==config.LAB_CHAT_ID))return false;
+  if(!row)return false;
   const chat={id:chatId,isGroup:row.is_group,enabled:row.enabled,settings:row.settings};
   const actor=await actorFor(c,{chatId,isGroup:row.is_group,senderId:actorId,id:'',text:'',ts:new Date(),fromMe:false,mentions:[],attachments:[]},config);
   if(!permitted(actor,chat,'chat.use') || !moduleEnabled(chat,'media',config))return false;

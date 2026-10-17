@@ -5,4 +5,4 @@ export function activated(msg: {isGroup:boolean; text:string; mentions:string[];
 export function isPing(text: string): boolean {
   return /^(?:(?:botsky|botsito|bot)[\s,:;!]+)?ping[.!?]?$/iu.test(text.trim().replace(/@\d+\s*/g, ''));
 }
-export function enableCommand(text: string): boolean { return /^bot\s+habilita\s+aqu[ií]$/iu.test(text.trim()); }
+export function enableCommand(text: string): boolean { return /^bot\s+habilita\s+(?:aqu[ií]|este\s+chat)$/iu.test(text.trim()); }

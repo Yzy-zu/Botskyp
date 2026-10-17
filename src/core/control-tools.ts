@@ -1,7 +1,8 @@
 import { z } from 'zod';
+import { moduleEnabled } from './permissions.js';
 import { product } from '../../config/product.js';
 import { defineTool,ok,type Tool } from './tools.js';
-export const modules=['messaging','drive','library','conversation','notes','reminders','memory','web','vision','minecraft','school','xp','games','moderation'] as const;
+export const modules=['polls','media','messaging','drive','library','conversation','notes','reminders','memory','web','vision','minecraft','school','xp','games','moderation'] as const;
 const base={module:'core',permission:'config.global',scope:'both',modelCallable:false,risk:'write'} as const;
 function flagTool(name:string,description:string,example:string,key:string,value:boolean):Tool{
   return defineTool({...base,name,description,examples:[example],args:z.strictObject({}),async run(ctx){
@@ -18,7 +19,7 @@ export const controlTools:Tool[]=[
     async run(ctx,args){
       if(args.module && args.enabled!==undefined)await ctx.c.query(`UPDATE chats SET settings=jsonb_set(settings,'{modules}',coalesce(settings->'modules','{}'::jsonb)||jsonb_build_object($2::text,$3::boolean)) WHERE id=$1`,[ctx.chat.id,args.module,args.enabled]);
       const r=await ctx.c.query<{settings:{modules?:Record<string,boolean>}}>('SELECT settings FROM chats WHERE id=$1',[ctx.chat.id]);
-      return ok(modules.map(m=>`${m}: ${(r.rows[0]?.settings.modules?.[m] ?? (!ctx.chat.isGroup || ctx.chat.id===ctx.config.LAB_CHAT_ID))?'on':'off'}`).join('\n'));
+      return ok(modules.map(m=>`${m}: ${moduleEnabled({...ctx.chat,settings:r.rows[0]?.settings ?? {}},m,ctx.config)?'on':'off'}`).join('\n'));
     }}),
   defineTool({...base,name:'diag.cuota',description:'Consultar consumo diario y estado de Gemini.',examples:['bot diag cuota'],risk:'read',args:z.strictObject({}),async run(ctx){
     const r=await ctx.c.query<{model:string;calls:number;input:number;output:number}>(`SELECT model,count(*)::int AS calls,sum(input_tokens)::int AS input,sum(output_tokens)::int AS output FROM llm_usage WHERE at >= date_trunc('day',clock_timestamp() AT TIME ZONE 'America/Los_Angeles') AT TIME ZONE 'America/Los_Angeles' GROUP BY model`);

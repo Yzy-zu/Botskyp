@@ -60,7 +60,7 @@ export async function gameCommand(ctx:ToolCtx,args:GameCommand,random?:Random,gr
       state.punishmentMinutes=setting.minutes ?? product.roulettePunishmentMinutes;
       if(setting.enabled && moduleEnabled(ctx.chat,'moderation',ctx.config)){
         if(ctx.config.TRANSPORT==='evolution' || groups){
-          try{state.consequences=botAdmin(await (groups ?? new EvolutionGroups(ctx.config)).roster(ctx.chat.id),ctx.config);}catch{state.consequences=false;}
+          try{state.consequences=botAdmin(await (groups ?? new EvolutionGroups(ctx.config,ctx.c)).roster(ctx.chat.id),ctx.config);}catch{state.consequences=false;}
         }else{
           const bot=await ctx.c.query('SELECT 1 FROM group_memberships WHERE chat_id=$1 AND user_id=ANY($2::text[]) AND active AND is_admin AND last_seen_at>clock_timestamp()-$3::int*interval \'1 millisecond\'',[ctx.chat.id,ctx.config.BOT_JIDS,product.membershipMaxAgeMs]);state.consequences=Boolean(bot.rowCount);
         }

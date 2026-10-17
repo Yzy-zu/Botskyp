@@ -1,3 +1,4 @@
+import { modules } from './control-tools.js';
 import { chatLock,lockChatWallets } from '../modules/games/state.js';
 import { activity } from '../modules/xp/service.js';
 import { createHash } from 'node:crypto';
@@ -15,9 +16,12 @@ import { activated, enableCommand } from './activation.js';
 
 export async function receive(db: Db, config: Config, input: Msg, now = new Date()):Promise<string> {
   const msg = msgSchema.parse(input);
+  if(msg.isGroup!==msg.chatId.endsWith('@g.us'))return 'ignored';
   if (msg.fromMe || now.getTime() - msg.ts.getTime() > config.STALE_SECONDS * 1000 || msg.ts.getTime() - now.getTime() > product.futureToleranceSeconds * 1000) return 'ignored';
-  // Phase 0 cannot enable or emit to real groups, including through an owner command.
-  if (msg.isGroup && msg.chatId !== config.LAB_CHAT_ID) return 'ignored';
+  if(msg.isGroup){
+    const enabled=await db.query('SELECT 1 FROM chats WHERE id=$1 AND is_group AND enabled',[msg.chatId]);
+    if(!enabled.rowCount && !(enableCommand(msg.text) && (await transaction(db,c=>actorFor(c,msg,config))).role==='owner'))return 'ignored';
+  }
   const key = createHash('sha256').update(JSON.stringify([config.INSTANCE,msg.chatId,msg.id])).digest('hex');
   return transaction(db, async c => {
     const inserted = await c.query('INSERT INTO seen_events(provider_msg_id) VALUES($1) ON CONFLICT DO NOTHING RETURNING provider_msg_id',[key]);
@@ -46,9 +50,17 @@ export async function processNext(db: Db, config: Config):Promise<boolean> {
     const reactivating=owner && /^reactiva$/iu.test(commandText(msg.text));
     let reply:string|undefined;
     if(!emergency || reactivating){
-      if(msg.isGroup && msg.chatId===config.LAB_CHAT_ID && enableCommand(msg.text) && owner){
-        await c.query('INSERT INTO chats(id,is_group,enabled) VALUES($1,true,true) ON CONFLICT(id) DO UPDATE SET enabled=true',[msg.chatId]);
-        reply='Botsky habilitado en este chat.';
+      if(msg.isGroup && enableCommand(msg.text) && owner){
+        await chatLock(c,msg.chatId);
+        await c.query('INSERT INTO chats(id,is_group,enabled,settings) VALUES($1,true,true,$2) ON CONFLICT(id) DO UPDATE SET enabled=true',[msg.chatId,JSON.stringify(msg.chatId===config.LAB_CHAT_ID?{}:{modules:Object.fromEntries(modules.map(m=>[m,false]))})]);
+        await c.query("INSERT INTO audit_log(actor_id,chat_id,action) VALUES($1,$2,'chat.enable')",[actor.id,msg.chatId]);
+        reply='Botsky habilitado en este chat. Activa cada módulo explícitamente con «bot activa <módulo> aquí».';
+
+      }else if(msg.isGroup && owner && /^deshabilita este chat$/iu.test(commandText(msg.text))){
+        await chatLock(c,msg.chatId);
+        await c.query('UPDATE chats SET enabled=false WHERE id=$1',[msg.chatId]);
+        await c.query("UPDATE outbox SET status='failed',last_error='chat_disabled' WHERE chat_id=$1 AND status='queued'",[msg.chatId]);
+        await c.query("INSERT INTO audit_log(actor_id,chat_id,action) VALUES($1,$2,'chat.disable')",[actor.id,msg.chatId]);
       }else{
         const result=await c.query<{enabled:boolean;settings:Chat['settings']}>('SELECT enabled,settings FROM chats WHERE id=$1',[msg.chatId]);
         let saved=result.rows[0];
@@ -68,7 +80,8 @@ export async function processNext(db: Db, config: Config):Promise<boolean> {
         const xpCtx={actor,chat:{id:msg.chatId,isGroup:msg.isGroup,enabled:allowed,settings:saved?.settings ?? {}},msg,db,c,config,now:new Date(),search:async()=>''};
         if(allowed && !maintenance)await activity(xpCtx);
         if(allowed && activated(msg,config.BOT_JIDS,Boolean(accepts))){
-          if(maintenance && !owner)reply='Estoy en mantenimiento.';
+          if(msg.isGroup && !owner && !actor.groupMember)reply='No.';
+          else if(maintenance && !owner)reply='Estoy en mantenimiento.';
           else {
             const gemini=new Gemini(db,config,actor.id);
             const ctx={actor,chat:{id:msg.chatId,isGroup:msg.isGroup,enabled:true,settings:saved?.settings ?? {}},msg,db,c,config,now:new Date(),search:(query:string)=>config.WEB_SEARCH_PROVIDER==='gemini'?gemini.search(query):searxSearch(config,query)};

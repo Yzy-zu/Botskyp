@@ -1,3 +1,4 @@
+import { moduleEnabled,type Chat } from '../core/permissions.js';
 import { driveDelivery } from '../modules/drive/delivery.js';
 import { claimBulk } from '../modules/messaging/worker.js';
 import { libraryDelivery } from '../modules/packs/delivery.js';
@@ -51,6 +52,12 @@ export async function sendNext(db:Db, transport:Transport, config:Config):Promis
     }
     return true;
   }
+  if(row.chat_id.endsWith('@g.us')){
+    const chat=(await db.query<Chat>('SELECT id,is_group AS "isGroup",enabled,settings FROM chats WHERE id=$1',[row.chat_id])).rows[0];
+    if(!chat?.enabled || !chat.isGroup || (row.kind==='poll_result' && !moduleEnabled(chat,'polls',config))){
+      await db.query("UPDATE outbox SET status='failed',last_error='chat_disabled' WHERE id=$1 AND status='queued'",[row.id]);return true;
+    }
+  }
   if(row.kind==='school_attachment' || row.kind==='school_summary'){
     const school=await schoolDelivery(db,config,row);
     if(!school.allowed){
@@ -77,7 +84,7 @@ export async function sendNext(db:Db, transport:Transport, config:Config):Promis
     delivery.requireReceipt=true;
   }
   // Persist uncertainty BEFORE crossing the network boundary.
-  const claimed=row.kind==='bulk_text'?{rowCount:await claimBulk(db,config,row)?1:0}:await db.query("UPDATE outbox SET status='sending',sending_at=now(),attempts=attempts+1 WHERE id=$1 AND status='queued' RETURNING id",[row.id]);
+  const claimed=row.kind==='bulk_text'?{rowCount:await claimBulk(db,config,row)?1:0}:await db.query("UPDATE outbox SET status='sending',sending_at=now(),attempts=attempts+1 WHERE id=$1 AND status='queued' AND (chat_id NOT LIKE '%@g.us' OR EXISTS(SELECT 1 FROM chats ch WHERE ch.id=outbox.chat_id AND ch.enabled AND ch.is_group)) RETURNING id",[row.id]);
   if (!claimed.rowCount) return false;
   let sent;
   try { sent=await transport.send(delivery); }

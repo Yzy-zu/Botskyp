@@ -86,9 +86,8 @@ export async function tickObligations(db:Db,config:Config,injected?:GroupControl
     if(!(await lock.query<{held:boolean}>("SELECT pg_try_advisory_lock(hashtext('botsky-obligations')) AS held")).rows[0]?.held)return;
     const flags=await db.query("SELECT 1 FROM system_flags WHERE key IN ('emergency','maintenance') AND value='true'::jsonb");if(flags.rowCount)return;
     const rows=await db.query<Obligation>("SELECT * FROM obligations WHERE status IN ('pending','sending','queued') AND due_at<=clock_timestamp() ORDER BY id LIMIT $1",[product.gameTickBatch]);
-    const groups=injected ?? new EvolutionGroups(config);
+    const groups=injected ?? new EvolutionGroups(config,db);
     for(const row of rows.rows){
-      if(row.chat_id!==config.LAB_CHAT_ID)continue;
       try{
         row.detail=z.object({punishmentMinutes:z.number().int().min(1).max(product.rouletteMaxPunishmentMinutes)}).parse(row.detail);
         if(row.kind==='roulette_kick')await processKick(db,config,row,groups);else await processReinvite(db,config,row,groups);

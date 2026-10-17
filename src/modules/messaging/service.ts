@@ -18,7 +18,7 @@ export async function draft(ctx:ToolCtx,kind:BulkOperation['kind'],text:string,t
   const destinations=await discoverDestinations(ctx.c,ctx.config);
   const selected=tokens.map(t=>destinations.find(d=>d.id===t.slice(1)));
   if(kind!=='nuclear' && (selected.some(d=>!d) || !selected.length || (kind==='message' && selected.length!==1)))return fail('Destino inválido o no autorizado. Consulta «bot destinos».');
-  const params:Params=paramsSchema.parse({version:product.bulkVersion,text,count:kind==='nuclear'?count:selected.length,gapMs:kind==='nuclear'?product.nuclearGapMs:product.bulkGapMs,targets:kind==='nuclear'?[{target:ctx.chat.id,label:'Botsky Lab (grupo actual)'}]:selected.map(d=>({target:d!.target_id,label:`d${d!.id}: ${d!.label}`})),mentions:[]});
+  const params:Params=paramsSchema.parse({version:product.bulkVersion,text,count:kind==='nuclear'?count:selected.length,gapMs:kind==='nuclear'?product.nuclearGapMs:product.bulkGapMs,targets:kind==='nuclear'?[{target:ctx.chat.id,label:'Grupo actual'}]:selected.map(d=>({target:d!.target_id,label:`d${d!.id}: ${d!.label}`})),mentions:[]});
   const busy=(await ctx.c.query<{n:string}>("SELECT count(*) n FROM bulk_ops WHERE status IN ('draft','queued','running','paused') AND (status<>'draft' OR expires_at>clock_timestamp())")).rows[0]!;
   if(Number(busy.n)>=product.bulkMaxActive)return fail('Ya hay demasiadas operaciones pendientes. Cancela o termina una.');
   const hash=argumentHash(kind,params);

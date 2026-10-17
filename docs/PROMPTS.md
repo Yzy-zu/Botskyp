@@ -390,19 +390,24 @@ DRIVE
 - nunca metas tokens en Git.
 ```
 
-### Fase 8 — Opcionales
+### Fase 8 — Encuestas mínimas y pulido final de producción
 
 ```text
-Lee del plan: §5.12, §9.4, §9.10 moderación completa y §9.11.
+La instrucción cerrada del dueño del 17-10-2026 prevalece sobre el alcance opcional
+histórico. Lee §0/§3/§9.4/§10 del plan, DEC-055–057 y FASE-8.md.
 
-Cada módulo debe poder activarse/desactivarse sin tocar el núcleo:
-- encuestas;
-- lore/afinidad;
-- ficha de doxeo ficticio manifiestamente inventada;
-- moderación completa;
-- reacciones.
+Implementa únicamente polls por texto sin Gemini ni votos nativos, multigrupo
+persistente con módulos OFF en grupos nuevos, reconexión Evolution persistente,
+backup local/rotación de siete/restore temporal aislado, cleanup efímero y auditorías
+de seguridad/recursos. Conserva todas las regresiones Fases 0–7.
 
-No conviertas afinidad/lore en permisos ni en información factual sobre personas.
+Fuera de v1: afinidad, doxeo ficticio, moderación avanzada por strikes/reglas,
+reacciones/message_links, lore/crónicas automáticas y lore_chronicle. No elimines
+infraestructura previa. No actives grupos reales ni fuerces caídas de Evolution.
+
+Despliega solo por scripts/deploy.sh, confirma solo Lab habilitado y deja evidencia
+exacta de tests, recursos y limitaciones. Sin merge a main ni declaración de Botsky
+v1 terminado. Detente para auditoría arquitectónica FINAL.
 ```
 
 ---

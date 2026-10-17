@@ -28,12 +28,11 @@ export class Evolution implements Transport {
       await this.request(`/instance/connectionState/${this.config.INSTANCE}`));
     return data.instance.instanceName===this.config.INSTANCE && data.instance.state==='open';
   }
-  async participants():Promise<unknown>{
-    return this.request(`/group/findGroupInfos/${this.config.INSTANCE}?groupJid=${encodeURIComponent(this.config.LAB_CHAT_ID)}`);
+  async participants(chatId=this.config.LAB_CHAT_ID):Promise<unknown>{
+    return this.request(`/group/findGroupInfos/${this.config.INSTANCE}?groupJid=${encodeURIComponent(chatId)}`);
   }
   async send(delivery:Delivery):Promise<SendResult>{
     if(!/^\d+@(g\.us|s\.whatsapp\.net)$/.test(delivery.chatId))return {status:'failed',reason:'unresolved_destination'};
-    if(delivery.chatId.endsWith('@g.us') && delivery.chatId!==this.config.LAB_CHAT_ID)return {status:'failed',reason:'outside_lab'};
     try{
       const quote=delivery.sourceId?{quoted:{key:{id:delivery.sourceId,remoteJid:delivery.chatId}}}:{};
       const media=delivery.media;

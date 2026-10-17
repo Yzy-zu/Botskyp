@@ -1,3 +1,4 @@
+import { cleanupEphemeral } from '../../core/cleanup.js';
 import { transaction,type Db } from '../../db/client.js';
 import type { Config } from '../../config.js';
 import { moduleEnabled,type Chat } from '../../core/permissions.js';
@@ -8,7 +9,7 @@ export async function tickCore(db:Db,config:Config):Promise<void>{
     const locked=await c.query<{locked:boolean}>("SELECT pg_try_advisory_xact_lock(hashtext('botsky-tick')) AS locked");
     if(!locked.rows[0]?.locked)return;
     await c.query("UPDATE sessions SET status='expired',version=version+1 WHERE status='active' AND kind<>'game' AND expires_at<=clock_timestamp()");
-    await c.query("DELETE FROM context_msgs WHERE created_at<now()-$1::int*interval '1 day'",[product.contextRetentionDays]);
+    await cleanupEphemeral(c);
     const flags=await c.query<{key:string;value:unknown}>('SELECT key,value FROM system_flags');
     if(flags.rows.some(f=>f.key==='emergency' && f.value===true))return;
     const maintenance=flags.rows.some(f=>f.key==='maintenance' && f.value===true);
@@ -21,7 +22,7 @@ export async function tickCore(db:Db,config:Config):Promise<void>{
     const due=await c.query<{id:string;chat_id:string;owner_id:string;body:string;due_at:Date;timezone:string;is_group:boolean;enabled:boolean;settings:Chat['settings']}>(`SELECT r.*,ch.is_group,ch.enabled,ch.settings FROM reminders r JOIN chats ch ON ch.id=r.chat_id
       WHERE r.status='pending' AND r.due_at<=now() ORDER BY r.due_at LIMIT $1 FOR UPDATE OF r SKIP LOCKED`,[product.dueReminderBatch]);
     for(const row of due.rows){
-      if(!row.enabled || (row.is_group && row.chat_id!==config.LAB_CHAT_ID) || !moduleEnabled({id:row.chat_id,isGroup:row.is_group,enabled:row.enabled,settings:row.settings},'reminders',config))continue;
+      if(!row.enabled || !moduleEnabled({id:row.chat_id,isGroup:row.is_group,enabled:row.enabled,settings:row.settings},'reminders',config))continue;
       const owner=config.OWNER_JIDS.includes(row.owner_id) && !row.owner_id.endsWith('@lid');
       if(maintenance && !owner)continue;
       if(!owner){const access=await c.query(`SELECT 1 FROM users WHERE id=$1 AND (

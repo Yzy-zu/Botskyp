@@ -102,8 +102,8 @@ it('administration and economic tools cannot be invoked by Gemini or inject reci
 it('deterministic commands work without Gemini and never expose internal paths',async()=>{
   expect(await command('bot biblioteca',member)).toContain('Memes');expect(await command('bot pack Memes',member)).toContain('Entrega privada');expect(await command('bot packs',member)).toContain('queued');expect(await command('bot biblioteca actualizar drive')).toContain('no está configurado');
 });
-it('private purchase accepts only an eligible canonical actor; real groups stay blocked',async()=>{
-  expect(await command(message('bot pack',owner,'400@g.us'))).toBeUndefined();const m=message('bot pack',owner,owner);await buy(owner,m);expect((await orders())[0]?.destination).toBe(owner);
+it('private purchase accepts only an eligible canonical actor; other groups require explicit library activation',async()=>{
+  expect(await command(message('bot pack',owner,'400@g.us'))).toBe('No.');const m=message('bot pack',owner,owner);await buy(owner,m);expect((await orders())[0]?.destination).toBe(owner);
 });
 it('library snapshots survive expired multimedia retention',async()=>{
   const { retainMedia }=await import('../src/modules/media/worker.js');await db.query("UPDATE library_blobs SET created_at=now()-interval '100 days'");await retainMedia(db);await buy();await drain();expect((await orders())[0]?.status).toBe('confirmed');

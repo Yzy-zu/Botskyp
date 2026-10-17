@@ -27,13 +27,13 @@ flowchart TD
     f1 --> f7["Fase 7: Mensajes, Nuclear y Drive<br/>(Aprobada · lista para cierre técnico)"]
     f5 --> f7
     
-    f2 --> f8["Fase 8: Módulos Opcionales<br/>(Encuestas, Lore, Afinidad, Reacciones)"]
+    f2 --> f8["Fase 8: Encuestas y Pulido de Producción"]
     f3 --> f8
     f6 --> f8
     f7 --> f8
 
     classDef critical fill:#f96,stroke:#333,stroke-width:2px;
-    class f0,f1,f3,f4,f6,f7 critical;
+    class f0,f1,f3,f4,f6,f7,f8 critical;
 ```
 
 ---
@@ -50,7 +50,7 @@ flowchart TD
 | **5** | **Multimedia y Documentos** | Fase 1 | **SÍ** (con Fase 2, 3 o 4) | Parcial | Constructor Procesamiento de Medios & Worker |
 | **6** | **Biblioteca, Packs y Cooperacha** | Fases 3 y 5 | **SÍ** (con Fase 4 o 7) | **SÍ** | Constructor Fullstack Transaccional |
 | **7** | **Mensajes, Difusión y Nuclear** | Fases 1 y 5 | **SÍ** (con Fase 4 o 6) | **SÍ** | Constructor Resiliencia de Red & Operaciones Masivas |
-| **8** | **Módulos Opcionales** | Fases previas según módulo | **SÍ** (módulo a módulo) | Parcial | Constructor Extensiones & Comunidad |
+| **8** | **Encuestas mínimas y pulido de producción** | Fases 0–7 cerradas | **NO** | **SÍ** | Constructor principal; auditoría final pendiente |
 
 ---
 
@@ -128,23 +128,19 @@ En lugar de atar rígidamente herramientas específicas (como Antigravity o Code
 
 ## 6. Estado y siguiente paso inmediato
 
-Las **Fases 0–6 están cerradas y fusionadas a `main`**, por instrucción directa del
-dueño; base `ffc30aa3e210363a8d565defd28901d0639a80f8`. Está autorizada únicamente
-la **Fase 7 — Mensajes, difusión, Nuclear y Drive** en
-`phase-7-mensajeria-difusion-nuclear-drive`, un constructor, sin delegación.
+Fases **0–7 cerradas, aprobadas y fusionadas a main** por instrucción directa del
+dueño; base `1bbaa5eed07ec4db20713d6f62d1fa11a44fa758`. Está autorizada únicamente
+Fase 8 — Encuestas mínimas y pulido de producción, en
+`phase-8-encuestas-pulido-produccion`, un constructor sin delegación ni paralelización.
 
-Alcance y plan previo en FASE-7.md y DEC-051–054. Se conservan las barreras de Lab,
-las 548 regresiones y todos los controles de fases anteriores. No hay programador
-genérico nuevo ni Fase 8. Nuclear real requiere aviso previo al dueño con el texto
-y cantidad exactos; esta ejecución usa pruebas aisladas sin envíos físicos.
-
-Fase 7 implementada y desplegada desde `88a8281`, con respaldo verificado,
-639/639 tests, multimedia 82/82, procesadores reales 17/17, wrapper Minecraft 14/14,
-typecheck/lint/build correctos y health HTTP 200. Evidencia en FASE-7-PRUEBAS.md.
-Estado: **aprobada arquitectónicamente y lista para cierre técnico** (DEC-054).
-Siguiente paso autorizado: registro documental, repetición de verificaciones y
-commit/push en la rama de Fase 7; después, **constructor detenido**.
-**Sin merge a main, Fase 8 ni activaciones fuera de Botsky Lab**.
+DEC-055–057 y FASE-8.md fijan alcance, plan crítico y límites. Sin merge a main,
+sin activaciones de grupos reales por el constructor y sin declaración de Botsky
+v1 terminado. Implementada y desplegada desde `d24eded`: 702/702 tests, multimedia 82/82,
+procesadores 17/17, wrapper 14/14, backup/restore aislado y health verdes.
+Solo Lab habilitado. Pendiente auditoría FINAL y saneamiento de doce blobs
+históricos con JIDs (DEC-057); árbol actual limpio. Constructor detenido.
+Las secciones 7–9 conservan el historial de autorizaciones anteriores; la sección
+10 y esta instrucción vigente sustituyen sus bloqueos de avance.
 
 ## 7. Autorización y aprobación de Fase 5 — 16-10-2026
 
@@ -215,3 +211,11 @@ Solo se autoriza documentación de control, verificaciones y commit/push a la ra
 de Fase 7; después detenerse. **Sin merge a main, inicio de Fase 8 ni activaciones
 fuera de Lab**. No se requieren nuevas acciones manuales del dueño para este cierre
 documental.
+
+## 10. Autorización vigente de Fase 8 — 17-10-2026
+
+Fases 0–7 cerradas/aprobadas/fusionadas según el dueño, base `1bbaa5e`.
+Solo encuestas por texto y pulido final de producción; alcance DEC-055 y FASE-8.md.
+Un constructor sin paralelización. La autorización actual sustituye los bloqueos
+históricos de este documento. Sin merge, sin activaciones de grupos reales por
+el constructor y sin declaración de Botsky v1 terminado. Auditoría final pendiente.

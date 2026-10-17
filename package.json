@@ -13,6 +13,7 @@
     "worker": "tsx src/worker.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
+    "audit:secrets": "python3 scripts/security-scan.py",
     "test": "vitest run",
     "eval:phase1": "tsx tests/phase1-vision-search.eval.ts",
     "migrate": "bash scripts/migrate.sh",

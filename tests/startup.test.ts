@@ -22,6 +22,7 @@ it('listens with Evolution unavailable, reports degraded health and later syncs 
   try {
     await migrate(db);
     await db.query('TRUNCATE group_memberships,user_aliases,users,chats CASCADE');
+    await db.query("INSERT INTO chats(id,is_group,enabled) VALUES('300@g.us',true,true)");
     const snapshot:unknown=JSON.parse(readFileSync('tests/fixtures/participants.json','utf8'));
     stop=await startMembershipRefresh(async()=>{
       if(!transport.connected)throw new Error('Provider unavailable');

@@ -17,7 +17,7 @@ export async function libraryDelivery(db:Db,config:Config,row:{id:string;chat_id
     if(!order || !['queued','pending_review'].includes(order.status) || order.destination!==row.chat_id || !await libraryAllowed(c,config,order.chat_id,order.user_id,order.kind==='rain'))return undefined;
     if(order.kind==='purchase' || order.kind==='airdrop'){
       if(row.chat_id!==order.user_id || !await privateLibraryDestination(c,config,order.user_id))return undefined;
-    }else if(row.chat_id!==order.chat_id || row.chat_id!==config.LAB_CHAT_ID)return undefined;
+    }else if(row.chat_id!==order.chat_id)return undefined;
     // Stop remaining files after an uncertain/failed send; a partial pack needs review.
     if((await c.query(`SELECT 1 FROM pack_order_items i JOIN outbox o ON o.id=i.outbox_id
       WHERE i.order_id=$1 AND o.id<>$2 AND o.status IN ('failed','uncertain')`,[order.id,row.id])).rowCount)return undefined;

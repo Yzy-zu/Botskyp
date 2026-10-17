@@ -1,3 +1,4 @@
+import { syncGroupMembers } from '../src/core/membership.js';
 import { readFileSync } from 'node:fs';
 import { beforeAll,afterAll,beforeEach,describe,it,expect } from 'vitest';
 import { createDb } from '../src/db/client.js';
@@ -25,6 +26,7 @@ beforeEach(async()=>{
 });
 describe('persistent pipeline',()=>{
   it('replays a captured REST message through the persistent pipeline and mock provider',async()=>{
+    await syncGroupMembers(db,config.LAB_CHAT_ID,JSON.parse(readFileSync('tests/fixtures/participants.json','utf8')));
     const fixture=JSON.parse(readFileSync('tests/fixtures/history.json','utf8')) as {messages:{records:{message:{conversation?:string}}[]}};
     const event=normalizeData(fixture.messages.records.find(r=>r.message.conversation==='bot ping'));
     if(event?.kind!=='message')throw new Error('Captured ping unavailable');

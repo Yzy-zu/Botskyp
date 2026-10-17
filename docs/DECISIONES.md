@@ -1061,3 +1061,98 @@ a `phase-7-mensajeria-difusion-nuclear-drive`. El código desplegado sigue siend
 `88a8281`, sin nuevo despliegue ni cambios funcionales o de configuración.
 **Sin merge a `main`, inicio de Fase 8 ni activaciones fuera de Lab**. Al terminar,
 el constructor se detiene.
+
+## 11. Fase 8 — decisiones del constructor, pendientes de auditoría final
+
+### DEC-055: Alcance cerrado y autorización vigente
+
+El dueño confirma Fases 0–7 cerradas, aprobadas y fusionadas en
+`1bbaa5eed07ec4db20713d6f62d1fa11a44fa758`. Autoriza únicamente Fase 8 en
+`phase-8-encuestas-pulido-produccion`, un constructor sin delegación. Supera
+los bloqueos históricos de DEC-054; no autoriza merge ni declarar v1 terminado.
+Se actualiza primero §0/§3 del Plan Maestro por esta instrucción directa.
+
+Quedan formalmente fuera de v1: **afinidad; doxeo ficticio; moderación avanzada/
+completa basada en strikes/reglas; reacciones y message_links; lore y crónicas
+automáticas; lore_chronicle**. Motivos: bajo valor incremental, complejidad, cuota
+de IA, privacidad/riesgo y alternativas funcionales ya presentes (conversación,
+notas, encuestas por texto, warns mínimos y automatizaciones escuela/lluvia).
+No se elimina infraestructura existente aprovechable en el futuro.
+
+### DEC-056: Encuestas textuales y apertura gradual por chat
+
+Encuestas de voto único modificable, solo grupo; owner/admin crea/cierra y miembros
+vigentes votan/consultan. Cierre predeterminado 24 h, opcional `30m`, máximo siete
+días; 2–10 opciones y diez encuestas abiertas por chat. Ninguna tool se ofrece al
+modelo. Opciones/autor/chat/plazo quedan fijos; voto único por PK y eventos durables
+impiden que un replay de un cambio viejo revierta el voto más reciente.
+
+`chats.enabled` sustituye barreras temporales de Fases 0–7 en rutas de producción.
+Owner habilita desde el grupo; grupos nuevos guardan todos los módulos OFF,
+incluido `media` (faltaba en la lista de control). Solo core/control permanece
+accesible para ping/ayuda y activación explícita, según §10.5. Rehabilitar conserva
+las activaciones previas explícitas del mismo chat; no copia configuración de Lab.
+Privados mantienen autoaprobación/manual por membresía, sin habilitación grupal.
+La sincronización refresca secuencialmente todos los grupos habilitados; un fallo
+no impide refrescar los siguientes. Refresco nunca crea/habilita grupos por sí solo.
+
+Deshabilitar cancela outbox queued de ese grupo y evita nuevo procesamiento/envío.
+Sending/uncertain conservan evidencia y reconciliación; no se promete revocar una
+petición ya en vuelo. Jobs/entregas de otros módulos revalidan origen/destino,
+permisos y flags. Expiraciones/devoluciones financieras siguen siendo obligaciones
+durables y pueden liquidarse sin publicar en el grupo deshabilitado. Restituciones
+de ruleta se conservan; proveedor/permisos no disponibles pueden exigir revisión.
+
+### DEC-057: Operación persistente, retención y seguridad del historial
+
+La observación de estado Evolution desde `/health` usa el endpoint instalado ya
+verificado y lock transaccional. Primera caída observada conserva fecha/UUID en
+system_flags; recuperación inserta una sola outbox privada al primer owner y limpia
+la caída en la misma transacción. Repeticiones, concurrencia y reinicios no duplican
+el aviso. Nunca se anuncia recuperación sin caída confirmada previamente.
+
+Cleanup horario, lotes de 500: inbox done y seen_events huérfanos tras 30 días,
+llm_usage tras 30 días; contexto tras siete días. Inbox de chats con jobs activos
+se conserva para no eliminar evidencia de originales. Los eventos antiguos siguen
+rechazados por STALE_SECONDS y los efectos durables conservan sus claves únicas.
+No se purgan outbox, jobs, ledger, auditoría, escuela, notas, recordatorios, memorias,
+usuarios, pedidos ni economía. No hay DELETE CASCADE en la limpieza.
+
+Backup local: dump custom, lectura completa con pg_restore sin ejecutar SQL,
+SHA-256 con nombre estricto, fsync, lock y rotación determinista de siete copias
+verificadas; corruptas/no verificadas no desplazan a las válidas ni se borran.
+Rclone opcional con configuración privada separada ya existente; nunca es requisito
+local. Restore solo en contenedor nuevo sin red, tmpfs y sin mounts de producción;
+se elimina al terminar incluso ante fallo. No se restaura producción.
+
+Scanner automatizado examina archivos versionados y compara valores secretos del
+entorno local sin imprimirlos. `--history` audita además blobs alcanzables. El
+árbol actual tiene cero hallazgos; historial heredado contiene **12 blobs con JIDs
+personales**, sin claves/tokens detectados por estas reglas, coincidente con DEC-016.
+No se reescribe historial en esta fase. El requisito de cero JIDs en TODO Git,
+si incluye historia, permanece **incumplido** y requiere una tarea explícita de
+saneamiento histórico; no se declara Botsky v1 terminado ni auditoría aprobada.
+
+Fuentes comprobadas: [pg_dump 17](https://www.postgresql.org/docs/17/app-pgdump.html),
+[pg_restore 17](https://www.postgresql.org/docs/17/app-pgrestore.html),
+[connectionState Evolution 2.3.7](https://github.com/EvolutionAPI/evolution-api/blob/2.3.7/src/api/routes/instance.router.ts),
+[rclone copyto](https://rclone.org/commands/rclone_copyto/).
+
+La auditoría previa al deploy también retira la etiqueta fija «Botsky Lab» de la
+preview Nuclear: dice «Grupo actual» y conserva el ID backend en el hash. Discovery
+de mensajería toma nombres de snapshots autenticados del propio grupo; no ofrece
+un grupo nuevo sin nombre sincronizado como destino remoto. Referencias dN y
+permisos persistentes siguen obligatorios. No se aceptan nombres como identidad.
+
+Encuestas requieren identidad canónica resuelta por backend. Un LID no resuelto no
+vota: evita contar dos veces a la misma persona antes/después de obtener evidencia
+canónica. Un alias verificado se traduce al mismo voter_id que su teléfono. Esta
+restricción se limita a encuestas; no cambia el algoritmo global de resolución.
+
+Evidencia de entrega de Fase 8: **d24eded** desplegado por script oficial, 010
+aplicada/checksum correcto; 702/702 Vitest (639 + 63), multimedia 82/82, procesadores
+reales 17/17, wrapper 14/14, typecheck/lint/build y health HTTP 200. Backup verificado
+y restore temporal aislado con diez migraciones; solo Lab habilitado, tablas polls
+vacías. Datos persistentes comparados conservados, salvo nombre de grupo autenticado; Evolution
+sin cambios de imagen/arranque. Sin merge, activaciones fuera de Lab ni declaración
+v1 terminado. Auditoría FINAL pendiente y bloqueo histórico de JIDs explícito.

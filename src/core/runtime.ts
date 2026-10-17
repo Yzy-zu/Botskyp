@@ -1,3 +1,4 @@
+import { tickPolls } from '../modules/polls/service.js';
 import { settleOrders } from '../modules/packs/delivery.js';
 import { tickCooperachas } from '../modules/packs/cooperacha.js';
 import { tickRain } from '../modules/packs/rain.js';
@@ -37,7 +38,7 @@ export async function startRuntime(db:Db, transport:Transport, config:Config, lo
   })();
   const ticking=(async()=>{
     while(!stopped){
-      try{await tickCore(db,config);await tickSchool(db,config);await tickGames(db,config);await settleOrders(db,config);await tickCooperachas(db);await tickRain(db,config); }
+      try{await tickCore(db,config);await tickPolls(db,config);await tickSchool(db,config);await tickGames(db,config);await settleOrders(db,config);await tickCooperachas(db);await tickRain(db,config); }
       catch{log.error({where:'tick'},'Falló el ciclo de tiempo');}
       for(let elapsed=0;elapsed<product.tickMs && !stopped;elapsed+=product.pollMs)await delay(product.pollMs);
     }

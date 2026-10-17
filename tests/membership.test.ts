@@ -7,7 +7,7 @@ const {url}=JSON.parse(readFileSync('.local/test-db.json','utf8')) as {url:strin
 const db=createDb(url);
 const fixture=JSON.parse(readFileSync('tests/fixtures/participants.json','utf8')) as unknown;
 beforeAll(()=>migrate(db));afterAll(()=>db.end());
-beforeEach(()=>db.query('TRUNCATE users,user_aliases,group_memberships,chats CASCADE'));
+beforeEach(async()=>{await db.query('TRUNCATE users,user_aliases,group_memberships,chats CASCADE');await db.query("INSERT INTO chats(id,is_group,enabled) VALUES('300@g.us',true,true)");});
 it('uses the real participant fixture as explicit identity evidence',async()=>{
   await syncLabMembers(db,'300@g.us',fixture);
   const alias=await db.query("SELECT user_id FROM user_aliases WHERE alias='111@lid'");expect(alias.rows[0]?.user_id).toBe('100@s.whatsapp.net');

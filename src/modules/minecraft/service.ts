@@ -15,7 +15,7 @@ async function finish(db:Db,op:Operation,status:'done'|'review'|'cancelled',mess
   await transaction(db,async c=>{
     await c.query('UPDATE minecraft_operations SET status=$2,response=$3,finished_at=clock_timestamp() WHERE id=$1',[op.id,status,JSON.stringify(response)]);
     await c.query('INSERT INTO audit_log(actor_id,chat_id,action,detail) VALUES($1,$2,$3,$4)',[op.actor_id,op.chat_id,'minecraft.result',JSON.stringify({id:op.id,target:'redspi',action:op.request.action,status,response})]);
-    // This reference is only emitted back to its enabled Lab origin by the existing outbox.
+    // This reference is only emitted back to its enabled origin by the existing outbox.
     await c.query(`INSERT INTO outbox(chat_id,payload,dedupe_key) VALUES($1,$2,$3) ON CONFLICT(dedupe_key) DO NOTHING`,[op.chat_id,JSON.stringify({text:`Minecraft ${op.id}: ${message}`,sourceId:op.source_id}),`minecraft:${op.id}:result`]);
   });
 }
@@ -31,7 +31,7 @@ export async function tickMinecraft(db:Db,config:Config,client:MinecraftClient=c
     const chat=(await c.query<Chat>('SELECT id,is_group AS "isGroup",enabled,settings FROM chats WHERE id=$1',[row.chat_id])).rows[0];
     const actor=await actorFor(c,{id:row.source_id,chatId:row.chat_id,senderId:row.actor_id,isGroup:true,ts:new Date(),text:'',fromMe:false,mentions:[],attachments:[]},config);
     const flags=await c.query("SELECT 1 FROM system_flags WHERE key IN ('emergency','maintenance') AND value='true'::jsonb");
-    if(!config.MINECRAFT_ENABLED || !chat || !chat.isGroup || chat.id!==config.LAB_CHAT_ID || !permitted(actor,chat,'infra.minecraft') || !moduleEnabled(chat,'minecraft',config) || flags.rowCount)return {...row,status:'cancelled'};
+    if(!config.MINECRAFT_ENABLED || !chat || !chat.isGroup || !permitted(actor,chat,'infra.minecraft') || !moduleEnabled(chat,'minecraft',config) || flags.rowCount)return {...row,status:'cancelled'};
     requestSchema.parse(row.request);
     await c.query("UPDATE minecraft_operations SET status='sending',started_at=clock_timestamp() WHERE id=$1",[row.id]);
     await c.query('INSERT INTO audit_log(actor_id,chat_id,action,detail) VALUES($1,$2,$3,$4)',[row.actor_id,row.chat_id,'minecraft.sending',JSON.stringify({id:row.id,target:'redspi',action:row.request.action})]);

@@ -35,8 +35,7 @@ it('preserves network ambiguity',async()=>{
   vi.spyOn(globalThis,'fetch').mockRejectedValueOnce(new TypeError('simulated_connection_loss'));
   expect((await adapter.send(delivery)).status).toBe('uncertain');
 });
-it('refuses real groups outside the laboratory and unresolved LID destinations',async()=>{
-  expect((await adapter.send({...delivery,chatId:'999@g.us'})).status).toBe('failed');
+it('refuses unresolved LID destinations',async()=>{
   expect((await adapter.send({...delivery,chatId:'999@lid'})).status).toBe('failed');expect(sends).toBe(0);
 });
 it('a real history response without a matching outgoing message does not prove absence',async()=>{

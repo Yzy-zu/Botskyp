@@ -3,7 +3,7 @@ import type { Config } from '../../config.js';
 import { actorFor,moduleEnabled,permitted,privateEligible,type Chat } from '../../core/permissions.js';
 export async function libraryAllowed(c:PoolClient,config:Config,chatId:string,actorId:string,manage=false):Promise<boolean>{
   const r=(await c.query<{is_group:boolean;enabled:boolean;settings:Chat['settings']}>('SELECT * FROM chats WHERE id=$1',[chatId])).rows[0];
-  if(!r || (r.is_group && chatId!==config.LAB_CHAT_ID))return false;
+  if(!r)return false;
   const chat={id:chatId,isGroup:r.is_group,enabled:r.enabled,settings:r.settings};
   const actor=await actorFor(c,{id:'',chatId,isGroup:r.is_group,senderId:actorId,text:'',ts:new Date(),fromMe:false,mentions:[],attachments:[]},config);
   if(!permitted(actor,chat,manage?'chat.configure':'chat.use') || !moduleEnabled(chat,'library',config))return false;

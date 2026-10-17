@@ -17,7 +17,7 @@ export async function tickGames(db:Db,config:Config):Promise<void>{
     const ch=(await c.query<{enabled:boolean;settings:Chat['settings']}>('SELECT enabled,settings FROM chats WHERE id=$1',[g.chat_id])).rows[0];
     const flags=await c.query("SELECT 1 FROM system_flags WHERE key IN ('emergency','maintenance') AND value='true'::jsonb");
     if(flags.rowCount)return;
-    const allowed=ch?.enabled && g.chat_id===config.LAB_CHAT_ID && moduleEnabled({id:g.chat_id,isGroup:true,...ch},'games',config);
+    const allowed=ch?.enabled && moduleEnabled({id:g.chat_id,isGroup:true,...ch},'games',config);
     if(!allowed){
       if(g.kind==='airdrop'){await expireAirdrop(c,g.id);g.status='expired';await saveGame(c,g);}else await cancelGame({c},g);
       return;

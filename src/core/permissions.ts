@@ -2,7 +2,7 @@ import type { PoolClient } from 'pg';
 import type { Config } from '../config.js';
 import type { Msg } from '../wa/types.js';
 import { product } from '../../config/product.js';
-export type PermissionKey = 'bulk.broadcast'|'bulk.nuclear'|'drive.use'|'chat.use'|'games.use'|'xp.use'|'moderation.act'|'notes.manage_shared'|'chat.configure'|'config.global'|'jobs.diagnose'|'school.write'|'school.manage'|'minecraft.read'|'infra.minecraft';
+export type PermissionKey = 'polls.use'|'polls.manage'|'bulk.broadcast'|'bulk.nuclear'|'drive.use'|'chat.use'|'games.use'|'xp.use'|'moderation.act'|'notes.manage_shared'|'chat.configure'|'config.global'|'jobs.diagnose'|'school.write'|'school.manage'|'minecraft.read'|'infra.minecraft';
 export type Actor = {id:string; role:'owner'|'group_admin'|'member';groupMember?:boolean};
 export type Chat = {id:string;isGroup:boolean;enabled:boolean;settings:{modules?:Record<string,boolean>}};
 export async function actorFor(c:PoolClient,msg:Msg,config:Config):Promise<Actor>{
@@ -16,6 +16,10 @@ export async function actorFor(c:PoolClient,msg:Msg,config:Config):Promise<Actor
 }
 export function permitted(actor:Actor,chat:Chat,key:PermissionKey):boolean{
   if(!chat.enabled)return false;
+  // Poll voters need canonical identities so later LID resolution cannot split a vote.
+  if((key==='polls.use' || key==='polls.manage') && !actor.id.endsWith('@s.whatsapp.net'))return false;
+  if((key==='polls.use' || key==='polls.manage') && (!chat.isGroup || (actor.role!=='owner' && !actor.groupMember)))return false;
+  if(key==='polls.manage' && actor.role!=='owner' && actor.role!=='group_admin')return false;
   if(key==='drive.use' && chat.isGroup && actor.role!=='owner' && !actor.groupMember)return false;
   if(key==='minecraft.read' && (!chat.isGroup || (actor.role!=='owner' && !actor.groupMember)))return false;
   if((key==='school.write' || key==='school.manage') && !chat.isGroup)return false;
@@ -31,7 +35,8 @@ export function permitted(actor:Actor,chat:Chat,key:PermissionKey):boolean{
 }
 export function moduleEnabled(chat:Chat,module:string,config:Config):boolean{
   if(module==='core')return true;
-  if(['minecraft','school','xp','games','moderation'].includes(module) && !chat.isGroup)return false;
+  if(!chat.enabled)return false;
+  if(['polls','minecraft','school','xp','games','moderation'].includes(module) && !chat.isGroup)return false;
   return chat.settings.modules?.[module] ?? (!chat.isGroup || chat.id===config.LAB_CHAT_ID);
 }
 export async function privateEligible(c:PoolClient,actor:Actor):Promise<boolean>{

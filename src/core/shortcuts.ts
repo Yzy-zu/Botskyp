@@ -1,3 +1,4 @@
+import { pollShortcut } from '../modules/polls/shortcuts.js';
 import { driveShortcut } from '../modules/drive/shortcuts.js';
 import { messagingShortcut } from '../modules/messaging/shortcuts.js';
 import { libraryShortcut } from '../modules/library/shortcuts.js';
@@ -9,7 +10,7 @@ import { DateTime } from 'luxon';
 import { callWord } from './activation.js';
 import { searchRequest } from './search-context.js';
 export type Shortcut={name:string;args:Record<string,unknown>};
-const aliases:Record<string,string>={mensajería:'messaging',mensajeria:'messaging',difusión:'messaging',difusion:'messaging',nuclear:'messaging',drive:'drive',biblioteca:'library',packs:'library',cooperacha:'library',lluvia:'library',multimedia:'media',documentos:'media',voz:'media',economía:'xp',economia:'xp',juegos:'games',moderación:'moderation',moderacion:'moderation',notas:'notes',recordatorios:'reminders',memoria:'memory','conversación':'conversation',conversacion:'conversation',web:'web','visión':'vision',vision:'vision',escuela:'school',school:'school'};
+const aliases:Record<string,string>={encuestas:'polls',encuesta:'polls',mensajería:'messaging',mensajeria:'messaging',difusión:'messaging',difusion:'messaging',nuclear:'messaging',drive:'drive',biblioteca:'library',packs:'library',cooperacha:'library',lluvia:'library',multimedia:'media',documentos:'media',voz:'media',economía:'xp',economia:'xp',juegos:'games',moderación:'moderation',moderacion:'moderation',notas:'notes',recordatorios:'reminders',memoria:'memory','conversación':'conversation',conversacion:'conversation',web:'web','visión':'vision',vision:'vision',escuela:'school',school:'school'};
 export function commandText(text:string):string{return text.trim().replace(/^(?:@\d+\s*)+/u,'').replace(new RegExp(`^${callWord.source}[\\s,:;!]*`,'iu'),'').trim();}
 export function parseDate(text:string,zone:string,now:Date):string|undefined{
   const input=text.trim();
@@ -28,6 +29,7 @@ export function parseDate(text:string,zone:string,now:Date):string|undefined{
 }
 export function shortcut(text:string,zone:string,now:Date):Shortcut|undefined{
   const t=commandText(text);let m:RegExpExecArray|null;
+  const poll=pollShortcut(t);if(poll)return poll;
   const drive=driveShortcut(t);if(drive)return drive;
   const messaging=messagingShortcut(t);if(messaging)return messaging;
   const library=libraryShortcut(t);if(library)return library;

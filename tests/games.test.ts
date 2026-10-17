@@ -102,10 +102,10 @@ it('airdrop creation is administrative and model cannot place bets, choose winne
   await context(message('bot juego'),async ctx=>{expect(createRegistry().declarations(ctx).some(t=>t.name.startsWith('games_'))).toBe(false);expect((await createRegistry().execute(ctx,'games.blackjack',{bet:50},'model')).ok).toBe(false);});
   expect((await execute('games.blackjack',{bet:50,winner:owner})).ok).toBe(false);
 });
-it('disabled games rejects tools, refunds outstanding reservations and keeps real groups blocked',async()=>{
+it('disabled games rejects tools, refunds outstanding reservations and requires explicit activation in other groups',async()=>{
   await act({action:'table'});await execute('control.modules',{module:'games',enabled:false});expect((await execute('games.join',{},member)).ok).toBe(false);
   await expire();await tickGames(db,config);expect(await balance()).toBe(1000);
-  expect(await command(message('bot blackjack',owner,'400@g.us'))).toBeUndefined();
+  expect(await command(message('bot blackjack',owner,'400@g.us'))).toBe('No.');
 });
 it('deterministic commands and unprefixed participant actions are routed without Gemini',async()=>{
   expect(await command('bot blackjack mesa 20')).toContain('Mesa blackjack');expect(await command('bot entro',member)).toContain('Entraste');expect(await command('cancelar')).toContain('Reservas devueltas');

@@ -11,8 +11,6 @@ import { lockSchool } from './schedule.js';
 import { schoolZone,summarySchema,nextSummary,weekdays,type SummarySchedule } from './schemas.js';
 import { formatDue } from '../reminders/time.js';
 export async function schoolDestination(c:Pick<PoolClient,'query'>,config:Config,chatId:string,actorId:string,manage=true):Promise<boolean>{
-  // Existing Evolution transport and inbox keep the production barrier at Lab.
-  if(chatId!==config.LAB_CHAT_ID)return false;
   const row=(await c.query<{is_group:boolean;enabled:boolean;settings:Chat['settings']}>('SELECT * FROM chats WHERE id=$1',[chatId])).rows[0];
   if(!row?.is_group || !row.enabled || !moduleEnabled({id:chatId,isGroup:true,...row},'school',config))return false;
   if(config.OWNER_JIDS.includes(actorId) && !actorId.endsWith('@lid'))return true;
@@ -33,7 +31,7 @@ export const automationTools:Tool[]=[
     const saved=(await ctx.c.query<{target_group_id:string;summary_schedule:unknown}>('SELECT target_group_id,summary_schedule FROM school_config WHERE chat_id=$1',[ctx.chat.id])).rows[0]!;
     const schedule=summarySchema.safeParse(args.schedule ?? saved.summary_schedule);
     if(args.enabled && !schedule.success)return fail('Indica los días y hora del resumen, por ejemplo «bot escuela resumen 07:00 lunes,martes,miércoles,jueves,viernes».');
-    if(args.enabled && (!await schoolDestination(ctx.c,ctx.config,ctx.chat.id,ctx.actor.id) || !await schoolDestination(ctx.c,ctx.config,saved.target_group_id,ctx.actor.id)))return fail('El grupo de origen y el destino deben estar autorizados; las pruebas solo se entregan en Botsky Lab.');
+    if(args.enabled && (!await schoolDestination(ctx.c,ctx.config,ctx.chat.id,ctx.actor.id) || !await schoolDestination(ctx.c,ctx.config,saved.target_group_id,ctx.actor.id)))return fail('El grupo de origen y el destino deben estar autorizados.');
     if(!args.enabled){await ctx.c.query("UPDATE automations SET enabled=false WHERE chat_id=$1 AND kind='school_summary'",[ctx.chat.id]);return ok('Resumen escolar apagado.');}
     const parsed=schedule.data!;const next=nextSummary(parsed,ctx.now);
     await ctx.c.query('UPDATE school_config SET summary_schedule=$2 WHERE chat_id=$1',[ctx.chat.id,JSON.stringify(parsed)]);
@@ -41,9 +39,9 @@ export const automationTools:Tool[]=[
       ON CONFLICT(chat_id,kind) DO UPDATE SET owner_id=excluded.owner_id,enabled=true,config=excluded.config,next_run_at=excluded.next_run_at`,[ctx.chat.id,ctx.actor.id,JSON.stringify(parsed),next]);
     return ok(`Resumen escolar configurado: ${parsed.days.map(d=>weekdays[d-1]).join(', ')} a las ${parsed.time} (${schoolZone}). Siguiente: ${formatDue(next,schoolZone)}. Destino: ${saved.target_group_id}.`);
   }}),
-  schoolTool({...base,name:'school.destination',modelCallable:false,description:'Elegir grupo de destino escolar habilitado, con permisos en ambos grupos. Barrera actual: solo Botsky Lab.',examples:['bot escuela destino aquí'],args:z.strictObject({targetGroupId:z.string().regex(/^\d+@g\.us$/).optional()}),async run(ctx,args){
+  schoolTool({...base,name:'school.destination',modelCallable:false,description:'Elegir grupo de destino escolar habilitado, con permisos en ambos grupos.',examples:['bot escuela destino aquí'],args:z.strictObject({targetGroupId:z.string().regex(/^\d+@g\.us$/).optional()}),async run(ctx,args){
     const target=args.targetGroupId ?? ctx.chat.id;
-    if(!await schoolDestination(ctx.c,ctx.config,target,ctx.actor.id))return fail('Destino no autorizado. En esta fase las publicaciones solo pueden entregarse en Botsky Lab.');
+    if(!await schoolDestination(ctx.c,ctx.config,target,ctx.actor.id))return fail('Destino no autorizado; requiere grupo habilitado, módulo y permisos vigentes.');
     await lockSchool(ctx);
     await ctx.c.query('UPDATE school_config SET target_group_id=$2 WHERE chat_id=$1',[ctx.chat.id,target]);
     return ok(`Destino escolar configurado: ${target}.`);

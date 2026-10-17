@@ -415,3 +415,48 @@ correcto tras un primer error de proveedor no atribuido a código HTTP concreto.
   imagen desplegada, wrapper 14/14 y typecheck/lint/build correctos. Imágenes,
   evidencia, configuración y guía física en FASE-7.md y FASE-7-PRUEBAS.md.
   **Pendiente revisión arquitectónica; sin merge a main ni Fase 8.**
+
+## 16. Fase 8 — preparación y límites de producción (17-10-2026)
+
+Base `1bbaa5e`, rama `phase-8-encuestas-pulido-produccion`; un constructor,
+sin merge ni declaración v1 terminado. Inspección inicial: solo un grupo habilitado,
+Botsky Lab; base propia ~10,7 MB. App ~62 MiB, worker ~44 MiB; host 1 vCPU,
+5900 MiB RAM, ~3558 MiB disponibles durante las verificaciones. Límites existentes
+app 256 MiB/0,25 CPU, worker 768 MiB/0,50 CPU/64 PIDs, PostgreSQL propio
+384 MiB/0,20 CPU. Sin cambios de recursos, servicios ni redes Evolution.
+
+Backup local ahora incluye verificación completa, SHA-256 y retención de siete
+copias verificadas. `scripts/restore-test.sh backups/botsky-<nombre>.dump` usa un
+contenedor temporal sin red y sin volumen de producción, eliminado al terminar.
+Restore inicial exitoso con nueve migraciones, previo a desplegar 010.
+Copia externa opcional: solo con rclone host y configuración local privada separada
+`.local/backup/rclone.conf` / `remote.json` ya válidas; no configurada en esta fase.
+No se afirma respaldo externo ni restauración en otro VPS.
+
+`npm run audit:secrets` examina archivos versionados sin imprimir valores;
+`python3 scripts/security-scan.py --history` incluye historia alcanzable. Árbol
+actual sin hallazgos; 12 blobs históricos con JIDs personales heredados (DEC-016).
+Su saneamiento exige una tarea expresa distinta, sin reescritura en esta fase.
+Guía de activación gradual y límites en FASE-8.md / FASE-8-PRUEBAS.md.
+
+### 16.1 Despliegue verificado y estado de entrega de Fase 8
+
+Desplegada **d24eded** por script oficial con backup previo; migraciones 001–010 y
+checksum 010 verificado. App/worker healthy, health HTTP 200 con PostgreSQL/Evolution
+conectados. Solo Lab habilitado; cero grupos fuera de Lab, polls vacías y defaults
+OFF en grupos nuevos comprobados desde app real. Drive/library Drive siguen false.
+Evolution API/PG/Redis conservan imágenes/StartedAt. Datos persistentes comparados idénticos, salvo
+nombre del grupo autenticado en chats.settings; sin mensajes físicos de la fase.
+
+702/702 Vitest, multimedia 82/82, procesadores reales 17/17 sobre la imagen
+desplegada, wrapper 14/14; typecheck/lint/build correctos. Backup posterior
+`botsky-20261017T013234-2771460.dump` verificado, siete copias locales y restore
+temporal exitoso con diez migraciones; contenedor sin red eliminado. Nunca se
+restauró producción. Rclone externo no configurado ni requisito local.
+
+Captura final: app 55,79 MiB/12 PIDs, worker 41,13 MiB/12 PIDs, PostgreSQL 163,9 MiB;
+3801 MiB de RAM disponible y BD 11.032.243 bytes. Límites Docker sin cambios, sin
+OOM/restarts ni warnings/errores nuevos observados. Detalles/imágenes en FASE-8.md.
+Árbol versionado limpio de hallazgos; doce blobs históricos con JIDs pendientes de
+saneamiento explícito. Sin merge ni declaración de v1 terminado. Auditoría FINAL
+pendiente; constructor detenido.

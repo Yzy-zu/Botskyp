@@ -6,7 +6,7 @@
 **Escala real:** 1 dueño, 1 comunidad (decenas de personas), 1 VPS.
 **Destinatarios:** quien programe, revise u opere el proyecto (humano o agente).
 
-**Alcance:** todo el catálogo funcional de la especificación original está en alcance, sin recortes. El «orden de construcción» (§3) solo define qué se hace primero.
+**Alcance v1:** según §0 y la instrucción de Fase 8 del dueño; los opcionales excluidos allí no pertenecen a v1. El «orden de construcción» (§3) solo define qué se hace primero.
 
 Este documento es la fuente de verdad. Si el código necesita desviarse de él, se corrige primero el documento.
 
@@ -42,6 +42,7 @@ Salen del cuestionario contestado (`docs/owner-answers.md`) y de las confirmacio
 | Control del dueño | Apagado de emergencia, modo mantenimiento y módulos por chat (§10.5). |
 | Fuera de alcance | Proactividad, televisión y terminal libre. |
 | Prioridad | Primero: IA y conversación, recordatorios, juegos, escuela y Minecraft. Al final: encuestas, lore/afinidad/doxeo, moderación completa y reacciones. |
+| Fase 8 / cierre v1 | Instrucción expresa del dueño, 17-10-2026: únicamente encuestas deterministas por texto y pulido de producción (multigrupo, reconexión, backup/restore, cleanup, seguridad y recursos). Fuera de v1: afinidad, doxeo ficticio, moderación avanzada/completa por strikes/reglas, reacciones/message_links, lore/crónicas automáticas y lore_chronicle. Se conserva infraestructura previa. Sin merge ni declaración de v1 terminado; auditoría arquitectónica final pendiente. |
 | Cierre de Fase 1 | Por decisión expresa del dueño del 16-10-2026 (DEC-030), las validaciones automáticas y de integración existentes son suficientes para cerrar esta fase. Las pruebas físicas adicionales pendientes en WhatsApp se omiten voluntariamente y no son condición de cierre, incluido el recordatorio con reinicio físico. Se conserva toda la cobertura automática y de integración. No autoriza merge a `main`, Fase 2 ni nuevas activaciones. |
 
 **Sobre «sin restricciones»:** el tono del bot no tiene límites. Lo que no es tono sigue vigente porque protege al bot y a sus datos: permisos, confirmaciones de operaciones masivas, secretos fuera de logs y memoria, y que el estilo nunca cambie los datos.
@@ -97,7 +98,7 @@ Todo el catálogo (menos lo que el dueño sacó en §0) está en alcance. El ord
 | **5. Multimedia y documentos** | Jobs y worker, adjuntos con ámbito, stickers, conversiones, QR, OCR, PDF, transcripción (Gemini), voz (Piper), búsqueda por texto y descarga desde fuentes compatibles sin cookies. YouTube queda excluido. | Un job pesado no retrasa el `pong`. Una URL o búsqueda textual compatible produce selección/descarga sin depender de YouTube. Si el worker se reinicia, el job se reanuda o falla con un mensaje claro. Se aplican los límites de tamaño y tiempo. |
 | **6. Biblioteca, packs y cooperacha** | Biblioteca híbrida VPS/Drive, categorías por carpetas, packs (reserva, entrega privada, confirmación), cooperacha con entrega grupal, lluvia de contenido configurable y pack del airdrop. | La sincronización local/Drive no duplica ítems. Un pack fallido libera la reserva. Una entrega incierta queda en `pending_review`. La cooperacha devuelve 100 % al cancelar y 80 % al vencer; al completarse publica la recompensa en el grupo. |
 | **7. Mensajes, difusión, `nuclear` y Drive** | Envíos a contactos y chats, campañas de difusión, `nuclear` entendido como ráfaga controlada de mensajes/menciones y Google Drive. | Cada operación masiva tiene vista previa, confirmación ligada, límites, resultado por objetivo y es reanudable (probado solo en el grupo de pruebas). `nuclear` nunca expulsa personas. Drive entrega con acceso restringido al destinatario cuando corresponda. |
-| **8. Opcionales** | Encuestas, lore, afinidad y doxeo ficticio, moderación completa (strikes y reglas) y reacciones. | Cada módulo cumple su propio criterio de §9 sin tocar el núcleo. |
+| **8. Opcionales mínimos y producción** | Encuestas por texto, habilitación multigrupo segura, reconexión persistente, backup/restore aislado, cleanup y auditorías. | Criterios cerrados del dueño documentados en FASE-8.md; sin merge y pendiente auditoría arquitectónica final. |
 
 ---
 

@@ -1,3 +1,4 @@
+import { checkConnection } from './wa/connection.js';
 import Fastify, { LogController } from 'fastify';
 import { timingSafeEqual } from 'node:crypto';
 import type { Config } from './config.js';
@@ -17,7 +18,7 @@ export function makeApp(db:Db,config:Config,transport:Transport,normalize:Normal
   app.get('/health',async(_req,reply)=>{
     let database=false;let evolution=false;
     try {await db.query('SELECT 1');database=true;} catch {app.log.warn({where:'health.db'},'Base no disponible');}
-    try {evolution=await transport.state();} catch {app.log.warn({where:'health.evolution'},'Evolution no disponible');}
+    try {evolution=await checkConnection(db,config,transport);} catch {app.log.warn({where:'health.evolution'},'Evolution no disponible');}
     const ok=database && evolution;
     return reply.code(ok?200:503).send({ok,database,evolution:config.TRANSPORT==='evolution'?evolution:null,transport:config.TRANSPORT});
   });

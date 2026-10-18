@@ -547,3 +547,17 @@ Export local aislado de la app: scripts/observer.sh o npm --silent run observer:
 260/260 focalizadas, checks estáticos y secretos PASS. Suite histórica con fallos
 previos documentados en FASE-OBSERVER-PRUEBAS.md; sin corregir el cerebro.
 Configuración anterior preservada en .local/observer-rollback/compose.json.
+
+## Despliegue verificado — 18-10-2026, 17:55 UTC
+
+Código desplegado 48af754 mediante scripts/deploy.sh; backup verificado
+botsky-20261018T175327-1658095.dump. Migración 016 aplicada. App y worker healthy;
+health HTTP 200 con DB/Evolution y observer enabled/spool/postgres=true, failures=0.
+Ambos procesos registraron lifecycle con el commit correcto en DB y dos segmentos
+JSONL persistentes. Infraestructura ajena conserva IDs y StartedAt. Global v1_1
+conservado. CLI health y export JSON local probados en contenedor separado. Se retiró
+--no-build del wrapper: la versión instalada de Compose no admite esa bandera en
+run; usa la imagen inmutable existente sin solicitar build. Es ajuste de script
+local, no cambia la imagen de app/worker. No llegaron turnos humanos durante el
+smoke técnico: conversación real pendiente del dueño. No hubo WhatsApp sintético,
+Nuclear, broadcast ni acciones Minecraft reales. Sin merge a main; detenerse.

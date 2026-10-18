@@ -440,3 +440,7 @@ No iniciar backends faltantes, otro workstream ni merge a main.
 7. Pruebas de fallos/reinicio/rollback y medición ON/OFF.
 8. Checks, commit/push, deploy oficial enabled, salud y smoke técnico mínimo.
 9. Sin merge a main ni corrección de bugs ajenos; detenerse al entregar.
+
+Observer desplegado 48af754, 260/260 focalizadas y checks correctos. Sinks de ambos
+procesos y export local verificados; fallos heredados documentados sin modificar.
+Prueba humana pendiente del dueño. No merge ni siguiente trabajo; entrega y detenerse.

@@ -120,3 +120,16 @@ Auditoría por ubicación de los usos conservados: [107 ubicaciones](AI-FIRST-RU
 Los tests legacy fijan explícitamente ROUTER_MODE=v1 para verificar su contrato;
 los tests naturales simulan el protocolo load_capability y SafeRefs del modelo,
 sin llevar esas decisiones al backend.
+
+## Revisión del contrato multimedia
+
+Una repetición real abrió media.collect en lugar de producir inmediatamente un
+PDF. El Manifest describía su salida solo como PDF, aunque start únicamente abre
+una sesión. Se precisó la metadata junto al Registry: start recibe más archivos
+en mensajes posteriores; finish genera el PDF de la sesión. media.process acepta
+la lista completa y ordenada de fuentes. Los schemas explican la diferencia;
+ningún branch ni palabra del usuario fue añadido al backend. La comprobación
+real pasó después de esta corrección genérica de contrato: 43/43 en la tanda
+final de tres archivos, incluida la prueba Gemini real con ambos escenarios.
+Typecheck, lint, build y auditoría de secretos volvieron a pasar. El proveedor
+puede equivocarse: la validación técnica no garantiza interpretación perfecta.

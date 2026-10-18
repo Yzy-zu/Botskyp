@@ -1546,3 +1546,8 @@ al final del recorte un schema público ya implementado. La meta-tool admite ade
 `toolName` exacto del Manifest: Gemini identifica la función y el backend valida
 pertenencia al dominio y la prioriza técnicamente. Se conserva una expansión,
 máximo 20 schemas y el presupuesto existente. No se usan palabras del input.
+
+La evaluación repetida detectó ambigüedad en la metadata de media.collect: start
+solo abre una sesión y finish genera su PDF. Se precisan esa salida del Registry
+y los argumentos de sesión/lista completa en los schemas. No cambia el handler
+ni se selecciona la operación desde TypeScript o palabras del usuario.

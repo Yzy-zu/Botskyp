@@ -1,15 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { z } from 'zod';
 import { readConfig } from '../src/config.js';
 import { product } from '../config/product.js';
 import { createRegistry } from '../src/core/registry.js';
 import { createToolRegistryV2, registryV2Declarations, modelDeclaration } from '../src/core/tool-registry-v2.js';
-import { selectToolExposure, ToolExposureTurn, loadCapabilityMetaTool, type ToolExposureInput } from '../src/core/tool-exposure.js';
+import { selectToolExposure, ToolExposureTurn, type ToolExposureInput } from '../src/core/tool-exposure.js';
 import { capabilityManifestV2, currentFunctionProtocolV2, capabilityBehaviorV2ForMode, capabilityBehaviorV2 } from '../src/core/capability-manifest-v2.js';
 import { capabilityContextV2 } from '../src/core/capability-truth-v2.js';
 import { naturalRouterSystemV2 } from '../src/core/router-v2.js';
 import { naturalToolLoopV2, type RouterMetricsV2 } from '../src/core/tool-loop-v2.js';
-import type { Llm, LlmInput, LlmReply } from '../src/core/llm.js';
+import type { Llm, LlmInput } from '../src/core/llm.js';
 import type { ToolCtx } from '../src/core/tools.js';
 import type { TurnContextV2 } from '../src/core/context-v2-types.js';
 import { SafeRefs } from '../src/core/safe-refs.js';

@@ -408,5 +408,7 @@ Código final desplegado `0cdaab3`, health y selector correctos. Smoke humano pa
 WS-CAPABILITY-MANIFEST implementado: 96/96 capabilities públicas, missing=0,
 26 operaciones media; 660 pruebas únicas verificadas por tandas, incluidas 19
 Gemini real y seis inputs nuevos fuera de fixtures. Cuatro archivos reejecutados
-completos: 189/189. Recheck de disponibilidad real 1/1. Typecheck/lint/build/secretos/Compose/diff en verde; deploy en cierre.
+completos: 189/189. Recheck de disponibilidad real 1/1. Typecheck/lint/build/secretos/Compose/diff en verde. Código 6b70610 desplegado
+por script oficial: salud y Lab v1.1/resto v1 confirmados; infraestructura ajena
+conservada. Manifest real del contenedor 96/96. Cierre documental y detenerse.
 No iniciar backends faltantes, otro workstream ni merge a main.

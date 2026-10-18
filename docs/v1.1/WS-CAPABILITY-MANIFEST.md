@@ -2,7 +2,8 @@
 
 Implementación sobre `feat/v1.1-natural-router`, HEAD inicial
 `f8d6a7edca71b310803ae7a4c520faad6ab60ca0`. Sin merge a main, nuevos tools ni
-backends. Deploy y resultados definitivos se registran al cerrar las verificaciones.
+backends. Código final desplegado: `6b70610bfa3f9dee53782fdf3bbd4f33a011fd16`.
+El commit posterior de cierre solo registra evidencia documental.
 
 ## Diseño y fuente única
 
@@ -35,7 +36,8 @@ y `resend`. Las descripciones se añadieron a esa misma matriz, usada por valida
 y worker. Sus entradas y salidas vienen de la matriz, no de una copia del prompt.
 El enum model-facing reutiliza el enum multimedia existente más `resend`.
 
-Ejemplo real del texto generado para un owner en grupo con media habilitado:
+Ejemplo extraído del contenedor desplegado, con configuración y módulos reales
+de Botsky Lab para el owner:
 
 ```text
 [media]
@@ -207,5 +209,24 @@ Se aceptan formulaciones equivalentes de esa limitación, no una palabra literal
 porque ya quedaron verificadas en 19/19 y 189/189.
 
 Typecheck, lint, build, auditoría de secretos del árbol actual (0 hallazgos),
-Compose y diff-check en verde. Deploy únicamente por script oficial, pendiente
-de registrar.
+Compose y diff-check en verde.
+
+## Deploy Canary confirmado
+
+- Código `6b70610bfa3f9dee53782fdf3bbd4f33a011fd16`, commit y push en
+  `feat/v1.1-natural-router`; sin merge. Main conserva `0c1a19e`.
+- `scripts/deploy.sh` completado; backup previo verificado
+  `botsky-20261018T153118-1469050.dump`. Sin migraciones nuevas.
+- Health HTTP 200: ok/database/evolution=true, transport=evolution. App/worker healthy.
+- Selector comprobado dentro de la app nueva: default v1, allowlist de un chat,
+  Lab v1_1 y un chat ajeno v1. La lista contiene únicamente Lab.
+- Evolution API, su PostgreSQL/Redis, PostgreSQL propio y SearXNG conservan ID,
+  imagen y StartedAt del snapshot anterior. No se modificó Minecraft ni se
+  realizaron envíos de WhatsApp, Nuclear o difusión de prueba.
+- Manifest extraído del contenedor con settings reales de Lab: 96 capacidades,
+  9,898 caracteres / 10,277 bytes; media.search U y bulk.nuclear D.
+- Mensajería masiva de Lab permanece apagada. Drive/biblioteca Drive sin nuevas
+  activaciones; no se activaron grupos ni módulos.
+
+La prueba física WhatsApp queda en FASE-WS-CAPABILITY-MANIFEST-PRUEBAS.md. El
+workstream autorizado se cierra aquí; no se implementan los backends pendientes.

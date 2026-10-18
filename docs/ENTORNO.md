@@ -506,3 +506,18 @@ nuevamente a las 01:02 UTC. Sin nuevas migraciones ni cambios a Evolution.
 Tercer ajuste desplegado `a10c7d41e1c98060577992acbd160d5b8ba1bac4`, respaldo verificado `botsky-20261018T011220-387841.dump`. Health y todos los servicios sanos; selector Lab v1.1/resto v1 comprobado a las 01:13:30 UTC.
 
 Último código WS-PARITY-1: `0cdaab3`, desplegado por script oficial, respaldo verificado `botsky-20261018T011646-395152.dump`. Health/servicios y aislamiento de un chat confirmados a las 01:17 UTC. Main y Evolution sin cambios. Evidencia final/pendientes humanos en el informe del workstream.
+
+
+### WS-CAPABILITY-MANIFEST — 18-10-2026, 15:32 UTC
+
+Código `6b70610` desplegado por scripts/deploy.sh, backup previo verificado
+`botsky-20261018T153118-1469050.dump`. Sin migraciones nuevas. Health HTTP 200
+con database/evolution=true y transport=evolution; app/worker healthy. Selector
+comprobado dentro de app: Lab v1_1, allowlist de un chat, default/resto v1.
+
+Snapshot anterior/posterior: mismo ID, imagen y StartedAt de Evolution API,
+Evolution PostgreSQL/Redis, PostgreSQL propio y SearXNG. Sin cambios de Minecraft,
+activación de módulos o mensajería masiva de Lab. Main permanece en 0c1a19e.
+Manifest extraído de app con settings reales de Lab: 96 públicas representadas,
+missing=0, 9,898 caracteres. Pruebas/evidencia y límites:
+[WS-CAPABILITY-MANIFEST](v1.1/WS-CAPABILITY-MANIFEST.md). Detenerse tras cierre.

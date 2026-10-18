@@ -15,6 +15,8 @@ export async function attachmentSource(ctx:ToolCtx):Promise<Msg|undefined>{
     const original=msgSchema.safeParse(row.rows[0]?.payload);
     return original.success && original.data.chatId===ctx.chat.id && !original.data.fromMe?original.data:undefined;
   }
+  // v1.1 chooses older sources through model-selected artifact references, never an implicit latest message.
+  if(ctx.config.ROUTER_MODE==='v1_1')return undefined;
   const row=await ctx.c.query<{payload:unknown}>(`SELECT payload FROM inbox WHERE chat_id=$1 AND payload->>'senderId'=$2 AND status<>'failed'
     AND received_at>clock_timestamp()-$3::int*interval '1 minute' AND jsonb_array_length(payload->'attachments')>0 ORDER BY id DESC LIMIT 1`,[ctx.chat.id,ctx.msg.senderId,product.recentImageMinutes]);
   const original=msgSchema.safeParse(row.rows[0]?.payload);

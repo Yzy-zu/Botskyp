@@ -74,7 +74,7 @@ it('omits personal memory bodies in groups and scopes relevant private memory to
     expect(JSON.stringify(result.envelope)).not.toMatch(/recuerdo propio|recuerdo ajeno/);
   });
   await context({chatId:owner,isGroup:false,text:'qué sabes de mí'},async ctx=>{
-    expect((await buildTurnContextV2(ctx)).envelope.REFERENCE_DATA.personalMemories).toEqual([]);
+    expect((await buildTurnContextV2(ctx)).envelope.REFERENCE_DATA.personalMemories.map(m=>m.text)).toEqual(['recuerdo propio']);
     const result=await buildTurnContextV2(ctx,['productivity']);
     expect(result.envelope.REFERENCE_DATA.personalMemories.map(m=>m.text)).toEqual(['recuerdo propio']);
     expect(JSON.stringify(result.envelope)).not.toContain('recuerdo ajeno');
@@ -136,7 +136,8 @@ it.each(['current','reply','recent'] as const)('resolves a %s image without any 
   await context({text:'qué opinas del meme?',...(kind==='reply'?{quoted:{id:source,fromBot:false}}:{})},async ctx=>{
     if(kind==='current')await backing(ctx,{mime:'image/png',bytes:png});
     const r=(await buildTurnContextV2(ctx)).envelope.REFERENCE_DATA;
-    expect(r.visionArtifact).toMatchObject({ref:kind==='current'?'A_CURRENT':kind==='reply'?'A_REPLY':'A_LAST',mime:'image/png'});
+    if(kind==='recent')expect(r.visionArtifact).toBeUndefined();
+    else expect(r.visionArtifact).toMatchObject({ref:kind==='current'?'A_CURRENT':'A_REPLY',mime:'image/png'});
   });
 });
 it.each(['v1','v1_1_shadow'] as const)('%s keeps the legacy response and single Gemini call; shadow adds no writes/network',async mode=>{

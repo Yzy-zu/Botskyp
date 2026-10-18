@@ -63,15 +63,15 @@ it('projects all five availability states from real Policy adapters, config, sco
   const t=(name:string)=>catalog.find(t=>t.name===name)!;
   expect(capabilityAvailability(t('media.process'),auth)).toBe('AVAILABLE');
   expect(capabilityAvailability(t('media.collect'),auth)).toBe('AVAILABLE');
-  expect(capabilityAvailability(t('media.search'),auth)).toBe('ADAPTER_UNAVAILABLE');
-  expect(capabilityAvailability(t('drive.upload'),auth)).toBe('ADAPTER_UNAVAILABLE');
+  expect(capabilityAvailability(t('media.search'),auth)).toBe('AVAILABLE');
+  expect(capabilityAvailability(t('drive.upload'),auth)).toBe('CONFIG_REQUIRED');
   expect(capabilityAvailability(t('minecraft.status'),{...auth,config:{...config,MINECRAFT_ENABLED:false}})).toBe('CONFIG_REQUIRED');
   expect(capabilityAvailability(t('notes.list'),{...auth,chat:{...auth.chat,settings:{modules:{notes:false}}}})).toBe('DISABLED');
   expect(capabilityAvailability(t('minecraft.restart'),{...auth,actor:{id:member,role:'member',groupMember:true}})).toBe('PERMISSION_RESTRICTED');
   expect(capabilityAvailability(t('memory.list'),auth)).toBe('PERMISSION_RESTRICTED');
   expect(capabilityAvailability(t('notes.list'),{...auth,emergency:true})).toBe('DISABLED');
   expect(capabilityAvailability(t('control.reactivate'),{...auth,emergency:true})).toBe('AVAILABLE');
-  expect(manifest).toMatch(/media.search:.*;U/u);
+  expect(manifest).toMatch(/media.search:.*;A/u);
   for(const scope of [auth,{...auth,chat:{...auth.chat,settings:{modules:{notes:false,messaging:false}}}}]){
     expect(capabilityManifestV2(catalog,scope).split('\n').filter(l=>/^\w+\.[\w-]+:/u.test(l))).toHaveLength(96);
   }
@@ -166,7 +166,7 @@ it('does not force a business effect after discovery when a bounded retry loaded
       const initial=(input.contents[0] as {parts:{text:string}[]}).parts[0]!.text;
       expect(initial).toContain('"CAPABILITY_MANIFEST":');
       expect(JSON.stringify(input.contents.slice(1))).not.toContain('"CAPABILITY_MANIFEST":');
-      return {text:'',calls:[],content:{role:'model',parts:[{text:JSON.stringify({outcome:'unavailable',text:'Esa conversión no está disponible.',effects:[]})}]}};
+      return {text:'',calls:[],content:{role:'model',parts:[{text:JSON.stringify({outcome:'unavailable',capability:{toolName:'media.process',outputFormat:'docx'},text:'Esa conversión no está disponible.',effects:[]})}]}};
     }});
     expect(output).toBe('Esa conversión no está disponible.');
     expect((await ctx.c.query('SELECT 1 FROM jobs')).rowCount).toBe(0);

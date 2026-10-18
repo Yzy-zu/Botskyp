@@ -34,7 +34,11 @@ export function localPresenterV2(result: ToolResult): string {
     if(code==='MISSING_BODY')return '¿Qué quieres que te recuerde?';
     if(code==='MISSING_TIME')return '¿Cuándo quieres que te lo recuerde?';
     if(code==='MISSING_DATE')return '¿Para hoy o mañana?';
-    return 'Me falta un dato para hacerlo. ¿Puedes precisarlo?';
+    const fields=Array.isArray(data.missingSlots)?data.missingSlots.map(s=>String(record(s).field)):[];
+    if(fields.includes('artifactRef'))return '¿Cuál archivo quieres usar? Adjunta uno o señala uno de los disponibles.';
+    if(fields.includes('memberRef'))return 'Menciona a la persona para verificar a quién aplicar el cambio.';
+    if(fields.includes('option'))return '¿Cuál opción de la encuesta eliges?';
+    return fields.length?`¿Puedes indicar ${fields.join(', ')}?`:'¿Qué dato quieres completar para esta operación?';
   }
   if(result.status==='not_found')return result.domain==='media'?'No tengo ese archivo disponible en este chat. Reenvíalo con la solicitud.':'No encontré eso en este chat. ¿Cuál quieres usar?';
   if(result.status==='uncertain')return 'La solicitud quedó pendiente de confirmar. No voy a repetirla automáticamente.';
@@ -76,22 +80,23 @@ export function localPresenterV2(result: ToolResult): string {
 
 /** Explicit allowlist projection. Neither DB keys nor local exceptions reach the provider. */
 export function visibleToolResultV2(result: ToolResult): Record<string, unknown> {
-  const allowed=new Set(['balance','level','streak','label','option','question','options','votes','closed','body','notes','memories','reminders','due_at','timezone','status','searchResults','total','goal','count','shortfall','title','snippet','url','hand','bet','dealer','returnedXp','dueAt','open']);
+  const allowed=new Set(['balance','level','streak','label','option','question','options','votes','closed','body','notes','memories','reminders','due_at','timezone','status','searchResults','total','goal','count','shortfall','title','snippet','url','hand','bet','dealer','returnedXp','dueAt','open','choices','mime','size','page','lessons','subject','weekday','start','end','missingSlots','field','kind','hour','required']);
   function project(value: unknown): unknown {
     if(Array.isArray(value))return value.slice(0,30).map(project);
     if(value && typeof value==='object')return Object.fromEntries(Object.entries(value).filter(([key])=>allowed.has(key)).map(([key,v])=>[key,project(v)]));
     return typeof value==='string'?sanitizeOutputV2(value):value;
   }
-  return {status:result.status,message:sanitizeOutputV2(localPresenterV2(result)),data:project(result.data)};
+  return {status:result.status,code:result.code,message:sanitizeOutputV2(localPresenterV2(result)),data:project(result.data)};
 }
 
 export const conversationalOutcomeV2=z.strictObject({
   outcome:z.enum(['conversation','action_required','unavailable']),
+  capability:z.strictObject({toolName:z.string().min(1),operation:z.string().min(1).optional(),outputFormat:z.string().regex(/^[a-z0-9+.-]{1,30}$/u).optional()}).optional(),
   text:z.string().min(1).max(12000),
   effects:z.array(z.strictObject({action:z.string(),status:z.enum(['ok','queued'])})).max(3),
 });
 /** Plain provider prose has no authority. Local mutation templates always come from current receipts. */
-export function conversationTextV2(text: string): { text: string; retry: boolean; valid?: boolean } {
+export function conversationTextV2(text: string): { text: string; retry: boolean; valid?: boolean; outcome?:string; capability?:{toolName:string;operation?:string|undefined;outputFormat?:string|undefined} } {
   // Secondary diagnostic for a provider violating its structured no-effects declaration.
   const mutationClaim=/(?<![\p{L}\p{N}_])(?:voto registrad[oa]|listo[,.:!]?\s+(?:guardad[oa]|registrad[oa])|(?:te )?di \d+\s*XP|recordatorio creado|mensaje enviado|ya (?:te )?(?:lo )?(?:guardé|envié|creé|borré|cancelé|anulé|registré|programé|anoté|actualicé|otorgué|di|quedó))(?![\p{L}\p{N}_])/iu;
   const noAction={text:'No ejecuté ninguna acción para esa solicitud.',retry:false};
@@ -105,5 +110,5 @@ export function conversationTextV2(text: string): { text: string; retry: boolean
   if(parsed.data.effects.length)return noAction;
   if(parsed.data.outcome==='action_required')return {...noAction,retry:true};
   if(mutationClaim.test(parsed.data.text))return noAction;
-  return {text:parsed.data.text,retry:false,valid:true};
+  return {text:parsed.data.text,retry:false,valid:true,outcome:parsed.data.outcome,...(parsed.data.capability?{capability:parsed.data.capability}:{})};
 }

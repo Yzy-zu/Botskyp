@@ -1,3 +1,4 @@
+import { openClarificationV2 } from '../../core/sessions-v2.js';
 import { z } from 'zod';
 import { product } from '../../../config/product.js';
 import type { ToolCtx,ToolResult } from '../../core/tools.js';
@@ -58,8 +59,9 @@ export async function beginSearch(ctx:ToolCtx,query:string,type:'audio'|'video')
   try{
     const choices=await searchMedia(query,type);
     if(!choices.length)return fail('No encontré archivos compatibles dentro de los límites en Wikimedia Commons.');
-    await openSession(ctx.c,ctx.actor.id,ctx.chat.id,'media',{flow:'selection',choices},choices.map((_,i)=>String(i+1)));
-    return ok(`${choices.map((c,i)=>`${i+1}. ${c.title} (${c.size} bytes)\n${c.page}`).join('\n')}\nElige un número en 5 minutos. La fuente/licencia se conserva con el archivo.`);
+    if(ctx.config.ROUTER_MODE==='v1_1')await openClarificationV2(ctx.c,'v1_1',{actorId:ctx.actor.id,chatId:ctx.chat.id,pendingTool:'media.process',partialArgs:{operation:'download',choices},missingSlots:[{kind:'choice',field:'url',choices:choices.map(c=>c.title)}],prompt:'¿Cuál archivo quieres descargar?',code:'MEDIA_SELECTION',now:ctx.now});
+    else await openSession(ctx.c,ctx.actor.id,ctx.chat.id,'media',{flow:'selection',choices},choices.map((_,i)=>String(i+1)));
+    return ok(`${choices.map((c,i)=>`${i+1}. ${c.title} (${c.size} bytes)\n${c.page}`).join('\n')}\nElige un número en 5 minutos. La fuente/licencia se conserva con el archivo.`,{choices});
   }catch{return fail('Wikimedia Commons no está disponible. No descargué nada.');}
 }
 export async function continueMedia(ctx:ToolCtx,session:Session,text:string):Promise<string>{

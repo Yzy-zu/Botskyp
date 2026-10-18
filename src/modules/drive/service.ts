@@ -9,16 +9,19 @@ import { attachmentSource } from '../school/attachments.js';
 export const driveRequest=z.discriminatedUnion('operation',[
   z.strictObject({operation:z.literal('search'),query:z.string().trim().min(1).max(100)}),
   z.strictObject({operation:z.literal('download'),entryId:z.string().regex(/^[1-9]\d{0,12}$/)}),
-  z.strictObject({operation:z.literal('upload'),source:msgSchema}),
+  z.strictObject({operation:z.literal('upload'),source:msgSchema.optional(),artifactId:z.uuid().optional()}).refine(a=>Boolean(a.source)!==Boolean(a.artifactId)),
 ]);
 export async function driveAllowed(c:PoolClient,config:Config,chatId:string,actorId:string):Promise<boolean>{
   if(!config.DRIVE_ENABLED || !await messagingAllowed(c,config,chatId,actorId,'drive'))return false;
   return Boolean((await c.query("SELECT 1 FROM chats WHERE id=$1 AND settings->'drive'='true'::jsonb",[chatId])).rowCount);
 }
-export async function enqueueDrive(ctx:ToolCtx,operation:'search'|'download'|'upload',value?:string):Promise<ToolResult>{
+export async function enqueueDrive(ctx:ToolCtx,operation:'search'|'download'|'upload',value?:string,artifactId?:string):Promise<ToolResult>{
   if(!await driveAllowed(ctx.c,ctx.config,ctx.chat.id,ctx.actor.id))return fail('Drive no está configurado o habilitado en este chat. La biblioteca local sigue disponible.');
   let input:unknown={operation,...(operation==='search'?{query:value}:operation==='download'?{entryId:value}:{})};
-  if(operation==='upload'){
+  if(operation==='upload' && artifactId){
+    if(!(await ctx.c.query('SELECT 1 FROM chat_artifacts WHERE id=$1 AND chat_id=$2 AND actor_id=$3 AND expires_at>clock_timestamp()',[artifactId,ctx.chat.id,ctx.actor.id])).rowCount)return fail('Ese archivo ya no está disponible.');
+    input={operation,artifactId};
+  }else if(operation==='upload'){
     const source=await attachmentSource(ctx);
     if(!source || source.senderId!==ctx.msg.senderId || source.chatId!==ctx.chat.id)return fail('Adjunta un archivo propio en este chat.');
     input={operation,source};

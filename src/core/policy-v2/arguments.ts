@@ -4,28 +4,12 @@ import { resolveSemanticTime, semanticTimeSchema } from '../../modules/reminders
 import { recurrenceMatchesDue, validateDue } from '../../modules/reminders/time.js';
 import type { ExecutionContextV2 } from './types.js';
 
-/** Deliberately bounded adapters. Unknown contracts fail closed instead of guessing backend arguments. */
-const adapters = new Set<string>([
-  'media.process','media.collect','core.ping','core.help','notes.create','notes.list','notes.edit',
-  'notes.delete','reminders.create','reminders.list','reminders.edit','reminders.cancel',
-  'memory.remember','memory.list','memory.forget','web.search','polls.create',
-  'polls.vote','polls.results','polls.close','drive.cancel','drive.search',
-  'drive.download','drive.info','drive.configure','drive.status','messaging.destinations',
-  'messaging.send','bulk.broadcast','bulk.nuclear','bulk.cancel','bulk.retry',
-  'bulk.resume','bulk.status','library.categories','packs.buy','packs.orders',
-  'library.sync','library.sync_status','cooperacha.open','cooperacha.contribute','cooperacha.status',
-  'cooperacha.cancel','library.rain','media.status','minecraft.status','minecraft.players',
-  'minecraft.resources','minecraft.worlds','minecraft.addons','minecraft.logs','minecraft.config-get',
-  'minecraft.config-set','minecraft.start','minecraft.stop','minecraft.restart','minecraft.backup',
-  'minecraft.console','minecraft.operations','school.subjects','school.subject_save','school.subject_archive',
-  'school.schedule','school.tasks','school.task_create','school.task_edit','school.task_delete',
-  'school.task_attachment','school.config','school.summary_configure','xp.balance','xp.daily',
-  'xp.happy','games.blackjack','games.roulette','games.join','games.play',
-  'games.status','games.cancel','games.airdrop','games.claim','moderation.warns',
-  'moderation.change','moderation.config','control.emergency','control.reactivate','control.maintenance_on',
-  'control.maintenance_off','control.modules','diag.cuota','diag.errores',
-]);
-export function adapterAvailable(name: string): boolean { return adapters.has(name); }
+import { modelArgsSchemas } from '../model-args.js';
+
+/** Every registered public model contract has a fail-closed schema translation below. */
+export function adapterAvailable(name: string): boolean {
+  return Object.hasOwn(modelArgsSchemas,name) && name!=='bulk.confirm' && name!=='school.schedule_commit';
+}
 
 export function legacyArguments(ctx: ExecutionContextV2, tool: Tool, input: Record<string, unknown>):
   { status: 'ok'; args: Record<string, unknown> } | { status: 'needs_clarification' | 'denied'; code: string } {
@@ -34,6 +18,8 @@ export function legacyArguments(ctx: ExecutionContextV2, tool: Tool, input: Reco
     const operation=tool.args.safeParse({operation:args.operation});
     return operation.success?{status:'ok',args:{...operation.data as Record<string,unknown>,action:args.action ?? 'start'}}:{status:'denied',code:'INVALID_ARGUMENTS'};
   }
+  if(tool.name==='drive.upload' || tool.name==='school.schedule_import')delete args.artifactRef;
+  if(tool.name==='school.destination'){args.targetGroupId=args.destinationRef;delete args.destinationRef;}
   if(tool.name==='games.play')args.move=({hit:'carta',stand:'plantarse',double:'doblar'} as Record<string,string>)[String(args.move)] ?? args.move;
   if(tool.name==='media.process'){
     delete args.artifactRef;

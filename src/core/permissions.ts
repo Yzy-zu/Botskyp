@@ -37,7 +37,7 @@ export function moduleEnabled(chat:Chat,module:string,config:Config):boolean{
   if(module==='core')return true;
   if(!chat.enabled)return false;
   if(['polls','minecraft','school','xp','games','moderation'].includes(module) && !chat.isGroup)return false;
-  return chat.settings.modules?.[module] ?? (!chat.isGroup || chat.id===config.LAB_CHAT_ID);
+  return chat.settings.modules?.[module] ?? (!chat.isGroup || chat.id===config.LAB_CHAT_ID || config.ROUTER_MODE==='v1_1');
 }
 export async function privateEligible(c:PoolClient,actor:Actor):Promise<boolean>{
   if(actor.role==='owner')return true;

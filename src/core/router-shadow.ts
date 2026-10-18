@@ -16,7 +16,7 @@ export type ShadowSummary = {
 export function calculateRouterShadow(catalog: readonly ToolMetadataV2[], input: ToolExposureInput): ShadowSummary {
   const exposure = selectToolExposure(catalog, input);
   return {
-    fastPathMatch: exactFastPathV2(input.text) !== undefined,
+    fastPathMatch: exactFastPathV2(input.text ?? '') !== undefined,
     domains: exposure.selectedDomains, tools: exposure.toolNames,
     approximateSchemaBytes: exposure.approximateSchemaBytes,
   };

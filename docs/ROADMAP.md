@@ -1,5 +1,16 @@
 # Botsky — Roadmap de Desarrollo y Asignación de Tareas
 
+## WS-AI-FIRST-PRODUCTION — autorización 18-10-2026
+
+1. Misma rama `feat/v1.1-natural-router`, baseline `c25acac`; un constructor sin delegación.
+2. Auditar y retirar todo NLU semántico de la ruta v1.1, conservando validación técnica y privacidad.
+3. Cargar imágenes antiguas solo por selección explícita de SafeRef de Gemini, en el mismo historial nativo.
+4. Conectar adapters públicos existentes, con permisos, referencias y confirmaciones intactos.
+5. Ingestión multiajunto con identidad por índice y migración conservadora, sin borrar datos.
+6. Invariantes, integración, typecheck/lint/build y health; documentar hallazgos y límites.
+7. Backup verificado y deploy oficial; router global solo para chats previamente habilitados/elegibles.
+8. Conservar rollback inmediato; sin merge, nuevas features ni smoke masivo/destructivo.
+
 **Archivo:** `docs/ROADMAP.md`  
 **Versión:** 2.3  
 **Rol responsable:** Arquitecto / Revisor  

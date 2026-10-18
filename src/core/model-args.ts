@@ -108,7 +108,7 @@ export const modelArgsSchemas = {
   'school.task_attachment': object(task),
   'school.config': empty,
   'school.summary_configure': object({ enabled: bool, schedule: summarySchema.optional() }),
-  'school.destination': object({ destinationRef: ref('destinationRef') }),
+  'school.destination': object({ destinationRef: ref('destinationRef').optional() }),
   'xp.balance': empty,
   'xp.daily': empty,
   'xp.happy': object({ minutes: integer(product.happyMaxMinutes).optional(), off: bool.optional() }),

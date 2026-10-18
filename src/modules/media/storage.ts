@@ -11,12 +11,13 @@ export async function capacity(c:PoolClient,bytes:number):Promise<void>{
   const current=(await c.query<{n:string}>('SELECT coalesce(sum(octet_length(data)),0) n FROM media_attachments WHERE data IS NOT NULL')).rows[0]!;
   if(Number(current.n)+bytes>product.mediaStorageBytes)throw new Error('storage_limit');
 }
-export async function fetchAttachment(config:Config,msg:Msg,signal?:AbortSignal):Promise<{bytes:Buffer;mime:string}>{
-  const item=msg.attachments[0];
-  if(msg.fromMe || msg.attachments.length!==1 || !item || !['image','video','audio','document','sticker'].includes(item.kind) || item.ref!==`${msg.id}:${item.kind}`)throw new Error('invalid_attachment');
+export async function fetchAttachment(config:Config,msg:Msg,signal?:AbortSignal,index=0):Promise<{bytes:Buffer;mime:string}>{
+  const item=msg.attachments[index];
+  const providerId=item?.providerMessageId ?? msg.id;
+  if(msg.fromMe || !Number.isInteger(index) || index<0 || !item || !['image','video','audio','document','sticker'].includes(item.kind) || (item.ref!==`${providerId}:${item.kind}` || (msg.attachments.length>1 && !item.providerMessageId)))throw new Error('invalid_attachment');
   const response=await fetch(new URL(`/chat/getBase64FromMediaMessage/${config.INSTANCE}`,config.EVOLUTION_URL),{
     method:'POST',headers:{apikey:config.EVOLUTION_APIKEY,'content-type':'application/json'},
-    body:JSON.stringify({message:{key:{id:msg.id,remoteJid:msg.chatId,fromMe:false,...(msg.isGroup?{participant:msg.senderId}:{})}},convertToMp4:false}),
+    body:JSON.stringify({message:{key:{id:providerId,remoteJid:msg.chatId,fromMe:false,...(msg.isGroup?{participant:msg.senderId}:{})}},convertToMp4:false}),
     signal:AbortSignal.any([AbortSignal.timeout(product.mediaDownloadTimeoutMs),...(signal?[signal]:[])]),redirect:'error',
   });
   if(!response.ok || !response.body){await response.body?.cancel();throw new Error('attachment_unavailable');}

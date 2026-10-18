@@ -26,6 +26,7 @@ export interface PolicyDecision {
   readonly status: EvaluationStatus;
   readonly resolvedArgs: Record<string, unknown>;
   readonly denialCode: string | null;
+  readonly missingSlots?: readonly {field:string;kind:string;choices?:readonly string[]}[];
   readonly confirmationSummary: string | null;
   readonly argsHash: string;
   readonly resourceState: readonly string[];

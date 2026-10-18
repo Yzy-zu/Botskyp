@@ -4,6 +4,7 @@ import type { Config } from '../config.js';
 import { product } from '../../config/product.js';
 
 export const missingSlotV2 = z.discriminatedUnion('kind', [
+  z.strictObject({kind:z.literal('required'),field:z.string().min(1)}),
   z.strictObject({ kind: z.literal('am_pm'), hour: z.number().int().min(1).max(12) }),
   z.strictObject({ kind: z.literal('choice'), field: z.string(), choices: z.array(z.string().min(1)).min(1) }),
 ]);

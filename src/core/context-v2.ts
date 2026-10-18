@@ -1,3 +1,4 @@
+import { schoolDestination } from '../modules/school/automation.js';
 import { DateTime } from 'luxon';
 import { product } from '../../config/product.js';
 import { modules } from './control-tools.js';
@@ -13,7 +14,6 @@ import { total } from '../modules/games/rules.js';
 import { contextData } from './context-data-v2.js';
 import { sanitizeOutputV2 } from './output-sanitizer-v2.js';
 import { budgetContextV2 } from './context-budget-v2.js';
-import { referencesPreviousContentV2, allowsPreviousVisionV2 } from './artifact-relevance-v2.js';
 import type { TurnContextV2, SafeConversationSnapshotV2, SafeArtifactV2 } from './context-v2-types.js';
 import { createRegistry } from './registry.js';
 import { createToolRegistryV2 } from './tool-registry-v2.js';
@@ -30,7 +30,7 @@ const summaries: Readonly<Record<string, string>> = {
   'notes.list': 'El usuario consultó notas.', 'reminders.create': 'El usuario creó un recordatorio.',
   'memory.remember': 'El usuario guardó un recuerdo personal.', 'web.search': 'El usuario consultó información en la web.',
 };
-const safeSessionFields = new Set(['body', 'message', 'time', 'recurrence', 'operation', 'subject', 'title', 'text', 'count', 'kind', 'date', 'weekday', 'hour', 'minute', 'meridiem', 'amount', 'unit', 'weekdays', 'day', 'start', 'end', 'summary']);
+const safeSessionFields = new Set(['body', 'message', 'time', 'recurrence', 'operation', 'subject', 'title', 'text', 'count', 'kind', 'date', 'weekday', 'hour', 'minute', 'meridiem', 'amount', 'unit', 'weekdays', 'day', 'start', 'end', 'summary', 'choices', 'url', 'mime', 'size', 'page']);
 function safePartialArgsV2(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   const out: Record<string, unknown> = {};
@@ -38,7 +38,7 @@ function safePartialArgsV2(value: unknown): Record<string, unknown> {
     if (!safeSessionFields.has(key)) continue;
     if (typeof entry === 'string') out[key] = contextData(entry);
     else if (typeof entry === 'number' || typeof entry === 'boolean') out[key] = entry;
-    else if (Array.isArray(entry)) out[key] = entry.filter(v => typeof v === 'number' || typeof v === 'string').map(v => typeof v === 'string' ? contextData(v) : v);
+    else if (Array.isArray(entry)) out[key] = entry.map(v => typeof v === 'string' ? contextData(v) : typeof v === 'number' ? v : safePartialArgsV2(v));
     else if (entry && typeof entry === 'object') out[key] = safePartialArgsV2(entry);
   }
   return out;
@@ -66,7 +66,7 @@ export async function buildTurnContextV2(ctx: ToolCtx, domains: readonly string[
     ORDER BY (u.id=$2) DESC,u.id LIMIT $6`, [chatId, actorId, memberIds, now, product.membershipMaxAgeMs, product.contextV2Entities + 1])).rows;
   for (const m of members) if (m.id !== actorId) add('memberRef', m.id, m.display_name ?? 'Miembro');
   const files = await artifactsForTurn(c, { ...scope, sourceMessageId, now, resolveTextResultSource:true, ...(msg.quoted ? { quotedMessageId: msg.quoted.id } : {}) });
-  for (const a of [...files.current, ...files.recent]) add('artifactRef', a.id, a.mime, true);
+  for (const a of [...files.current, ...files.reply.filter(a=>a.actor_id===actorId), ...files.recent]) add('artifactRef', a.id, a.mime, true);
   const session = await readSessionV2(c, actorId, chatId);
   const pendingPreview = session?.confirmation_id ? (await c.query<{tool_name:string;resolved_args:Record<string,unknown>}>(
     'SELECT tool_name,resolved_args FROM tool_confirmations_v2 WHERE id=$1 AND chat_id=$2 AND actor_id=$3 AND NOT invalidated AND consumed_execution_id IS NULL',
@@ -77,7 +77,8 @@ export async function buildTurnContextV2(ctx: ToolCtx, domains: readonly string[
     ...(typeof pendingPreview.resolved_args.count==='number'?{count:pendingPreview.resolved_args.count}:{})}:undefined;
   const relevant = (module: string, domain: string) => enabledModules.includes(module) && (domains.includes(domain) || session?.pending_tool.startsWith(`${module}.`) === true);
   const notes = relevant('notes', 'productivity') ? (await c.query<{ id: string; body: string }>(`SELECT id::text,body FROM notes WHERE chat_id=$1 AND deleted_at IS NULL ORDER BY updated_at DESC,id DESC LIMIT $2`, [chatId, product.contextV2Entities])).rows : [];
-  const reminders = relevant('reminders', 'productivity') ? (await c.query<{ id: string; body: string; due_at: Date }>(`SELECT id::text,body,due_at FROM reminders WHERE chat_id=$1 AND owner_id=$2 AND status='pending' ORDER BY created_at DESC,id DESC LIMIT $3`, [chatId, actorId, product.contextV2Entities])).rows : [];
+  // Bounded personal reference data does not preload schemas or select a domain.
+  const reminders = enabledModules.includes('reminders') ? (await c.query<{ id: string; body: string; due_at: Date }>(`SELECT id::text,body,due_at FROM reminders WHERE chat_id=$1 AND owner_id=$2 AND status='pending' ORDER BY created_at DESC,id DESC LIMIT $3`, [chatId, actorId, product.contextV2Entities])).rows : [];
   for (const n of notes) add('noteRef', n.id, n.body);
   for (const r of reminders) add('reminderRef', r.id, r.body, true);
   const poll = enabledModules.includes('polls') ? (await c.query<{ id: string; question: string; options: string[] }>(`SELECT p.id::text,p.question,
@@ -92,9 +93,20 @@ export async function buildTurnContextV2(ctx: ToolCtx, domains: readonly string[
     UNION ALL SELECT id::text,title,'task',due_at FROM school_tasks WHERE chat_id=$1 AND deleted_at IS NULL AND (due_at IS NULL OR due_at>$2)
     ORDER BY kind,label LIMIT $3`, [chatId, now, product.contextV2Entities])).rows : [];
   for (const s of school) add(s.kind === 'task' ? 'taskRef' : 'subjectRef', s.id, s.label);
+  const destinations=domains.some(d=>d==='messaging' || d==='school') && actor.role==='owner' ? (await c.query<{id:string;label:string;is_group:boolean}>('SELECT id::text,label,is_group FROM messaging_destinations ORDER BY id LIMIT $1',[product.bulkMaxTargets])).rows:[];
+  if(domains.includes('school') && enabledModules.includes('school')){
+    const targets=(await c.query<{id:string;label:string}>("SELECT id,coalesce(settings->>'group_title','Grupo escolar') label FROM chats WHERE enabled AND is_group ORDER BY id LIMIT $1",[product.bulkMaxTargets])).rows;
+    for(const target of targets)if(await schoolDestination(c,ctx.config,target.id,actorId))destinations.push({id:`school:${target.id}`,label:target.label,is_group:true});
+  }
+  const driveEntries=relevant('drive','drive')?(await c.query<{id:string;name:string;mime:string}>('SELECT id::text,name,mime FROM drive_entries WHERE chat_id=$1 AND actor_id=$2 AND expires_at>clock_timestamp() ORDER BY id DESC LIMIT $3',[chatId,actorId,product.contextV2Entities])).rows:[];
+  const operations=domains.some(d=>d==='messaging' || d==='drive')?(await c.query<{id:string;kind:string;status:string}>(`SELECT id::text,kind,status FROM bulk_ops WHERE chat_id=$1 AND actor_id=$2
+    UNION ALL SELECT id::text,kind,status FROM jobs WHERE chat_id=$1 AND owner_id=$2 AND kind='drive' ORDER BY id DESC LIMIT $3`,[chatId,actorId,product.contextV2Entities])).rows:[];
+  for(const d of destinations)add('destinationRef',d.id,d.label,true);
+  for(const d of driveEntries)add('driveRef',d.id,d.name,true);
+  for(const o of operations)add('opRef',o.id,o.kind,true);
   // Group reads only availability, never personal bodies. Private reads require eligibility and relevance.
   const personalMemoryAvailable = Boolean((await c.query('SELECT 1 FROM user_memories WHERE user_id=$1 LIMIT 1', [actorId])).rowCount);
-  const memories = !chat.isGroup && (relevant('memory', 'memory') || (relevant('memory', 'productivity') && /(?<![\p{L}])(?:memoria|recuerdos|sabes de m[ií])(?![\p{L}])/iu.test(msg.text))) && await privateEligible(c, actor)
+  const memories = !chat.isGroup && enabledModules.includes('memory') && await privateEligible(c, actor)
     ? (await c.query<{ id: string; body: string }>('SELECT id::text,body FROM user_memories WHERE user_id=$1 ORDER BY id DESC LIMIT $2', [actorId, product.contextV2Entities])).rows : [];
   for (const memory of memories) add('memoryRef', memory.id, memory.body, true);
   const results = (await c.query<{ result_kind: string; text: string; created_at: Date }>(`SELECT result_kind,text,created_at FROM context_msgs
@@ -132,7 +144,7 @@ export async function buildTurnContextV2(ctx: ToolCtx, domains: readonly string[
       kind: session.kind,
       pendingTool: contextData(session.pending_tool),
       partialArgs: safePartialArgsV2(session.partial_args),
-      missingSlots: session.missing_slots.map(s => s.kind === 'choice' ? s.field : s.kind),
+      missingSlots: session.missing_slots.map(s => s.kind === 'choice' || s.kind === 'required' ? s.field : s.kind),
       lastQuestion: contextData(session.prompt),
       prompt: contextData(session.prompt),
       expiresLocal: local(session.expires_at),
@@ -143,17 +155,20 @@ export async function buildTurnContextV2(ctx: ToolCtx, domains: readonly string[
     ...(files.current[0] ? { currentArtifact: safeFile(files.current[0], 'A_CURRENT') } : {}),
     ...(msg.quoted ? { quotedMessage: { ...(msg.quoted.text ? { text: contextData(msg.quoted.text) } : {}), ...(authorRef ? { authorRef } : {}),
       ...(files.reply[0] ? { artifactRef: 'A_REPLY' as const, artifact: safeFile(files.reply[0], 'A_REPLY') } : {}) } } : {}),
-    recentArtifacts: files.recent.map(a => safeFile(a,undefined,referencesPreviousContentV2(msg.text))), notes: notes.map(n => ({ ref: ref('noteRef', n.id), text: contextData(n.body) })),
+    recentArtifacts: files.recent.map(a => safeFile(a,undefined,false)), notes: notes.map(n => ({ ref: ref('noteRef', n.id), text: contextData(n.body) })),
     reminders: reminders.map(r => ({ ref: ref('reminderRef', r.id), text: contextData(r.body), dueLocal: local(r.due_at) })),
     ...(poll ? { poll: { ref: 'P_ACTIVE' as const, pollRef: ref('pollRef', poll.id), question: contextData(poll.question), options: poll.options.map(contextData), status: 'open' as const } } : {}),
     ...(game ? { game: { kind: game.kind, status: game.status } } : {}),
     ...(cooperacha ? { cooperacha: { status: 'open' as const, totalXp: cooperacha.total, goalXp: cooperacha.goal, category: contextData(cooperacha.category ?? 'Todas') } } : {}),
     school: school.map(s => ({ ref: ref(s.kind === 'task' ? 'taskRef' : 'subjectRef', s.id), kind: s.kind, label: contextData(s.label), ...(s.due_at ? { dueLocal: local(s.due_at) } : {}) })),
     members: mentioned.map(m => ({ ref: ref('memberRef', m.id), displayName: contextData(m.display_name ?? 'Miembro') })),
+    destinations:destinations.map(d=>({ref:ref('destinationRef',d.id),label:contextData(d.label),type:d.is_group?'group':'private'})),
+    driveEntries:driveEntries.map(d=>({ref:ref('driveRef',d.id),name:contextData(d.name),mime:d.mime})),
+    operations:operations.map(o=>({ref:ref('opRef',o.id),kind:o.kind,status:o.status})),
     personalMemoryAvailable, personalMemories: memories.map(m => ({ ref: ref('memoryRef', m.id), text: contextData(m.body) })),
-    recentResults: (!files.current.length && !msg.attachments.length && !msg.quoted && referencesPreviousContentV2(msg.text)?results:[]).map((r, i) => ({ ref: i === 0 ? 'R_LAST' : `R_${i + 1}` as const, kind: r.result_kind, excerpt: contextData(r.text).slice(0, product.contextV2ResultChars), ageSec: Math.max(0, Math.floor((now.getTime() - r.created_at.getTime()) / 1000)) })),
+    recentResults: results.map((r, i) => ({ ref: i === 0 ? 'R_LAST' : `R_${i + 1}` as const, kind: r.result_kind, excerpt: contextData(r.text).slice(0, product.contextV2ResultChars), ageSec: Math.max(0, Math.floor((now.getTime() - r.created_at.getTime()) / 1000)) })),
     recentEvents: events.map(e => ({ kind: 'resolved_event', summary: summaries[e.tool_name] ?? 'Una operación anterior terminó.', ageSec: Math.max(0, Math.floor((now.getTime() - e.created_at.getTime()) / 1000)) })),
-    recentDialogue:!msg.attachments.length && !files.current.length && referencesPreviousContentV2(msg.text)?dialogue:[],
+    recentDialogue:dialogue,
   };
   if (game?.kind === 'blackjack' && snapshot.game) {
     const state = stateSchema.safeParse(game.state);
@@ -164,7 +179,7 @@ export async function buildTurnContextV2(ctx: ToolCtx, domains: readonly string[
     }
   }
   const vision = await resolveVisionArtifactV2( { c, ...scope, sourceMessageId, now, safeRefMap,
-    allowRecentVision:!msg.attachments.length && allowsPreviousVisionV2(msg.text), ...(msg.quoted ? { quotedMessageId: msg.quoted.id } : {}) });
+    allowRecentVision:false, ...(msg.quoted ? { quotedMessageId: msg.quoted.id } : {}) });
   if(vision.status==='ok')snapshot.visionArtifact=safeFile(vision.artifact,vision.ref as SafeArtifactV2['ref']);
   const flags = (await c.query<{key:string;value:unknown}>('SELECT key,value FROM system_flags')).rows;
   const artifactFact = (a: ArtifactRecord, alias?: SafeArtifactV2['ref']) => ({ref: alias ?? ref('artifactRef', a.id), kind:a.kind, mime:a.mime});
@@ -173,10 +188,10 @@ export async function buildTurnContextV2(ctx: ToolCtx, domains: readonly string[
       emergency:flags.some(f=>f.key==='emergency' && f.value===true), maintenance:flags.some(f=>f.key==='maintenance' && f.value===true)}),
     ARTIFACT_STATE: {
       CURRENT: files.current.map(a=>artifactFact(a)),
-      REPLIED: files.reply[0] ? artifactFact(files.reply[0], 'A_REPLY') : null,
+      REPLIED: files.reply[0] ? artifactFact(files.reply[0],files.reply[0].actor_id===actorId?undefined:'A_REPLY') : null,
       RECENT: files.recent.filter(a=>!files.current.some(current=>current.id===a.id)).map(a=>artifactFact(a)),
-      A_LAST: files.recent[0] ? artifactFact(files.recent[0], 'A_LAST') : null,
-      ...(msg.attachments.length>files.current.length ? {UNRETAINED_CURRENT:msg.attachments.slice(files.current.length).map(a=>({kind:contextData(a.kind),...(a.mime?{mime:contextData(a.mime)}:{}),status:'SOURCE_NOT_RETAINED' as const}))} : {}),
+      A_LAST: files.recent[0] ? artifactFact(files.recent[0]) : null,
+      ...(msg.attachments.length>files.current.length ? {UNRETAINED_CURRENT:msg.attachments.filter((_,index)=>!files.current.some(a=>a.source_attachment_index===index)).map(a=>({kind:contextData(a.kind),...(a.mime?{mime:contextData(a.mime)}:{}),status:'SOURCE_NOT_RETAINED' as const}))} : {}),
     }, REFERENCE_DATA: snapshot,
     CURRENT_USER_TURN: { userText: contextData(msg.text), ...(msg.quoted?.text ? { quotedText: contextData(msg.quoted.text) } : {}),
       ...(authorRef ? { quotedAuthorRef: authorRef } : {}), ...(files.current.length ? { attachedArtifactRef: 'A_CURRENT' as const } : {}), mentions: members.filter(m => msg.mentions.some(id=>identityMatches(m,id))).map(m => ref('memberRef', m.id)) } });

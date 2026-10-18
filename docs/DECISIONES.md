@@ -1520,3 +1520,29 @@ no debe forzar una conversión alternativa después de explicar una limitación.
 Sin aliases nuevos, cambios de permisos, efectos desde texto ni NLU en SessionV2.
 Canary autorizado solo Lab; resto v1. Evidencia y límites en
 [WS-CAPABILITY-MANIFEST](v1.1/WS-CAPABILITY-MANIFEST.md). Detenerse tras entrega.
+
+### DEC-069: Zero-NLU y promoción global de capacidades existentes (18-10-2026)
+
+Autorización directa WS-AI-FIRST-PRODUCTION, baseline c25acac, misma rama y sin
+merge. Supera únicamente las restricciones antiguas de rollout Canary. Gemini
+interpreta lenguaje humano; exposición, sesión, contexto y Policy solo usan estado
+estructurado. Se retiran gates semánticos, fast paths conversacionales y fallback
+oculto por compatibilidad de archivos. Los archivos antiguos requieren selección
+explícita; la meta-tool de lectura conserva el historial nativo firmado.
+
+Los 96 contratos públicos quedan conectados; los dos commits internos conservan
+su carácter de mecanismos autenticados. No se añade salida DOCX ni backend nuevo.
+Escuela mantiene preview completo y confirmación de segundo turno, ligada a
+revisión escolar. Drive usa la fuente retenida elegida y revalida vigencia/owner.
+La migración 015 conserva filas y extiende identidad por ordinal; no hay borrado.
+
+ROUTER_MODE global sustituye la allowlist operativa, conservando v1 como rollback.
+OFF explícitos de producto se respetan. Solo se revierte un OFF con evidencia de
+que provenía exclusivamente del Canary autorizado. No se inscriben grupos nuevos.
+Plan, auditoría y límites: [WS-AI-FIRST-PRODUCTION](v1.1/WS-AI-FIRST-PRODUCTION.md).
+
+La revisión del presupuesto real detectó que `load_capability(domain)` podía perder
+al final del recorte un schema público ya implementado. La meta-tool admite además
+`toolName` exacto del Manifest: Gemini identifica la función y el backend valida
+pertenencia al dominio y la prioriza técnicamente. Se conserva una expansión,
+máximo 20 schemas y el presupuesto existente. No se usan palabras del input.

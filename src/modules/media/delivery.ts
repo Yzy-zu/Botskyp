@@ -24,10 +24,9 @@ export async function mediaDelivery(db:Db,config:Config,row:{id:string;chat_id:s
 }
 export async function reportMediaDeliveries(db:Db,routing:Config|Config['ROUTER_MODE']='v1'):Promise<void>{
   const mode=typeof routing==='string'?routing:routing.ROUTER_MODE;
-  const canary=typeof routing==='string'?null:routing.ROUTER_V1_1_CHAT_IDS ?? null;
   await db.query(`INSERT INTO outbox(chat_id,payload,dedupe_key)
-    SELECT j.chat_id,jsonb_build_object('text',CASE WHEN CASE WHEN $3::text[] IS NULL THEN $2::text='v1_1' ELSE j.chat_id=ANY($3::text[]) END THEN 'No pude confirmar la entrega de todos los archivos. No repetí entregas pendientes de confirmar.' ELSE 'Trabajo #'||j.id||': no pude confirmar la entrega de todos los archivos. Consulta «bot trabajos». No repetí entregas inciertas.' END,'sourceId',j.source_message_id),
+    SELECT j.chat_id,jsonb_build_object('text',CASE WHEN $2::text='v1_1' THEN 'No pude confirmar la entrega de todos los archivos. No repetí entregas pendientes de confirmar.' ELSE 'Trabajo #'||j.id||': no pude confirmar la entrega de todos los archivos. Consulta «bot trabajos». No repetí entregas inciertas.' END,'sourceId',j.source_message_id),
       'media:delivery-problem:'||j.id FROM jobs j WHERE j.kind='media' AND j.status='done' AND EXISTS(
         SELECT 1 FROM outbox o WHERE o.kind IN ('media_result','media_text') AND o.payload->>'jobId'=j.id::text AND (o.status='failed' OR (o.status='uncertain' AND o.reconcile_attempts>=$1)))
-    ON CONFLICT(dedupe_key) DO NOTHING`,[product.maxReconcileAttempts,mode,canary]);
+    ON CONFLICT(dedupe_key) DO NOTHING`,[product.maxReconcileAttempts,mode]);
 }

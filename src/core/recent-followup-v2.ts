@@ -14,7 +14,3 @@ export async function recentReminderV2(c: PoolClient, chatId: string, actorId: s
   const safeRefs=new SafeRefs([{kind:'reminderRef',id:row.id,chatId,label:'Recordatorio recién creado',access:{visibility:'personal',ownerId:actorId}}]);
   return {safeRefs,ref:safeRefs.list({chatId,actorId})[0]!.ref};
 }
-export function mediaHistoryRequestV2(text: string): boolean {
-  return /(?:mis trabajos|mis archivos|qu[eé] archivos has procesado|[uú]ltimos trabajos|historial de (?:archivos|trabajos))/iu.test(text);
-}
-

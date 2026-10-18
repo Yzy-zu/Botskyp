@@ -17,9 +17,10 @@ export async function evaluateToolPolicy(ctx: ExecutionContextV2, tool: ToolMeta
   confirmedResolvedArgs?: Record<string, unknown>, confirmationResources: PolicyDecision['resolvedSafeRefs'] = []): Promise<PolicyDecision> {
   const gates: string[] = [];
   const resourceState: string[] = [];
+  let missingSlots:NonNullable<PolicyDecision['missingSlots']>=[];
   let args: Record<string, unknown> = {}, refs: PolicyDecision['resolvedSafeRefs'] = [], ownership: PolicyDecision['ownership'] = [];
   const decision = (status: EvaluationStatus, code: string | null = null): PolicyDecision => ({
-    status, resolvedArgs: args, denialCode: code, argsHash: policyArgsHash(ctx, tool.name, args, resourceState), resourceState, ownership, resolvedSafeRefs: refs, gates,
+    status, ...(status==='needs_clarification'?{missingSlots:missingSlots.length?missingSlots:[{field:code==='MISSING_BODY'?'body':code==='MISSING_TIME'?'time':code==='MISSING_DATE'?'date':code==='AMBIGUOUS_HOUR'?'meridiem':code==='AUTHENTIC_MENTION_REQUIRED'?'memberRef':code==='POLL_OPTION_AMBIGUOUS'?'option':'artifactRef',kind:'required'}]}:{}), resolvedArgs: args, denialCode: code, argsHash: policyArgsHash(ctx, tool.name, args, resourceState), resourceState, ownership, resolvedSafeRefs: refs, gates,
     confirmationSummary: status !== 'needs_confirmation' ? null : tool.name === 'bulk.nuclear'
       ? `${args.count} mensajes en el grupo actual, sin menciones ni expulsiones; mínimo ${product.nuclearGapMs / 1000} s entre envíos. Contenido exacto: ${String(args.text)}`
       : `${tool.name}: ${JSON.stringify(args)}`,
@@ -47,12 +48,23 @@ export async function evaluateToolPolicy(ctx: ExecutionContextV2, tool: ToolMeta
     args = { ...confirmedResolvedArgs };
   } else {
     const parsed = tool.modelArgsSchema.safeParse(modelArgs);
-    if (!parsed.success) return decision('denied', 'INVALID_MODEL_ARGUMENTS');
+    if (!parsed.success){
+      const raw=modelArgs && typeof modelArgs==='object'?modelArgs as Record<string,unknown>:{};
+      const missing=parsed.error.issues.filter(issue=>issue.code==='invalid_type' && issue.path.length===1 && raw[String(issue.path[0])]===undefined);
+      if(missing.length===parsed.error.issues.length){missingSlots=missing.map(issue=>({field:String(issue.path[0]),kind:'required'}));return decision('needs_clarification','MISSING_ARGUMENTS');}
+      return decision('denied', 'INVALID_MODEL_ARGUMENTS');
+    }
     const input={...parsed.data as Record<string,unknown>};
     if(tool.name==='media.process' && input.artifactRefs && (!['images_pdf','pdf_merge'].includes(String(input.operation)) || input.artifactRef))return decision('denied','INVALID_MODEL_ARGUMENTS');
-    if(tool.name==='media.process' && !['download','qr_create','speak'].includes(String(input.operation)) && !input.artifactRef && !input.artifactRefs)input.artifactRef='A_LAST';
-    const resolved = await resolveReferences(ctx, input, tool.name==='media.process'?String(input.operation):undefined);
+    if(tool.name==='media.process' && !['download','qr_create','speak'].includes(String(input.operation)) && !input.artifactRef && !input.artifactRefs)input.artifactRef=ctx.legacy.msg.attachments.length?'A_CURRENT':ctx.legacy.msg.quoted?'A_REPLY':undefined;
+    if(['drive.upload','school.schedule_import'].includes(tool.name) && !input.artifactRef)input.artifactRef=ctx.legacy.msg.attachments.length?'A_CURRENT':ctx.legacy.msg.quoted?'A_REPLY':undefined;
+    if(['drive.upload','school.schedule_import'].includes(tool.name) && !input.artifactRef)return decision('needs_clarification','MISSING_ARTIFACT');
+    if(tool.name==='media.process' && !['download','qr_create','speak'].includes(String(input.operation)) && !input.artifactRef && !input.artifactRefs)return decision('needs_clarification','MISSING_ARTIFACT');
+    const resolved = await resolveReferences(ctx, input, tool.name==='media.process'?String(input.operation):['drive.upload','school.schedule_import'].includes(tool.name)?'resend':undefined,tool.name==='school.schedule_propose');
     args = resolved.args; refs = resolved.refs; ownership = resolved.ownership;
+    if(tool.name==='school.destination' && !resolved.failure && args.destinationRef){
+      args.destinationRef=String(args.destinationRef).startsWith('school:')?String(args.destinationRef).slice(7):(await ctx.legacy.c.query<{target_id:string}>('SELECT target_id FROM messaging_destinations WHERE id::text=$1',[args.destinationRef])).rows[0]?.target_id;
+    }
     if (resolved.failure) return decision(resolved.failure, resolved.failure === 'not_found' ? 'REF_NOT_FOUND' : 'REF_AMBIGUOUS');
   }
   gates.push('ownership');
@@ -117,6 +129,10 @@ export async function evaluateToolPolicy(ctx: ExecutionContextV2, tool: ToolMeta
   gates.push('cooldown');
   const cooldown = await cooldownEligibility(ctx, tool.name, args);
   if (cooldown) return decision('denied', cooldown);
+  if(tool.name==='school.schedule_propose'){
+    const school=(await ctx.legacy.c.query('SELECT revision FROM school_config WHERE chat_id=$1',[ctx.chatId])).rows[0];
+    resourceState.push(argumentHash('school_revision',school ?? {revision:0}));
+  }
   gates.push('confirmation');
   // A supplied hash is not authorization; execute checks a stored, scoped, fresh second-turn confirmation.
   return decision(tool.confirmationPolicy === 'none' ? 'allow' : 'needs_confirmation');

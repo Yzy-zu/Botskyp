@@ -31,6 +31,9 @@ export type SafeConversationSnapshotV2 = {
   game?: { kind: string; status: string; yourHand?: number; dealerVisible?: number };
   cooperacha?: { status: 'open'; totalXp: number; goalXp: number; category: string };
   school: { ref: SafeRef; kind: 'subject' | 'task'; label: string; dueLocal?: string }[];
+  destinations?: {ref:SafeRef;label:string;type:'group'|'private'}[];
+  driveEntries?: {ref:SafeRef;name:string;mime:string}[];
+  operations?: {ref:SafeRef;kind:string;status:string}[];
   members: { ref: SafeRef; displayName: string }[];
   personalMemoryAvailable: boolean;
   personalMemories: { ref: SafeRef; text: string }[];

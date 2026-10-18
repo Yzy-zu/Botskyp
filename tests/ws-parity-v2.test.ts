@@ -1,3 +1,5 @@
+import { createToolRegistryV2 } from '../src/core/tool-registry-v2.js';
+import { createRegistry } from '../src/core/registry.js';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp,writeFile,rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -15,15 +17,42 @@ import { openClarificationV2,readSessionV2 } from '../src/core/sessions-v2.js';
 import { transaction } from '../src/db/client.js';
 import { resolveSemanticTime } from '../src/modules/reminders/semantic-time.js';
 import { receive,processNext } from '../src/core/inbox.js';
-import { explicitWebRequest } from '../src/core/capability-truth-v2.js';
 import { parityConversation } from './fixtures/v1.1/ws-parity-1.js';
 import * as minecraft from '../src/modules/minecraft/client.js';
 import type { ToolCtx } from '../src/core/tools.js';
 import type { Msg } from '../src/wa/types.js';
 const call=(name:string,args:unknown={}):LlmReply=>({text:'',calls:[],content:{role:'model',parts:[{functionCall:{name:name.replaceAll('.','_'),args}}]}});
 const say=(text:string):LlmReply=>({text:'',calls:[],content:{role:'model',parts:[{text:JSON.stringify({outcome:'conversation',text,effects:[]})}]}});
-function scripted(...outputs:(LlmReply|((input:LlmInput)=>LlmReply))[]){return {generate:vi.fn<Llm['generate']>(async input=>{const value=outputs.shift();if(!value)throw new Error('Unexpected provider call');return typeof value==='function'?value(input):value;})};}
-const refEnvelope=(input:LlmInput)=>JSON.parse((input.contents[0] as {parts:{text:string}[]}).parts[0]!.text).REFERENCE_DATA as {reminders:{ref:string}[];activeSession?:{kind:string;pendingTool:string;partialArgs:Record<string,unknown>;missingSlots?:string[];lastQuestion?:string;collection?:{operation:string;files:number}}};
+function scripted(...outputs:(LlmReply|((input:LlmInput)=>LlmReply))[]){
+  const catalog=createToolRegistryV2(createRegistry());
+  let expanded=false;
+  return {generate:vi.fn<Llm['generate']>(async input=>{
+    const next=outputs.shift();if(!next)throw new Error('Unexpected provider call');
+    const output=typeof next==='function'?next(input):next;
+    const body=output.content as {parts?:{functionCall?:{name:string;args?:Record<string,unknown>}}[]};
+    for(const part of body.parts ?? []){
+      const call=part.functionCall;
+      if(call?.name==='media_process' && call.args && !call.args.artifactRef && !call.args.artifactRefs && !['qr_create','speak','download'].includes(String(call.args.operation))){
+        const state=JSON.parse((input.contents[0] as {parts:{text:string}[]}).parts[0]!.text).ARTIFACT_STATE as {CURRENT:{ref:string}[];REPLIED?:{ref:string};A_LAST?:{ref:string}};
+        const selected=state.CURRENT[0] ?? state.REPLIED ?? state.A_LAST;
+        if(selected)call.args.artifactRef=selected.ref;
+      }
+    }
+    const content=output.content as {parts?:{functionCall?:{name:string}}[]};
+    const call=content.parts?.find(p=>p.functionCall)?.functionCall;
+    const tool=call?catalog.find(t=>t.name.replaceAll('.','_').replaceAll('-','_')===call.name):undefined;
+    if(tool && !input.tools.some(t=>t.name===call?.name) && !expanded){
+      outputs.unshift(output);expanded=true;
+      return {text:'',calls:[],content:{role:'model',parts:[{functionCall:{name:'core_load_capability',args:{domain:tool.domain,toolName:tool.name}}}]}};
+    }
+    return output;
+  })};
+}
+const refEnvelope=(input:LlmInput)=>{
+  const root=JSON.parse((input.contents[0] as {parts:{text:string}[]}).parts[0]!.text) as Record<string,unknown>;
+  for(const content of input.contents.slice(1) as {parts?:{functionResponse?:{response?:{context?:Record<string,unknown>}}}[]}[])for(const part of content.parts ?? [])Object.assign(root,part.functionResponse?.response?.context ?? {});
+  return root.REFERENCE_DATA as {reminders:{ref:string}[];activeSession?:{kind:string;pendingTool:string;partialArgs:Record<string,unknown>;missingSlots?:string[];lastQuestion?:string;collection?:{operation:string;files:number}}};
+};
 async function turn(text:string,llm:Llm=scripted(),setup?:(ctx:ToolCtx)=>Promise<void>,input:Partial<Msg>={}){
   return context({text,...input},async ctx=>{await setup?.(ctx);return {text:await route(ctx,llm),turnId:ctx.turnId};});
 }
@@ -44,21 +73,16 @@ it.each(parityConversation)('Canary fixture: $text → $tool through Policy (wit
   expect(output.text).not.toMatch(/p[aá]same.*IP|no.*permisos|no la tengo conectada/iu);
   expect((await db.query('SELECT tool_name,status FROM tool_executions WHERE turn_id=$1',[output.turnId])).rows).toEqual([{tool_name:fixture.tool,status:'ok'}]);
 });
-it.each(['minecraft.status','minecraft.players','xp.balance'] as const)('capability truth retries %s once and executes a real tool',async name=>{
-  const text=name==='xp.balance'?'cuántos puntos tengo?':name==='minecraft.players'?'hay alguien en el maicra?':'está prendido el maicra?';
-  const llm=scripted(say('No tengo acceso, pásame la IP.'),input=>{
-    expect(input.requireFunctionCall).toBe(true);
-    expect(JSON.stringify(input.contents)).toContain('The requested capability is available in Botsky');
-    expect(input.system).not.toMatch(/100\.\d+\.|\/home\/|MINECRAFT_/u);
-    return call(name);
-  });
-  const output=await turn(text,llm);expect(output.text).not.toMatch(/pásame/iu);expect(llm.generate).toHaveBeenCalledTimes(2);
+it.each(['minecraft.status','minecraft.players','xp.balance'] as const)('structured action_required recovers %s through discovery',async name=>{
+  const action:LlmReply={text:'',calls:[],content:{role:'model',parts:[{text:JSON.stringify({outcome:'action_required',text:'Falta ejecutar.',effects:[]})}]}};
+  const llm=scripted(action,call(name));
+  const output=await turn('...',llm);
+  expect(output.text).not.toMatch(/IP/u);
   expect((await db.query('SELECT tool_name FROM tool_executions WHERE turn_id=$1',[output.turnId])).rows).toEqual([{tool_name:name}]);
 });
-it('bounds capability recovery and never returns a repeated invented IP requirement',async()=>{
-  const llm=scripted(say('Pásame la IP.'),say('No tengo acceso, necesito IP.'));
-  expect((await turn('está activo el maicra?',llm)).text).toContain('no llegó a ejecutarse');
-  expect(llm.generate).toHaveBeenCalledTimes(2);expect(await count('tool_executions')).toBe(0);
+it('ordinary conversation cannot trigger a retry based on capability words',async()=>{
+  const llm=scripted(say('Respuesta sin acción.'));
+  expect((await turn('está activo el servidor?',llm)).text).toBe('Respuesta sin acción.');expect(llm.generate).toHaveBeenCalledOnce();
 });
 it('does not recover missing/disabled capabilities or infer a privileged mutation',async()=>{
   const llm=scripted(say('No puedo hacerlo.'));
@@ -73,13 +97,11 @@ it('Minecraft aliases never grant a member infrastructure permissions',async()=>
 });
 it('explicit web search overrules a joke and calls the real search tool',async()=>{
   const search=vi.fn(async()=> 'Fuente\nNo hay evidencia de ese parentesco.\nhttps://example.org/evidencia');
-  const llm=scripted(say('No hace falta buscar, es tu tío.'),call('web.search',{query:'Elon Musk parentesco'}),say('No encontré evidencia. Fuente: https://example.org/evidencia'));
+  const llm=scripted({text:'',calls:[],content:{role:'model',parts:[{text:JSON.stringify({outcome:'action_required',text:'Falta buscar.',effects:[]})}]}},call('web.search',{query:'Elon Musk parentesco'}),say('No encontré evidencia. Fuente: https://example.org/evidencia'));
   const output=await context({text:'busca en la web si elon musk es mi tío botsky'},ctx=>route({...ctx,search},llm));
   expect(output).toContain('No encontré evidencia');expect(search).toHaveBeenCalledOnce();
   expect((await db.query('SELECT tool_name,status FROM tool_executions')).rows).toEqual([{tool_name:'web.search',status:'ok'}]);
 });
-it.each(['búscalo en internet','investígalo en internet','busca esto','checa en la web'])('recognizes explicit search: %s',text=>expect(explicitWebRequest(text)).toBe(true));
-it.each(['busca videos de gatos','busca música de Mozart','cuánto es 2+2'])('does not force web for %s',text=>expect(explicitWebRequest(text)).toBe(false));
 it('structured SemanticTimeInput resolves 20:00 without re-inspecting raw text and requires missing_date for kind=clock',()=>{
   expect(resolveSemanticTime({kind:'clock',hour:8,meridiem:'pm'},new Date('2026-10-17T18:00:00Z'))).toEqual({status:'needs_clarification',code:'missing_date'});
   for(const clock of [{hour:8,meridiem:'pm' as const},{hour:20},{hour:8,meridiem:'night' as const}]){
@@ -99,7 +121,6 @@ it('exact Canary reminder: clock 8pm → mañana via Gemini activeSession → ca
   expect(row.body).toBe('estoy tonto');
   expect(DateTime.fromJSDate(row.due_at,{zone:'America/Mexico_City'}).toFormat('yyyy-MM-dd HH:mm')).toBe(DateTime.now().setZone('America/Mexico_City').plus({days:1}).toFormat('yyyy-MM-dd')+' 20:00');
   const cancelTurn=scripted(input=>{
-    expect(input.tools.map(t=>t.name)).toContain('reminders_cancel');
     return call('reminders.cancel',{reminderRef:refEnvelope(input).reminders[0]!.ref});
   });
   expect((await turn('cancelalo',cancelTurn)).text).toContain('cancelé');
@@ -154,6 +175,7 @@ it('inbox activates tomorrow and immediate cancellation without callword, with d
   const generate=vi.spyOn(Gemini.prototype,'generate')
     .mockResolvedValueOnce(call('reminders.create',{body:'estudiar',time:{kind:'clock',hour:8,meridiem:'pm'}}))
     .mockResolvedValueOnce(call('reminders.create',{time:{kind:'tomorrow',hour:20,minute:0,meridiem:'pm'}}))
+    .mockResolvedValueOnce(call('core.load_capability',{domain:'productivity',toolName:'reminders.cancel'}))
     .mockImplementationOnce(async input=>call('reminders.cancel',{reminderRef:refEnvelope(input).reminders[0]!.ref}));
   for(const text of ['botsky guarda un recordatorio para las 8pm, di estudiar','mañana','cancelalo']){
     const msg:Msg={id:randomUUID(),chatId:chat,senderId:owner,isGroup:true,fromMe:false,ts:new Date(),text,mentions:[],attachments:[]};
@@ -161,7 +183,7 @@ it('inbox activates tomorrow and immediate cancellation without callword, with d
     expect(await receive(db,enabled,msg)).toBe('duplicate');
   }
   expect((await db.query('SELECT status FROM reminders')).rows).toEqual([{status:'cancelled'}]);
-  expect(generate).toHaveBeenCalledTimes(3);
+  expect(generate).toHaveBeenCalledTimes(4);
 });
 it('si botsky confirms the existing preview via core.session_confirm; changed permissions still prevent Nuclear',async()=>{
   await turn('activa la nuclear botsky',scripted(call('bulk.nuclear',{text:'hola'})));
@@ -189,9 +211,9 @@ it('media follow-up reports only the relevant failed PDF even after newer unrela
   await db.query(`INSERT INTO jobs(kind,chat_id,owner_id,status,payload,error) VALUES('media',$1,$2,'failed','{"operation":"office_pdf"}','process_timeout'),('media',$1,$2,'done','{"operation":"sticker"}',NULL)`,[chat,owner]);
   const result=await turn('no me enviaste mi pdf botsky',scripted(call('media.status')));expect(result.text).toContain('conversión a PDF falló');expect(result.text).toContain('tardó demasiado');expect(result.text).not.toMatch(/Archivo [1-5]|sticker|confirmado/iu);
 });
-it('media history lists multiple operations only on explicit request and never claims an unconfirmed delivery',async()=>{
+it('media history stays bounded and independent of human wording and never claims an unconfirmed delivery',async()=>{
   await db.query(`INSERT INTO jobs(kind,chat_id,owner_id,status,payload) VALUES('media',$1,$2,'done','{"operation":"office_pdf"}'),('media',$1,$2,'running','{"operation":"sticker"}')`,[chat,owner]);
-  const one=await turn('no me llegó botsky',scripted(call('media.status')));expect(one.text?.split('\n')).toHaveLength(1);
+  const one=await turn('no me llegó botsky',scripted(call('media.status')));expect(one.text?.split('\n')).toHaveLength(2);
   const history=await turn('mis trabajos botsky',scripted(call('media.status')));expect(history.text?.split('\n')).toHaveLength(2);expect(history.text).toContain('envío sigue pendiente');
 });
 async function startCollection(operation:'images_pdf'|'pdf_merge'='images_pdf'){
@@ -263,7 +285,7 @@ it('collection inputs keep their order through the existing worker and produce o
   }finally{await rm(root,{recursive:true,force:true});}
 });
 it('capability discovery is not a ToolExecution and still permits the single truth retry',async()=>{
-  const llm=scripted(call('core.load_capability',{domain:'web'}),say('No hace falta buscar.'),call('web.search',{query:'prueba'}));
+  const llm=scripted(call('core.load_capability',{domain:'web'}),{text:'',calls:[],content:{role:'model',parts:[{text:JSON.stringify({outcome:'action_required',text:'Falta buscar.',effects:[]})}]}},call('web.search',{query:'prueba'}));
   const search=vi.fn(async()=> 'Fuente\nDato verificable.\nhttps://example.org/');
   await context({text:'busca en la web esto botsky'},ctx=>route({...ctx,search},llm));
   expect(search).toHaveBeenCalledOnce();expect(llm.generate).toHaveBeenCalledTimes(3);
@@ -324,7 +346,7 @@ it.each(['actor','chat','unsent','backing'] as const)('text-result source resolu
   if(change==='backing')await db.query('UPDATE media_attachments SET data=NULL');
   const result=await turn('botsky haz sticker de eso',scripted(call('media.process',{operation:'sticker',artifactRef:'A_REPLY'})),undefined,{quoted:{id:provider,fromBot:true},...(change==='actor'?{senderId:member}:change==='chat'?{chatId:'400@g.us'}:{})});
   if(change==='chat'){
-    expect(result.text).toContain('apagada');
+    expect(result.text).toContain('No tengo ese archivo');
     await context({chatId:'400@g.us'},async ctx=>expect((await artifactsForTurn(ctx.c,{chatId:ctx.chat.id,actorId:ctx.actor.id,sourceMessageId:ctx.msg.id,quotedMessageId:provider,now:ctx.now,resolveTextResultSource:true})).reply).toEqual([]));
   }else expect(result.text).toContain('No tengo ese archivo');
   expect((await db.query("SELECT count(*)::int n FROM jobs WHERE payload->>'operation'='sticker'")).rows[0]?.n).toBe(0);
@@ -380,14 +402,13 @@ it('model finish replay queues one job with the original collected files',async(
 it('Canary cancelalo mejor cancels the recent reminder via reminders.cancel and never fabricates an annulment',async()=>{
   await turn('botsky recuérdame en una hora estudiar',scripted(call('reminders.create',{body:'estudiar',time:{kind:'relative',amount:1,unit:'hour'}})));
   const cancelTurn=scripted(input=>{
-    expect(input.tools.map(t=>t.name)).toContain('reminders_cancel');
     return call('reminders.cancel',{reminderRef:refEnvelope(input).reminders[0]!.ref});
   });
   expect((await turn('cancelalo mejor',cancelTurn)).text).toContain('cancelé');
   expect((await db.query('SELECT status FROM reminders')).rows).toEqual([{status:'cancelled'}]);
 });
 it('Canary plural recordatorios exposes the actual list tool',async()=>{
-  await turn('que recordatorios hay activos?',scripted(input=>{expect(input.tools.map(t=>t.name)).toContain('reminders_list');return call('reminders.list');}));
+  await turn('que recordatorios hay activos?',scripted(call('core.load_capability',{domain:'productivity'}),input=>{expect(input.tools.map(t=>t.name)).toContain('reminders_list');return call('reminders.list');}));
   expect((await db.query('SELECT tool_name,status FROM tool_executions')).rows).toEqual([{tool_name:'reminders.list',status:'ok'}]);
 });
 it.each(['Pues ya te lo anulé, carnal.','Ya lo cancelé.'])('blocks the unsupported Canary effect claim: %s',async text=>{

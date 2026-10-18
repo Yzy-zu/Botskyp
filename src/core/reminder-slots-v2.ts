@@ -11,7 +11,7 @@ export function mergeSessionSlotsV2(args: Record<string, unknown>, slots: Record
 /** Merge structured partial_args with structured modelArgs during an active clarification session. Zero text regex. */
 export function mergeClarificationArgsV2(partialArgs: Record<string, unknown>, modelArgs: unknown): unknown {
   if (!isRecord(modelArgs)) return modelArgs;
-  const allowed = ['body', 'time', 'recurrence'] as const;
+  const allowed = ['body', 'time', 'recurrence', 'operation', 'start', 'end', 'summary', 'text', 'query', 'type', 'action', 'title', 'subject', 'includeAttachment'] as const;
   const base = Object.fromEntries(allowed.filter(k => partialArgs[k] !== undefined).map(k => [k, partialArgs[k]]));
   const merged: Record<string, unknown> = { ...base, ...modelArgs };
   if (isRecord(partialArgs.time) && isRecord(modelArgs.time)) {

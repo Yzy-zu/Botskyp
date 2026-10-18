@@ -12,7 +12,7 @@ import type { Msg } from '../src/wa/types.js';
 const {url}=JSON.parse(readFileSync('.local/test-db.json','utf8')) as {url:string};
 if(!new URL(url).pathname.startsWith('/botsky_test_'))throw new Error('Unsafe test database');
 const db=createDb(url);
-let config=readConfig({DATABASE_URL:url,EVOLUTION_URL:'http://mock',EVOLUTION_APIKEY:'test',INSTANCE:'test',WEBHOOK_SECRET:'x'.repeat(32),OWNER_JIDS:'100@s.whatsapp.net',BOT_JIDS:'200@s.whatsapp.net',LAB_CHAT_ID:'300@g.us',TRANSPORT:'mock',GEMINI_API_KEY:'test-key-never-log',GEMINI_FREE_TIER_CONFIRMED:'true'});
+let config=readConfig({ROUTER_MODE:'v1',DATABASE_URL:url,EVOLUTION_URL:'http://mock',EVOLUTION_APIKEY:'test',INSTANCE:'test',WEBHOOK_SECRET:'x'.repeat(32),OWNER_JIDS:'100@s.whatsapp.net',BOT_JIDS:'200@s.whatsapp.net',LAB_CHAT_ID:'300@g.us',TRANSPORT:'mock',GEMINI_API_KEY:'test-key-never-log',GEMINI_FREE_TIER_CONFIRMED:'true'});
 const input={system:'Sistema',contents:[{role:'user',parts:[{text:'hola'}]}],tools:[]};
 const success=()=>Response.json({candidates:[{content:{role:'model',parts:[{text:'Hola, perrillo.'}]},finishReason:'STOP'}],usageMetadata:{promptTokenCount:12,candidatesTokenCount:5}});
 beforeAll(()=>migrate(db));afterAll(()=>db.end());beforeEach(()=>{config={...config};return db.query('TRUNCATE llm_usage,llm_cooldowns').then(()=>undefined);});

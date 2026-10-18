@@ -51,12 +51,12 @@ it.each(['v1','v1_1_shadow'] as const)('does not register backing or enqueue res
     expect(await count('chat_artifacts')).toBe(0);expect(await count('outbox')).toBe(0);
   });
 });
-it('scopes implicit A_LAST by both actor and chat, including DMs',async()=>{
+it('scopes explicitly selected A_LAST by both actor and chat, including DMs',async()=>{
   const mine=await context({},ctx=>backing(ctx));
   await context({senderId:member},ctx=>backing(ctx));
   await context({chatId:'400@g.us'},ctx=>backing(ctx));
   await context({senderId:member,chatId:member,isGroup:false},ctx=>backing(ctx));
-  await context({},async ctx=>expect(await resolve(ctx)).toMatchObject({status:'ok',ref:'A_LAST',artifact:{id:mine.id}}));
+  await context({},async ctx=>expect(await resolve(ctx,'resend','A_LAST')).toMatchObject({status:'ok',ref:'A_LAST',artifact:{id:mine.id}}));
   await context({chatId:owner,isGroup:false},async ctx=>expect(await resolve(ctx)).toEqual({status:'not_found'}));
 });
 it('allows only explicit same-group replies to another member’s public artifact',async()=>{
@@ -99,11 +99,11 @@ it.each(['expired','backing_expired','cleaned'] as const)('ignores %s backing',a
   if(state==='cleaned')await db.query('UPDATE media_attachments SET data=NULL WHERE id=$1',[a.media_attachment_id]);
   await context({},async ctx=>expect(await resolve(ctx)).toEqual({status:'not_found'}));
 });
-it('selects the last compatible PDF even behind many newer DOCX files; explicit incompatible files fail',async()=>{
-  const compatible=await context({},ctx=>backing(ctx));
+it('does not search older compatible files behind the explicitly selected last artifact',async()=>{
+  await context({},ctx=>backing(ctx));
   const mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document';
   for(let i=0;i<7;i++)await context({},ctx=>backing(ctx,{mime,bytes:Buffer.from('PK\x03\x04fixture')}));
-  await context({},async ctx=>expect(await resolve(ctx,'pdf_compress')).toMatchObject({status:'ok',ref:'A_LAST',artifact:{id:compatible.id}}));
+  await context({},async ctx=>expect(await resolve(ctx,'pdf_compress','A_LAST')).toEqual({status:'incompatible'}));
   await context({},async ctx=>{await backing(ctx,{mime,bytes:Buffer.from('PK\x03\x04fixture')});expect(await resolve(ctx,'pdf_compress')).toEqual({status:'incompatible'});});
 });
 it('does not silently use A_LAST when an explicit reply artifact is absent',async()=>{
@@ -156,7 +156,7 @@ it('runs DOCX → PDF → compress → read → resend with real worker persiste
   let parent=docx.id,lastPdf=docx.id;
   for(const operation of ['office_pdf','pdf_compress','read'] as const){
     await context({text:operation==='office_pdf'?'conviértelo a PDF':operation==='pdf_compress'?'ahora comprímelo':'léelo'},async ctx=>{
-      const selected=await resolve(ctx,operation);expect(selected).toMatchObject({status:'ok',ref:'A_LAST',artifact:{id:parent}});
+      const selected=await resolve(ctx,operation,'A_LAST');expect(selected).toMatchObject({status:'ok',ref:'A_LAST',artifact:{id:parent}});
       if(selected.status!=='ok')throw new Error('Missing source');
       const queued=await transaction(db,c=>enqueueMedia({...ctx,c},{operation},[{storedId:selected.artifact.media_attachment_id}]));
       expect(queued.ok).toBe(true);
@@ -174,10 +174,10 @@ it('runs DOCX → PDF → compress → read → resend with real worker persiste
   expect(await count('jobs')).toBe(3);expect(await count('chat_artifacts')).toBe(3);
   const calls=vi.mocked(deps.process).mock.calls.length;
   await context({text:'pásamelo otra vez'},async ctx=>{
-    const selected=await resolve(ctx,'resend');expect(selected).toMatchObject({status:'ok',ref:'A_LAST',artifact:{id:lastPdf}});
+    const selected=await resolve(ctx,'resend','A_LAST');expect(selected).toMatchObject({status:'ok',ref:'A_LAST',artifact:{id:lastPdf}});
     expect((await resendArtifactV2(ctx,empty())).status).toBe('queued');
     expect(vi.mocked(deps.process)).toHaveBeenCalledTimes(calls);expect(await count('jobs')).toBe(3);
-    const contextResult=await buildTurnContextV2(ctx);expect(contextResult.envelope.REFERENCE_DATA.recentResults).toEqual([]);
+    const contextResult=await buildTurnContextV2(ctx);expect(contextResult.envelope.REFERENCE_DATA.recentResults).toHaveLength(1);
   });
   await context({text:'resume lo anterior'},async ctx=>{
     expect((await buildTurnContextV2(ctx)).envelope.REFERENCE_DATA.recentResults[0]?.excerpt).toBe('Texto del PDF comprimido');
@@ -223,7 +223,7 @@ it('late registration of an older input preserves original turn chronology for A
   const newer=await context({},ctx=>backing(ctx));
   await context({},async ctx=>{
     const old=older!;await registerArtifactV2(ctx.c,'v1_1',{chatId:chat,actorId:owner,sourceMessageId:old.source,origin:'user_input',mediaId:old.id});
-    expect(await resolve(ctx)).toMatchObject({status:'ok',artifact:{id:newer.id}});
+    expect(await resolve(ctx,'resend','A_LAST')).toMatchObject({status:'ok',artifact:{id:newer.id}});
   });
 });
 it('deduplicates the same incoming file captured by both school and media',async()=>{

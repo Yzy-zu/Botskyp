@@ -1,9 +1,14 @@
+import { formatSchedule, scheduleSchema } from '../modules/school/schemas.js';
 import { product } from '../../config/product.js';
 import { sanitizeOutputV2 } from './output-sanitizer-v2.js';
 import type { ExecutionContextV2, PolicyDecision } from './policy-v2/types.js';
 
 export async function confirmationPromptV2(ctx:ExecutionContextV2,name:string,decision:PolicyDecision):Promise<string>{
   const args=decision.resolvedArgs;
+  if(name==='school.schedule_propose'){
+    const proposal=scheduleSchema.parse(args);
+    return sanitizeOutputV2(`Propuesta de horario semanal:\n${formatSchedule(proposal)}\nReemplaza el horario completo; conserva tareas y materias. ¿Confirmas esta propuesta?`);
+  }
   if(name==='minecraft.restart')return '¿Seguro que reinicio el servidor de Minecraft? Dime “sí” o “nel”.';
   if(name==='minecraft.stop')return '¿Seguro que apago el servidor de Minecraft? Dime “sí” o “nel”.';
   if(name==='bulk.nuclear')return sanitizeOutputV2(`Va. Serían ${args.count ?? product.nuclearMessages} mensajes en este grupo diciendo «${String(args.text)}». ¿Le doy? Dime “sí” o “nel”.`);

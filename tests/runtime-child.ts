@@ -6,7 +6,7 @@ import { makeApp } from '../src/app.js';
 import { startRuntime } from '../src/core/runtime.js';
 import { msgSchema,type Transport,type Delivery,type SendResult,type ReconcileResult } from '../src/wa/types.js';
 const input=JSON.parse(readFileSync('.local/runtime-test.json','utf8')) as NodeJS.ProcessEnv;
-const config=readConfig({GEMINI_API_KEY:'fixture-gemini-key',...input});const db=createDb(config.DATABASE_URL);
+const config=readConfig({ROUTER_MODE:'v1',GEMINI_API_KEY:'fixture-gemini-key',...input});const db=createDb(config.DATABASE_URL);
 const transport:Transport={
   async state(){return true;},
   async send(d:Delivery):Promise<SendResult>{

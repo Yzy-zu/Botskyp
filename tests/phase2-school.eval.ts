@@ -18,7 +18,7 @@ const db=createDb(url),realFetch=globalThis.fetch;
 const statuses:number[]=[];let preview:string|undefined;let ms=0;
 try{
   await migrate(db);
-  const config=readConfig({...process.env,DATABASE_URL:url,TRANSPORT:'mock',EVOLUTION_URL:'http://mock',OWNER_JIDS:'100@s.whatsapp.net',LAB_CHAT_ID:'300@g.us'});
+  const config=readConfig({ROUTER_MODE:'v1',...process.env,DATABASE_URL:url,TRANSPORT:'mock',EVOLUTION_URL:'http://mock',OWNER_JIDS:'100@s.whatsapp.net',LAB_CHAT_ID:'300@g.us'});
   const actor={id:'100@s.whatsapp.net',role:'owner' as const};
   const chat={id:'300@g.us',isGroup:true,enabled:true,settings:{}};
   await db.query('INSERT INTO chats(id,is_group,enabled) VALUES($1,true,true)',[chat.id]);

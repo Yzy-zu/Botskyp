@@ -5,7 +5,7 @@ import type { Db } from '../db/client.js';
 export type ChatArtifact = {
   id: string; chat_id: string; actor_id: string; turn_id: string; source_message_id: string;
   media_attachment_id: string | null; school_attachment_id: string | null;
-  parent_artifact_id: string | null; kind: string; mime: string;
+  source_attachment_index:number; parent_artifact_id: string | null; kind: string; mime: string;
   created_at: Date; expires_at: Date;
 };
 /** A_LAST never returns another actor's/chat's file or an expired/cleaned backing blob. */
@@ -15,7 +15,7 @@ export async function lastChatArtifact(db: Db | PoolClient, chatId: string, acto
     LEFT JOIN school_attachments s ON s.id=a.school_attachment_id
     WHERE a.chat_id=$1 AND a.actor_id=$2 AND a.expires_at>now()
       AND ((m.data IS NOT NULL AND m.expires_at>now()) OR (s.data IS NOT NULL AND s.expires_at>now()))
-    ORDER BY a.created_at DESC,a.id DESC LIMIT 1`, [chatId, actorId]);
+    ORDER BY a.created_at DESC,a.source_attachment_index DESC,a.id DESC LIMIT 1`, [chatId, actorId]);
   return result.rows[0];
 }
 
@@ -40,7 +40,7 @@ export async function artifactsForTurn(db: Db | PoolClient, scope: { chatId: str
           SELECT 1 FROM artifact_deliveries d JOIN outbox o ON o.id=d.outbox_id AND o.chat_id=d.chat_id
           WHERE d.artifact_id=a.id AND d.chat_id=$1 AND o.provider_msg_id=$4 AND o.status='sent'))
       AND (a.actor_id=$2 OR EXISTS(SELECT 1 FROM chats ch WHERE ch.id=$1 AND ch.is_group))
-    ORDER BY is_current DESC,is_reply DESC,a.created_at DESC,a.id DESC LIMIT $7`,
+    ORDER BY is_current DESC,is_reply DESC,a.created_at DESC,a.source_attachment_index ASC,a.id DESC LIMIT $7`,
   [scope.chatId, scope.actorId, scope.sourceMessageId, scope.quotedMessageId ?? null, scope.now, product.artifactWindowMs, product.contextV2Artifacts + product.mediaMaxFiles * 2])).rows;
   let reply=rows.filter(a=>a.is_reply);
   if(!reply.length && scope.quotedMessageId && scope.resolveTextResultSource){
@@ -56,5 +56,5 @@ export async function artifactsForTurn(db: Db | PoolClient, scope: { chatId: str
         AND ((m.data IS NOT NULL AND m.expires_at>$4) OR (s.data IS NOT NULL AND s.expires_at>$4))
       ORDER BY a.created_at DESC,a.id DESC LIMIT $5`,[scope.chatId,scope.actorId,scope.quotedMessageId,scope.now,product.mediaMaxFiles])).rows;
   }
-  return { current: rows.filter(a => a.is_current), reply, recent: rows.filter(a => a.actor_id === scope.actorId).sort((a,b)=>b.created_at.getTime()-a.created_at.getTime() || b.id.localeCompare(a.id)).slice(0, product.contextV2Artifacts) };
+  return { current: rows.filter(a => a.is_current).sort((a,b)=>a.source_attachment_index-b.source_attachment_index), reply, recent: rows.filter(a => a.actor_id === scope.actorId).sort((a,b)=>b.created_at.getTime()-a.created_at.getTime() || b.source_attachment_index-a.source_attachment_index || b.id.localeCompare(a.id)).slice(0, product.contextV2Artifacts) };
 }

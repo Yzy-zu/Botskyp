@@ -3,7 +3,7 @@ import { privateLibraryDestination } from '../../modules/library/access.js';
 import { driveAllowed } from '../../modules/drive/service.js';
 import { product } from '../../../config/product.js';
 import type { ExecutionContextV2 } from './types.js';
-import { explicitMemoryRequest, sensitiveMemory } from '../../modules/memory/index.js';
+import { sensitiveMemory } from '../../modules/memory/index.js';
 
 /** Read-only counterparts of historical admission checks. Domain transactions remain authoritative. */
 export async function businessEligibility(ctx: ExecutionContextV2, name: string, args: Record<string, unknown>): Promise<string | null> {
@@ -13,7 +13,6 @@ export async function businessEligibility(ctx: ExecutionContextV2, name: string,
   if(sourceConflict)return sourceConflict;
   if (name === 'memory.list' && ctx.chat.isGroup) return 'DENIED_PRIVATE_ONLY';
   if (name === 'memory.remember') {
-    if (!explicitMemoryRequest(ctx.legacy.msg.text)) return 'DENIED_EXPLICIT_MEMORY_REQUIRED';
     if (sensitiveMemory(String(args.body))) return 'DENIED_SENSITIVE_MEMORY';
     const n = (await c.query<{ n: number }>('SELECT count(*)::int n FROM user_memories WHERE user_id=$1', [ctx.actorId])).rows[0]!.n;
     if (n >= product.memoryLimit) return 'DENIED_MEMORY_LIMIT';

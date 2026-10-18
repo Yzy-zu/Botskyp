@@ -7,7 +7,6 @@ import type { ToolResult as LegacyResult } from '../tools.js';
 import type { ToolResult } from '../tool-result.js';
 import type { ToolMetadataV2 } from '../tool-registry-v2.js';
 import type { ExecutionContextV2 } from './types.js';
-import { mediaHistoryRequestV2 } from '../recent-followup-v2.js';
 
 /** Facts are authoritative. Never infer a successful effect by parsing human reply text. */
 export async function normalizeLegacyResult(ctx: ExecutionContextV2, tool: ToolMetadataV2, result: LegacyResult, args: Record<string, unknown>): Promise<ToolResult> {
@@ -53,8 +52,6 @@ export async function normalizeLegacyResult(ctx: ExecutionContextV2, tool: ToolM
     if(co)return {...base,status:'ok',code,data:{total:co.total,goal:co.goal,open:co.status==='open'},presentation:`La cooperacha lleva ${co.total} de ${co.goal} XP.${co.status==='open'?' Sigue abierta.':' Ya terminó.'}`};
   }
   if (tool.name === 'media.status') {
-    const history=mediaHistoryRequestV2(ctx.legacy.msg.text);
-    const wantsPdf=/\bpdf\b/iu.test(ctx.legacy.msg.text);
     const jobs = (await c.query(`SELECT j.status,j.error,j.payload->>'operation' operation,
       CASE WHEN EXISTS(SELECT 1 FROM outbox o WHERE o.kind IN ('media_result','media_text') AND o.payload->>'jobId'=j.id::text AND o.status='uncertain') THEN 'uncertain'
       WHEN EXISTS(SELECT 1 FROM outbox o WHERE o.kind IN ('media_result','media_text') AND o.payload->>'jobId'=j.id::text AND o.status='failed') THEN 'failed'
@@ -62,13 +59,13 @@ export async function normalizeLegacyResult(ctx: ExecutionContextV2, tool: ToolM
         AND NOT EXISTS(SELECT 1 FROM outbox o WHERE o.kind IN ('media_result','media_text') AND o.payload->>'jobId'=j.id::text AND o.status<>'sent') THEN 'sent'
       ELSE 'queued' END delivery
       FROM jobs j WHERE j.kind='media' AND j.chat_id=$1 AND j.owner_id=$2
-        AND ($4::boolean OR j.created_at>$5::timestamptz-$6::int*interval '1 millisecond')
-        AND (NOT $7::boolean OR j.payload->>'operation' IN ('office_pdf','images_pdf','pdf_merge','pdf_compress','pdf_crop'))
-      ORDER BY j.id DESC LIMIT $3`, [ctx.chatId, ctx.actorId, history?product.mediaMaxFiles:1,history,ctx.now,product.artifactWindowMs,wantsPdf])).rows;
+      ORDER BY j.id DESC LIMIT $3`, [ctx.chatId, ctx.actorId, product.mediaMaxFiles])).rows;
     return { ...base, status: 'ok', code, data: { jobs } };
   }
   if (tool.name === 'minecraft.status') return { ...base, status: 'ok', code, data: { observed: true, adapter: 'legacy_status' } };
   if (tool.name === 'web.search') return {...base,status:'ok',code,data:{searchResults:result.reply.split('\n\n').slice(0,product.searchResults).map(block=>{const lines=block.split('\n');return {title:lines[0],snippet:lines.slice(1,-1).join(' '),url:lines.at(-1)};})},requiresLlmSynthesis:true};
+  if (tool.name === 'media.search')return {...base,status:'ok',code,data:result.facts};
+  if (tool.name === 'school.schedule_import')return {...base,status:'ok',code,data:result.facts,requiresLlmSynthesis:true};
   if (tool.name === 'media.process') return {...base,status:result.facts.jobId || result.facts.deliveryRequested?'queued':'ok',code,data:result.facts};
   if (tool.name === 'media.collect' && result.facts.jobId) return {...base,status:'queued',code,data:result.facts};
   if (tool.domain === 'minecraft' && ['start','stop','restart','backup','config-set','console'].includes(tool.name.slice('minecraft.'.length)) && !['minecraft.operations'].includes(tool.name)) {

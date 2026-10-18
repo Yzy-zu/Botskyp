@@ -24,7 +24,7 @@ const providerStatuses:number[]=[];
 try{
   await migrate(db);
   const searchIp=execFileSync('docker',['inspect','botsky-searxng-1','--format','{{(index .NetworkSettings.Networks "botsky_internal").IPAddress}}'],{encoding:'utf8'}).trim();
-  const config=readConfig({...process.env,DATABASE_URL:url,TRANSPORT:'mock',EVOLUTION_URL:'http://mock',OWNER_JIDS:'100@s.whatsapp.net',LAB_CHAT_ID:'300@g.us',SEARXNG_URL:`http://${searchIp}:8080`});
+  const config=readConfig({ROUTER_MODE:'v1',...process.env,DATABASE_URL:url,TRANSPORT:'mock',EVOLUTION_URL:'http://mock',OWNER_JIDS:'100@s.whatsapp.net',LAB_CHAT_ID:'300@g.us',SEARXNG_URL:`http://${searchIp}:8080`});
   assert.equal(config.WEB_SEARCH_PROVIDER,'searxng');
   const actor={id:'100@s.whatsapp.net',role:'owner' as const};
   const chat={id:'300@g.us',isGroup:true,enabled:true,settings:{}};

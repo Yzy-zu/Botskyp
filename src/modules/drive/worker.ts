@@ -63,12 +63,25 @@ export async function processDrive(db:Db,config:Config,job:DriveJob,deps:DriveDe
     const email=client.config.recipients[job.owner_id];
     if(input.operation==='upload'){
       if(!email || !await transaction(db,c=>privateEligible(c,{id:job.owner_id,role:config.OWNER_JIDS.includes(job.owner_id)?'owner':'member'})))throw new Error('drive_recipient_unconfigured');
-      const source=input.source;
-      const accepted=await db.query("SELECT 1 FROM inbox WHERE chat_id=$1 AND payload->>'id'=$2 AND payload->>'senderId'=$3 AND status<>'failed'",[job.chat_id,source.id,source.senderId]);
-      const canonical=(await db.query<{user_id:string}>("SELECT user_id FROM user_aliases WHERE alias=$1 AND evidence NOT LIKE 'conflict:%'",[source.senderId])).rows[0]?.user_id ?? source.senderId;
-      expires=new Date(source.ts.getTime()+product.mediaOriginalDays*86_400_000);
-      if(!accepted.rowCount || source.chatId!==job.chat_id || canonical!==job.owner_id || expires.getTime()<=Date.now())throw new Error('drive_attachment_unavailable');
-      const attachment=await deps.attachment(config,source,AbortSignal.timeout(product.driveApiTimeoutMs));bytes=attachment.bytes;validateBytes(bytes,attachment.mime);
+      let attachment:{bytes:Buffer;mime:string};
+      if(input.artifactId){
+        const retained=(await db.query<{data:Buffer;mime:string;expires_at:Date}>(`SELECT coalesce(m.data,s.data) data,a.mime,a.expires_at FROM chat_artifacts a
+          LEFT JOIN media_attachments m ON m.id=a.media_attachment_id LEFT JOIN school_attachments s ON s.id=a.school_attachment_id
+          WHERE a.id=$1 AND a.chat_id=$2 AND a.actor_id=$3 AND a.expires_at>clock_timestamp()
+            AND ((m.data IS NOT NULL AND m.expires_at>clock_timestamp()) OR (s.data IS NOT NULL AND s.expires_at>clock_timestamp()))`,[input.artifactId,job.chat_id,job.owner_id])).rows[0];
+        if(!retained)throw new Error('drive_attachment_unavailable');
+        expires=retained.expires_at;
+        attachment={bytes:retained.data,mime:retained.mime};
+      }else{
+        const source=input.source;
+        if(!source)throw new Error('drive_attachment_unavailable');
+        const accepted=await db.query("SELECT 1 FROM inbox WHERE chat_id=$1 AND payload->>'id'=$2 AND payload->>'senderId'=$3 AND status<>'failed'",[job.chat_id,source.id,source.senderId]);
+        const canonical=(await db.query<{user_id:string}>("SELECT user_id FROM user_aliases WHERE alias=$1 AND evidence NOT LIKE 'conflict:%'",[source.senderId])).rows[0]?.user_id ?? source.senderId;
+        expires=new Date(source.ts.getTime()+product.mediaOriginalDays*86_400_000);
+        if(!accepted.rowCount || source.chatId!==job.chat_id || canonical!==job.owner_id || expires.getTime()<=Date.now())throw new Error('drive_attachment_unavailable');
+        attachment=await deps.attachment(config,source,AbortSignal.timeout(product.driveApiTimeoutMs));
+      }
+      bytes=attachment.bytes;validateBytes(bytes,attachment.mime);
       const id=await client.generateId();await allowed(db,config,job);
       await db.query("UPDATE drive_operations SET remote_id=$2,sha256=$3,phase='creating',updated_at=clock_timestamp() WHERE job_id=$1",[job.id,id,digest(bytes)]);
       writing=true;

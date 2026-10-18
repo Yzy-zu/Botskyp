@@ -1,0 +1,32 @@
+import { z } from 'zod';
+import { product } from '../../config/product.js';
+import { safeRefSchema } from './model-args.js';
+import { resolveArtifactForOperation } from './artifact-resolution-v2.js';
+import { loadExecutionContext } from './policy-v2/context.js';
+import { moduleEnabled, privateEligible } from './permissions.js';
+import type { ToolCtx } from './tools.js';
+import type { SafeRefs } from './safe-refs.js';
+import type { Image } from './llm.js';
+
+export const loadArtifactContextSchema=z.strictObject({artifactRef:z.union([safeRefSchema('artifactRef'),z.literal('A_REPLY')])});
+export const loadArtifactContextMetaTool={
+  name:'core.load_artifact_context',
+  description:'Ver una imagen retenida seleccionada por su SafeRef EXACTA de ARTIFACT_STATE.CURRENT/RECENT/A_LAST. Solo lectura; carga únicamente esa imagen para esta vuelta. Las imágenes antiguas nunca se adjuntan automáticamente. No transforma ni envía archivos.',
+  modelArgsSchema:loadArtifactContextSchema,
+};
+/** Rebuild authenticated scope, validate the delivered opaque ref and recheck live bytes/TTL. */
+export async function loadArtifactContextV2(ctx:ToolCtx,safeRefMap:SafeRefs,args:unknown):Promise<{status:string;image?:Image;artifactRef?:string}>{
+  const parsed=loadArtifactContextSchema.safeParse(args);
+  if(!parsed.success)return {status:'INVALID_MODEL_ARGUMENTS'};
+  const scope=await loadExecutionContext(ctx,{callOrigin:'llm',safeRefMap});
+  if(!scope.chat.enabled || !moduleEnabled(scope.chat,'vision',ctx.config) || scope.actorId.endsWith('@lid')
+    || (scope.chat.isGroup?scope.role!=='owner' && !scope.actor.groupMember:!await privateEligible(ctx.c,scope.actor)))return {status:'DENIED_SCOPE'};
+  if((await ctx.c.query("SELECT 1 FROM system_flags WHERE (key='emergency' OR (key='maintenance' AND $1::boolean)) AND value='true'::jsonb",[scope.role!=='owner'])).rowCount)return {status:'DENIED_SYSTEM'};
+  const selected=await resolveArtifactForOperation('vision',{c:ctx.c,...scope,...(scope.legacy.msg.quoted?{quotedMessageId:scope.legacy.msg.quoted.id}:{})},parsed.data.artifactRef);
+  if(selected.status!=='ok')return {status:selected.status};
+  const a=selected.artifact;
+  const bytes=(await ctx.c.query<{data:Buffer}>(`SELECT data FROM media_attachments WHERE id=$1 AND chat_id=$3 AND owner_id=$4 AND data IS NOT NULL AND expires_at>clock_timestamp()
+    UNION ALL SELECT data FROM school_attachments WHERE id=$2 AND chat_id=$3 AND owner_id=$4 AND data IS NOT NULL AND expires_at>clock_timestamp()`,[a.media_attachment_id,a.school_attachment_id,scope.chatId,a.actor_id])).rows[0]?.data;
+  if(!bytes || bytes.length>product.visionMaxBytes)return {status:'SOURCE_UNAVAILABLE'};
+  return {status:'ok',artifactRef:parsed.data.artifactRef,image:{mimeType:a.mime,data:bytes.toString('base64')}};
+}

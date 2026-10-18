@@ -1,3 +1,4 @@
+import { schoolDestination } from '../../modules/school/automation.js';
 import { resolveArtifactForOperation, type ArtifactOperation } from '../artifact-resolution-v2.js';
 import { product } from '../../../config/product.js';
 import { destinationAllowed } from '../../modules/messaging/access.js';
@@ -22,6 +23,7 @@ export async function liveResource(ctx: ExecutionContextV2, kind: RefKind, id: s
     case 'opRef': return (await c.query<Resource>(`SELECT actor_id owner_id,status FROM bulk_ops WHERE chat_id=$1 AND id::text=$2 AND actor_id=$3
       UNION ALL SELECT owner_id,status FROM jobs WHERE chat_id=$1 AND id::text=$2 AND owner_id=$3 AND kind='drive'`, [chat, id, actor])).rows[0];
     case 'destinationRef': {
+      if(id.startsWith('school:'))return await schoolDestination(c,ctx.legacy.config,id.slice(7),actor)?{owner_id:actor,state:id}:undefined;
       const d = (await c.query<{ target_id: string }>('SELECT target_id FROM messaging_destinations WHERE id::text=$1', [id])).rows[0];
       return d && await destinationAllowed(c, ctx.legacy.config, d.target_id) ? { owner_id: actor, state: d.target_id } : undefined;
     }
@@ -35,7 +37,7 @@ export type ResolvedReferences = {
   args: Record<string, unknown>; refs: PolicyDecision['resolvedSafeRefs']; ownership: PolicyDecision['ownership'];
   failure?: 'not_found' | 'needs_clarification';
 };
-export async function resolveReferences(ctx: ExecutionContextV2, args: Record<string, unknown>, artifactOperation?: string): Promise<ResolvedReferences> {
+export async function resolveReferences(ctx: ExecutionContextV2, args: Record<string, unknown>, artifactOperation?: string, allowNewSubjects=false): Promise<ResolvedReferences> {
   const refs: { ref: string; kind: RefKind; id: string }[] = [], ownership: { kind: RefKind; id: string; ownerId: string | null; own: boolean }[] = [];
   let failure: ResolvedReferences['failure'];
   async function walk(value: unknown, field: string): Promise<unknown> {
@@ -47,6 +49,7 @@ export async function resolveReferences(ctx: ExecutionContextV2, args: Record<st
     }
     if (value !== null && typeof value === 'object') return Object.fromEntries(await Promise.all(Object.entries(value).map(async ([k, v]) => [k, await walk(v, k)])));
     if (typeof value !== 'string') return value;
+    if(allowNewSubjects && field==='subject' && !value.startsWith('subjectRef_'))return value;
     const kind = (field==='collectionArtifactRef'?'artifactRef':refKinds.find(k => field === k))
       ?? (field === 'target' && value.startsWith('memoryRef_') ? 'memoryRef' : undefined)
       ?? (field === 'subject' && value.startsWith('subjectRef_') ? 'subjectRef' : undefined);

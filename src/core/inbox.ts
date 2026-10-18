@@ -1,3 +1,4 @@
+import { prepareArtifactsV2 } from './prepare-artifacts-v2.js';
 import { readSessionV2, decideSessionV2 } from './sessions-v2.js';
 import { recentReminderV2 } from './recent-followup-v2.js';
 import { sanitizeOutputV2 } from './output-sanitizer-v2.js';
@@ -24,7 +25,7 @@ export async function receive(db: Db, config: Config, input: Msg, now = new Date
   if (msg.fromMe || now.getTime() - msg.ts.getTime() > config.STALE_SECONDS * 1000 || msg.ts.getTime() - now.getTime() > product.futureToleranceSeconds * 1000) return 'ignored';
   if(msg.isGroup){
     const enabled=await db.query('SELECT 1 FROM chats WHERE id=$1 AND is_group AND enabled',[msg.chatId]);
-    if(!enabled.rowCount && !(enableCommand(msg.text) && (await transaction(db,c=>actorFor(c,msg,config))).role==='owner'))return 'ignored';
+    if(!enabled.rowCount && (configForChat(config,msg.chatId).ROUTER_MODE==='v1_1' || !(enableCommand(msg.text) && (await transaction(db,c=>actorFor(c,msg,config))).role==='owner')))return 'ignored';
   }
   const key = createHash('sha256').update(JSON.stringify([config.INSTANCE,msg.chatId,msg.id])).digest('hex');
   return transaction(db, async c => {
@@ -55,16 +56,16 @@ export async function processNext(db: Db, baseConfig: Config):Promise<boolean> {
     const flags=await c.query<{key:string;value:unknown}>('SELECT key,value FROM system_flags');
     const emergency=flags.rows.some(f=>f.key==='emergency' && f.value===true);
     const maintenance=flags.rows.some(f=>f.key==='maintenance' && f.value===true);
-    const reactivating=owner && /^reactiva$/iu.test(commandText(msg.text));
+    const reactivating=owner && (config.ROUTER_MODE==='v1_1' || /^reactiva$/iu.test(commandText(msg.text)));
     let reply:string|undefined;
     if(!emergency || reactivating){
-      if(msg.isGroup && enableCommand(msg.text) && owner){
+      if(config.ROUTER_MODE!=='v1_1' && msg.isGroup && enableCommand(msg.text) && owner){
         await chatLock(c,msg.chatId);
         await c.query('INSERT INTO chats(id,is_group,enabled,settings) VALUES($1,true,true,$2) ON CONFLICT(id) DO UPDATE SET enabled=true',[msg.chatId,JSON.stringify(msg.chatId===config.LAB_CHAT_ID?{}:{modules:Object.fromEntries(modules.map(m=>[m,false]))})]);
         await c.query("INSERT INTO audit_log(actor_id,chat_id,action) VALUES($1,$2,'chat.enable')",[actor.id,msg.chatId]);
         reply='Botsky habilitado en este chat. Activa cada módulo explícitamente con «bot activa <módulo> aquí».';
 
-      }else if(msg.isGroup && owner && /^deshabilita este chat$/iu.test(commandText(msg.text))){
+      }else if(config.ROUTER_MODE!=='v1_1' && msg.isGroup && owner && /^deshabilita este chat$/iu.test(commandText(msg.text))){
         await chatLock(c,msg.chatId);
         await c.query('UPDATE chats SET enabled=false WHERE id=$1',[msg.chatId]);
         await c.query("UPDATE outbox SET status='failed',last_error='chat_disabled' WHERE chat_id=$1 AND status='queued'",[msg.chatId]);
@@ -82,7 +83,7 @@ export async function processNext(db: Db, baseConfig: Config):Promise<boolean> {
           allowed=eligible && (saved?.enabled ?? true);
         }
         const session=await activeSession(c,actor.id,msg.chatId);
-        const text=commandText(msg.text);
+        const text=config.ROUTER_MODE==='v1_1'?'':commandText(msg.text);
         const v2Session=config.ROUTER_MODE==='v1_1'?await readSessionV2(c,actor.id,msg.chatId):undefined;
         const v2Decision=decideSessionV2(v2Session,msg.text,new Date(),msg.attachments.length>0);
         // An actor's live foreground/game interaction or recent reminder follow-up keeps activation while Gemini decides the intent.
@@ -91,6 +92,7 @@ export async function processNext(db: Db, baseConfig: Config):Promise<boolean> {
         if(allowed && msg.isGroup){if(config.ROUTER_MODE==='v1_1')await c.query("SELECT pg_advisory_xact_lock(hashtext('botsky-v2-execution-admission'))");await chatLock(c,msg.chatId);await lockChatWallets(c,msg.chatId,actor.id);}
         const xpCtx={turnId:row.turn_id,actor,chat:{id:msg.chatId,isGroup:msg.isGroup,enabled:allowed,settings:saved?.settings ?? {}},msg,db,c,config,now:new Date(),search:async()=>''};
         if(allowed && !maintenance)await activity(xpCtx);
+        if(config.ROUTER_MODE==='v1_1' && allowed && msg.attachments.length && (!msg.isGroup || owner || actor.groupMember))await prepareArtifactsV2(xpCtx);
         if(allowed && activated(msg,config.BOT_JIDS,Boolean(accepts))){
           if(msg.isGroup && !owner && !actor.groupMember)reply='No.';
           else if(maintenance && !owner)reply='Estoy en mantenimiento.';
@@ -98,7 +100,7 @@ export async function processNext(db: Db, baseConfig: Config):Promise<boolean> {
             const gemini=new Gemini(db,config,actor.id);
             const ctx={...(config.ROUTER_MODE==='v1_1'?{inboxTransaction:true as const}:{}),turnId:row.turn_id,actor,chat:{id:msg.chatId,isGroup:msg.isGroup,enabled:true,settings:saved?.settings ?? {}},msg,db,c,config,now:new Date(),search:(query:string)=>config.WEB_SEARCH_PROVIDER==='gemini'?gemini.search(query,config.ROUTER_MODE==='v1_1'?row.turn_id:undefined):searxSearch(config,query)};
             reply=await route(ctx,config.GEMINI_API_KEY && config.GEMINI_FREE_TIER_CONFIRMED?gemini:undefined);
-            if(commandText(msg.text).toLowerCase()==='apagado de emergencia' && owner)reply=undefined;
+            if(config.ROUTER_MODE!=='v1_1' && commandText(msg.text).toLowerCase()==='apagado de emergencia' && owner)reply=undefined;
             if(reply)await rememberContext(ctx,reply);
           }
         }

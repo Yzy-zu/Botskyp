@@ -1,9 +1,11 @@
+import { runSchoolImportV2 } from '../school-import-v2.js';
+import { enqueueDrive } from '../../modules/drive/service.js';
 import { confirmationPromptV2 } from '../confirmation-presenter-v2.js';
 import { openTimeClarificationV2 } from '../clarification-v2.js';
 import { runMediaBridgeV2 } from '../media-bridge-v2.js';
 import { beginCollectionV2 } from '../media-collection-v2.js';
 import { hasNonEmptyTurnTextV2 } from '../session-input-v2.js';
-import { readSessionV2 } from '../sessions-v2.js';
+import { readSessionV2, openClarificationV2 } from '../sessions-v2.js';
 import { mergeClarificationArgsV2 } from '../reminder-slots-v2.js';
 import { randomUUID } from 'node:crypto';
 import pino from 'pino';
@@ -138,7 +140,10 @@ export async function executeToolV2(ctx: ToolCtx, name: string, modelArgs: unkno
     if (decision.status !== 'allow' && decision.status !== 'needs_confirmation') {
       if (pending) await c.query('UPDATE tool_confirmations_v2 SET invalidated=true WHERE id=$1', [pending.id]);
       if(decision.status==='needs_clarification')await openTimeClarificationV2(context,name,effectiveArgs,decision.denialCode ?? '');
-      const data:Record<string,unknown>={};
+      const data:Record<string,unknown>={...(decision.missingSlots?{missingSlots:decision.missingSlots}:{})};
+      if(decision.status==='needs_clarification' && decision.missingSlots?.length && !['AMBIGUOUS_HOUR','MISSING_DATE'].includes(decision.denialCode ?? '')){
+        await openClarificationV2(c,ctx.config.ROUTER_MODE,{actorId:context.actorId,chatId:context.chatId,pendingTool:name,partialArgs:effectiveArgs && typeof effectiveArgs==='object'?effectiveArgs as Record<string,unknown>:{},missingSlots:decision.missingSlots.map(slot=>({kind:'required',field:slot.field})),prompt:`Falta: ${decision.missingSlots.map(s=>s.field).join(', ')}`,code:decision.denialCode ?? 'MISSING_ARGUMENTS',now:ctx.now});
+      }
       if(decision.denialCode==='DENIED_INSUFFICIENT_XP'){
         const balance=(await c.query<{balance:number}>('SELECT balance FROM wallets WHERE user_id=$1',[context.actorId])).rows[0]?.balance ?? 0;
         const cost=Number(decision.resolvedArgs.bet ?? decision.resolvedArgs.amount ?? 0);
@@ -155,7 +160,15 @@ export async function executeToolV2(ctx: ToolCtx, name: string, modelArgs: unkno
     let normalized: ToolResult;
     try {
       let outcome;
-      if(name==='media.process')outcome=await runMediaBridgeV2(context,decision);
+      if(name==='school.schedule_import')outcome=await runSchoolImportV2(context,decision);
+      else if(name==='school.schedule_propose'){
+        const preview=await entry.legacy.run(context.legacy,decision.resolvedArgs);
+        outcome=preview.ok?await legacyRegistry.all().find(t=>t.name==='school.schedule_commit')!.run(context.legacy,preview.facts):preview;
+      }else if(name==='drive.upload'){
+        const artifact=decision.resolvedSafeRefs.find(r=>r.kind==='artifactRef');
+        if(!artifact)outcome={ok:false as const,message:'Selecciona un archivo propio vigente.',kind:'user' as const};
+        else outcome=await enqueueDrive(context.legacy,'upload',undefined,artifact.id);
+      }else if(name==='media.process')outcome=await runMediaBridgeV2(context,decision);
       else if(name==='media.collect')outcome=await beginCollectionV2(context,decision);
       else if (['bulk.nuclear','bulk.broadcast','messaging.send'].includes(name)) {
         const kind = name === 'bulk.nuclear' ? 'nuclear' : name === 'bulk.broadcast' ? 'broadcast' : 'message';

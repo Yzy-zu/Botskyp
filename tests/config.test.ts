@@ -9,8 +9,8 @@ it('never embeds secret values in validation errors',()=>{
   try{readConfig({...valid,WEBHOOK_SECRET:'private-secret',DATABASE_URL:'private-url'});throw new Error('Expected validation failure');}
   catch(err){expect(String(err)).not.toContain('private-secret');expect(String(err)).not.toContain('private-url');expect(String(err)).toContain('WEBHOOK_SECRET');}
 });
-it('defaults to v1 and validates the three inert router modes',()=>{
-  expect(readConfig(valid).ROUTER_MODE).toBe('v1');
+it('defaults to global v1.1 and supports explicit rollback modes',()=>{
+  expect(readConfig(valid).ROUTER_MODE).toBe('v1_1');
   for(const mode of ['v1','v1_1_shadow','v1_1'])expect(readConfig({...valid,ROUTER_MODE:mode}).ROUTER_MODE).toBe(mode);
   expect(()=>readConfig({...valid,ROUTER_MODE:'v2'})).toThrow('ROUTER_MODE');
 });

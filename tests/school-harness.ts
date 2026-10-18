@@ -11,7 +11,7 @@ import type { Msg } from '../src/wa/types.js';
 const {url}=JSON.parse(readFileSync('.local/test-db.json','utf8')) as {url:string};
 if(!new URL(url).pathname.startsWith('/botsky_test_'))throw new Error('Unsafe database');
 export const db=createDb(url);
-export const config=readConfig({GEMINI_API_KEY:'fixture-gemini-key',DATABASE_URL:url,EVOLUTION_URL:'http://mock',EVOLUTION_APIKEY:'test',INSTANCE:'test',WEBHOOK_SECRET:'x'.repeat(32),OWNER_JIDS:'100@s.whatsapp.net',BOT_JIDS:'200@s.whatsapp.net',LAB_CHAT_ID:'300@g.us',TRANSPORT:'mock'});
+export const config=readConfig({ROUTER_MODE:'v1',GEMINI_API_KEY:'fixture-gemini-key',DATABASE_URL:url,EVOLUTION_URL:'http://mock',EVOLUTION_APIKEY:'test',INSTANCE:'test',WEBHOOK_SECRET:'x'.repeat(32),OWNER_JIDS:'100@s.whatsapp.net',BOT_JIDS:'200@s.whatsapp.net',LAB_CHAT_ID:'300@g.us',TRANSPORT:'mock'});
 export const owner='100@s.whatsapp.net',admin='500@s.whatsapp.net',member='600@s.whatsapp.net';
 export const message=(text:string,senderId=owner,chatId=config.LAB_CHAT_ID):Msg=>({id:randomUUID(),chatId,senderId,isGroup:chatId.endsWith('@g.us'),ts:new Date(),text,fromMe:false,mentions:[],attachments:[]});
 export async function initialize():Promise<void>{await migrate(db);}

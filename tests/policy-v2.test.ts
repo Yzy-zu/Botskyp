@@ -478,10 +478,10 @@ it('prevents nested identity injection and validates reminder recurrence before 
   expect(mismatch.denialCode).toBe('INVALID_RECURRENCE');
   expect(await count('sessions')).toBe(0); expect(await count('reminders')).toBe(0);
 });
-it('offers 91 explicit adapters including scoped media collection and keeps seven bridges closed', () => {
+it('offers all 96 public adapters and keeps only two internal mechanisms closed', () => {
   const blocked = catalog.filter(t => !adapterAvailable(t.name)).map(t => t.name).sort();
-  expect(blocked).toEqual(['bulk.confirm','drive.upload','media.search','school.destination','school.schedule_commit','school.schedule_import','school.schedule_propose'].sort());
-  expect(catalog.filter(t => adapterAvailable(t.name))).toHaveLength(91);
+  expect(blocked).toEqual(['bulk.confirm','school.schedule_commit'].sort());
+  expect(catalog.filter(t => adapterAvailable(t.name))).toHaveLength(96);
 });
 it('adapts safe legacy contracts without rewriting their domain implementation', async () => {
   expect((await execute(await context(), 'control.modules', { module: 'notes', enabled: false })).status).toBe('ok');

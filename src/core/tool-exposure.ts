@@ -4,13 +4,15 @@ import type { Actor } from './permissions.js';
 import { capabilityDomains, capabilityDomainSchema, type CapabilityDomain } from './capability-domain.js';
 import { alwaysOnBusinessTools, modelDeclaration, type ToolMetadataV2 } from './tool-registry-v2.js';
 import type { Declaration } from './llm.js';
+import { loadArtifactContextMetaTool, loadArtifactContextSchema } from './artifact-context-v2.js';
 import { adapterAvailable } from './policy-v2/arguments.js';
 
 export const MAX_TOOLS_PER_TURN = product.maxToolsPerTurn;
 export const MAX_CAPABILITY_EXPANSIONS_PER_TURN = product.maxCapabilityExpansionsPerTurn;
 export type ArtifactContext = { kind: string; mime?: string };
 export interface ToolExposureInput {
-  text: string;
+  /** Compatibility input only; never read for exposure. */
+  text?: string;
   quotedText?: string;
   actorRole: Actor['role'];
   chatType: 'group' | 'private';
@@ -18,7 +20,6 @@ export interface ToolExposureInput {
   currentAttachment?: ArtifactContext;
   currentArtifact?: ArtifactContext;
   activeSession?: { domain: CapabilityDomain; kind?: 'confirm' | 'clarify' | 'media_collect'; pendingTool?: string };
-  hasRecentReminder?: boolean;
   openPoll?: boolean;
   activeGame?: boolean;
   openCooperacha?: boolean;
@@ -32,43 +33,15 @@ export interface ToolExposure {
   readonly relevantDomains: readonly CapabilityDomain[];
   readonly availableDomains: readonly CapabilityDomain[];
   readonly capabilityDirectory: Readonly<Partial<Record<CapabilityDomain, string>>>;
-  readonly semanticHints: readonly ('memory' | 'shared_notes')[];
   readonly approximateSchemaBytes: number;
-}
-const signals: Readonly<Partial<Record<CapabilityDomain, RegExp>>> = {
-  productivity: /\b(?:memoria|recuerda|recuerdas|recuerdos?|acuerdate|memoriza|nota|notas|anota|recordatorios?|recuerdame)\b/gu,
-  web: /\b(?:web|internet|google|noticias)\b/gu,
-  economy: /\b(?:xp|daily|diario|saldo|nivel|puntos|premio|recompensa|giro gratis|hora feliz)\b/gu,
-  polls: /\b(?:voto|vota|votar|encuesta|encuestas|sondeo)\b/gu,
-  school: /\b(?:tarea|tareas|horario|materia|materias|escuela|clase|clases)\b/gu,
-  games: /\b(?:blackjack|ruleta|juego|juegos|partida|plantarse|doblar|airdrop)\b/gu,
-  media: /\b(?:pdfs?|docx|archivos?|trabajos|fotos|imagenes|convierte|convertir|comprimelo|comprimir|stickers?|audios?|videos?|musica|ocr|transcribe|qr)\b/gu,
-  library: /\b(?:biblioteca|pack|packs|cooperacha|lluvia)\b/gu,
-  moderation: /\b(?:warn|warns|moderacion|castigo)\b/gu,
-  minecraft: /\b(?:minecraft|maicra|maincra|mine|mc|bedrock|server|servidor)\b/gu,
-  drive: /\b(?:drive)\b/gu,
-  admin: /\b(?:modulos|mantenimiento|cuota|diagnostico|emergencia)\b/gu,
-  messaging: /\b(?:nuclear|difusion|destinatarios|correo|mensajes)\b/gu,
-};
-function normalize(text: string): string { return text.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('es-MX'); }
-function lexicalDomains(text: string, quoted: string, disabled = false): CapabilityDomain[] {
-  if (disabled) return [];
-  return capabilityDomains.map((domain, order) => {
-    const pattern = signals[domain];
-    return { domain, order, score: pattern ? [...text.matchAll(pattern)].length * 2 + [...quoted.matchAll(pattern)].length : 0 };
-  }).filter(item => item.score > 0).sort((a, b) => b.score - a.score || a.order - b.order).map(item => item.domain);
 }
 function relevantDomains(input: ToolExposureInput): CapabilityDomain[] {
   const domains: CapabilityDomain[] = ['core'];
   if (input.activeSession) domains.push(input.activeSession.domain);
-  if (input.hasRecentReminder) domains.push('productivity');
-  if (input.currentAttachment || input.currentArtifact || input.recentArtifactContext?.length) domains.push('media');
+  if (input.currentAttachment || input.currentArtifact) domains.push('media');
   if (input.activeGame) domains.push('games');
   if (input.openPoll) domains.push('polls');
   if (input.openCooperacha) domains.push('library');
-  const lexical = lexicalDomains(normalize(input.text), normalize(input.quotedText ?? ''), input.disableLexicalOptimization);
-  domains.push(...lexical.filter(domain => domain !== 'admin'));
-  if (lexical.includes('admin')) domains.push('admin');
   return [...new Set(domains)];
 }
 function eligible(tool: ToolMetadataV2, input: ToolExposureInput): boolean {
@@ -85,10 +58,14 @@ function domainTools(catalog: readonly ToolMetadataV2[], domain: CapabilityDomai
   return catalog.filter(tool => tool.domain === domain && eligible(tool, input))
     .sort((a, b) => rank(a.name) - rank(b.name));
 }
-export const loadCapabilityArgsSchema = z.strictObject({ domain: capabilityDomainSchema });
+export const loadCapabilityArgsSchema = z.strictObject({
+  domain: capabilityDomainSchema,
+  toolName: z.string().regex(/^[a-z]+\.[a-z][a-z_-]*$/u).optional()
+    .describe('Nombre exacto del Manifest, si ya identificaste la función necesaria; se prioriza su schema dentro del presupuesto.'),
+});
 export const loadCapabilityMetaTool = Object.freeze({
   name: 'core.load_capability', domain: 'core', llmVisible: true, exposure: 'always',
-  descriptionForModel: 'Cargar funciones de un dominio cuando la solicitud del usuario pertenece a un dominio disponible en el chat cuyas funciones aún no están expuestas. Usa literalmente un valor de domain del schema. Una expansión máxima; sin ejecutar acciones. Visibilidad nunca concede permiso.',
+  descriptionForModel: 'Cargar funciones de un dominio disponible cuyas funciones aún no están expuestas. Usa literalmente domain del schema. Incluye toolName con el nombre EXACTO del Manifest de la función que necesitas para priorizarla dentro del presupuesto. Una expansión máxima; sin ejecutar acciones. Visibilidad nunca concede permiso.',
   modelArgsSchema: loadCapabilityArgsSchema,
 });
 const emptySessionArgsSchema = z.strictObject({});
@@ -105,8 +82,10 @@ export const sessionCancelMetaTool = Object.freeze({
 function metaDeclarations(input: ToolExposureInput): { names: string[]; declarations: Declaration[] } {
   const loadSchema = z.toJSONSchema(loadCapabilityArgsSchema); delete loadSchema.$schema;
   const emptySchema = z.toJSONSchema(emptySessionArgsSchema); delete emptySchema.$schema;
-  const names: string[] = [loadCapabilityMetaTool.name];
+  const names: string[] = [loadCapabilityMetaTool.name,loadArtifactContextMetaTool.name];
   const declarations: Declaration[] = [{ name: 'core_load_capability', description: loadCapabilityMetaTool.descriptionForModel, parametersJsonSchema: loadSchema }];
+  const artifactSchema=z.toJSONSchema(loadArtifactContextSchema); delete artifactSchema.$schema;
+  declarations.push({name:'core_load_artifact_context',description:loadArtifactContextMetaTool.description,parametersJsonSchema:artifactSchema});
   if (input.activeSession?.kind === 'confirm') {
     names.push(sessionConfirmMetaTool.name);
     declarations.push({ name: 'core_session_confirm', description: sessionConfirmMetaTool.descriptionForModel, parametersJsonSchema: emptySchema });
@@ -120,10 +99,6 @@ function metaDeclarations(input: ToolExposureInput): { names: string[]; declarat
 function snapshot(catalog: readonly ToolMetadataV2[], tools: readonly ToolMetadataV2[], relevant: readonly CapabilityDomain[], input: ToolExposureInput): ToolExposure {
   const meta = metaDeclarations(input);
   const schemas = [...tools.map(modelDeclaration), ...meta.declarations];
-  const text = normalize(input.text);
-  const semanticHints: ('memory' | 'shared_notes')[] = [];
-  if (/\b(?:memoria|acuerdate|recuerda que|memoriza)\b/u.test(text)) semanticHints.push('memory');
-  else if (/\b(?:anota en el grupo|crea una nota|guarda una nota)\b/u.test(text)) semanticHints.push('shared_notes');
   const availableDomains = capabilityDomains.filter(domain => domainTools(catalog, domain, input).length > 0);
   const capabilityDirectory = Object.fromEntries(availableDomains.map(domain => [domain,
     `${domain[0]!.toUpperCase()}${domain.slice(1)}: ${domainTools(catalog,domain,input).map(tool=>tool.capability?.summary ?? tool.descriptionForModel).join(' ')}`,
@@ -134,7 +109,6 @@ function snapshot(catalog: readonly ToolMetadataV2[], tools: readonly ToolMetada
     relevantDomains: Object.freeze([...relevant]),
     availableDomains: Object.freeze(availableDomains),
     capabilityDirectory: Object.freeze(capabilityDirectory),
-    semanticHints: Object.freeze(semanticHints),
     approximateSchemaBytes: Buffer.byteLength(JSON.stringify(schemas), 'utf8'),
   });
 }
@@ -153,10 +127,6 @@ export function selectToolExposure(catalog: readonly ToolMetadataV2[], input: To
     const collectTool = catalog.find(tool => tool.name === 'media.collect' && eligible(tool, input));
     if (collectTool && !tools.includes(collectTool) && tools.length < maxBusiness) tools.push(collectTool);
   }
-  if (input.hasRecentReminder) {
-    const cancelTool = catalog.find(tool => tool.name === 'reminders.cancel' && eligible(tool, input));
-    if (cancelTool && !tools.includes(cancelTool) && tools.length < maxBusiness) tools.push(cancelTool);
-  }
   const relevant = relevantDomains(input);
   // Preserve one representative per relevant non-admin domain before filling a large catalog.
   // This prevents a school session from displacing an attached document's media capability.
@@ -164,9 +134,7 @@ export function selectToolExposure(catalog: readonly ToolMetadataV2[], input: To
     const representative = domainTools(catalog, domain, input).find(tool => !tools.includes(tool));
     if (representative && tools.length < maxBusiness) tools.push(representative);
   }
-  // An explicit new request must not lose its tools to an old poll or recent file.
-  const fillOrder=[...new Set([...lexicalDomains(normalize(input.text),'',input.disableLexicalOptimization).filter(domain=>domain!=='admin'),...relevant])];
-  for (const domain of fillOrder) {
+  for (const domain of relevant) {
     // Core contributes only the definitive always-on set. Admin is last, including role fallback.
     if (domain === 'core') continue;
     for (const tool of domainTools(catalog, domain, input)) {
@@ -204,6 +172,11 @@ export class ToolExposureTurn {
     if (this.expansions >= MAX_CAPABILITY_EXPANSIONS_PER_TURN) return { status: 'expansion_limit', exposure: this.current };
     const domain = parsed.data.domain;
     const available = domainTools(this.catalog, domain, this.input);
+    if(parsed.data.toolName){
+      const index=available.findIndex(tool=>tool.name===parsed.data.toolName);
+      if(index<0)return {status:'not_relevant_or_allowed',exposure:this.current};
+      available.unshift(...available.splice(index,1));
+    }
     // Enabled modules and chat scope make a capability relevant to this chat; admin also needs owner.
     // Do not require a lexical hit: the meta-tool must recover domains missed by lexical selection.
     if (!available.length) return { status: 'not_relevant_or_allowed', exposure: this.current };

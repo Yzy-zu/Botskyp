@@ -1,3 +1,6 @@
+import * as mediaSources from '../src/modules/media/sources.js';
+import { createToolRegistryV2 } from '../src/core/tool-registry-v2.js';
+import { createRegistry } from '../src/core/registry.js';
 import { DateTime } from 'luxon';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
@@ -25,8 +28,36 @@ import type { Msg,Transport } from '../src/wa/types.js';
 const clean=(text:string)=>expect(text).not.toMatch(/@s\.whatsapp\.net|@g\.us|[a-f0-9]{8}-[a-f0-9-]{27}|\b(?:queued|processing|uncertain)\b|Trabajo #|\{"|\b(?:notes|games|memory|minecraft|media|web)\.[a-z_]+/iu);
 const reply=(calls:{name:string;args?:unknown;id?:string}[]):LlmReply=>({text:'',calls,content:{role:'model',extra:'keep',parts:[{thought:true,text:'hidden',thoughtSignature:'opaque-before'},...calls.map(functionCall=>({functionCall,thoughtSignature:'opaque-call',custom:{keep:true}}))]}});
 const say=(text:string,structured=true):LlmReply=>{const out=structured?JSON.stringify({outcome:'conversation',text,effects:[]}):text;return {text:out,calls:[],content:{role:'model',parts:[{text:out}]}};};
-function scripted(...outputs:(LlmReply|((input:LlmInput)=>LlmReply))[]){return {generate:vi.fn<Llm['generate']>(async input=>{const next=outputs.shift();if(!next)throw new Error('Unexpected provider call');return typeof next==='function'?next(input):next;})};}
-const envelope=(input:LlmInput)=>JSON.parse((input.contents[0] as {parts:{text:string}[]}).parts[0]!.text) as {REFERENCE_DATA:{nowLocal:string;poll?:{pollRef:string};notes:{ref:string}[];reminders:{ref:string}[];activeSession?:Record<string,unknown>}};
+function scripted(...outputs:(LlmReply|((input:LlmInput)=>LlmReply))[]){
+  const catalog=createToolRegistryV2(createRegistry());
+  let expanded=false;
+  return {generate:vi.fn<Llm['generate']>(async input=>{
+    const next=outputs.shift();if(!next)throw new Error('Unexpected provider call');
+    const output=typeof next==='function'?next(input):next;
+    const body=output.content as {parts?:{functionCall?:{name:string;args?:Record<string,unknown>}}[]};
+    for(const part of body.parts ?? []){
+      const call=part.functionCall;
+      if(call?.name==='media_process' && call.args && !call.args.artifactRef && !call.args.artifactRefs && !['qr_create','speak','download'].includes(String(call.args.operation))){
+        const state=JSON.parse((input.contents[0] as {parts:{text:string}[]}).parts[0]!.text).ARTIFACT_STATE as {CURRENT:{ref:string}[];REPLIED?:{ref:string};A_LAST?:{ref:string}};
+        const selected=state.CURRENT[0] ?? state.REPLIED ?? state.A_LAST;
+        if(selected)call.args.artifactRef=selected.ref;
+      }
+    }
+    const content=output.content as {parts?:{functionCall?:{name:string}}[]};
+    const call=content.parts?.find(p=>p.functionCall)?.functionCall;
+    const tool=call?catalog.find(t=>t.name.replaceAll('.','_').replaceAll('-','_')===call.name):undefined;
+    if(tool && !input.tools.some(t=>t.name===call?.name) && !expanded){
+      outputs.unshift(output);expanded=true;
+      return {text:'',calls:[],content:{role:'model',parts:[{functionCall:{name:'core_load_capability',args:{domain:tool.domain,toolName:tool.name}}}]}};
+    }
+    return output;
+  })};
+}
+const envelope=(input:LlmInput)=>{
+  const root=JSON.parse((input.contents[0] as {parts:{text:string}[]}).parts[0]!.text) as Record<string,unknown>;
+  for(const content of input.contents.slice(1) as {parts?:{functionResponse?:{response?:{context?:Record<string,unknown>}}}[]}[])for(const part of content.parts ?? [])Object.assign(root,part.functionResponse?.response?.context ?? {});
+  return root as {REFERENCE_DATA:{nowLocal:string;poll?:{pollRef:string};notes:{ref:string}[];reminders:{ref:string}[];activeSession?:Record<string,unknown>}};
+};
 async function turn(text:string,llm:Llm,setup?:(ctx:ToolCtx)=>Promise<void>,input:Partial<Msg>={}){
   return context({text,...input},async ctx=>{await setup?.(ctx);const result=await route(ctx,llm);if(result)clean(result);return {text:result,turnId:ctx.turnId};});
 }
@@ -44,15 +75,18 @@ afterAll(async()=>{await rm(root,{recursive:true,force:true});await db.end();});
 it.each(naturalR5)('natural provider selection: $text → $tool',async fixture=>{
   if('poll' in fixture)await db.query(`WITH p AS (INSERT INTO polls(chat_id,author_id,source_id,question,status,closes_at) VALUES($1,$2,$3,'¿Qué comemos?','open',now()+interval '1 day') RETURNING id)
     INSERT INTO poll_options(poll_id,idx,label) SELECT id,1,'Tacos' FROM p UNION ALL SELECT id,2,'Pizza' FROM p`,[chat,owner,randomUUID()]);
-  const llm=scripted(input=>{
+  let loaded=false;
+  const provide=(input:LlmInput):LlmReply=>{
     const name=fixture.tool.replaceAll('.','_');
+    if(!input.tools.some(t=>t.name===name) && !loaded){loaded=true;return reply([{name:'core_load_capability',args:{domain:createToolRegistryV2(createRegistry()).find(t=>t.name===fixture.tool)!.domain}}]);}
     expect(input.tools.map(t=>t.name)).toContain(name);
     const args={...fixture.args,...(fixture.tool==='school.schedule'?{weekday:DateTime.fromISO(envelope(input).REFERENCE_DATA.nowLocal).plus({days:1}).weekday}:{}),...('poll' in fixture?{pollRef:envelope(input).REFERENCE_DATA.poll!.pollRef}:{})};
     return reply([{id:'Provider-ID/Exact==',name,args}]);
-  });
+  };
+  const llm=scripted(provide,provide);
   const output=await turn(fixture.text,llm,undefined,'private' in fixture?{chatId:owner,isGroup:false}:{});
   expect(output.text?.toLowerCase()).toContain(fixture.expected.toLowerCase());
-  expect(llm.generate).toHaveBeenCalledOnce();
+  expect(llm.generate).toHaveBeenCalledTimes(loaded?2:1);
   const receipt=(await db.query('SELECT tool_name,status,provider_call_id FROM tool_executions WHERE turn_id=$1',[output.turnId])).rows;
   expect(receipt).toEqual([{tool_name:fixture.tool,status:'ok',provider_call_id:'Provider-ID/Exact=='}]);
   if('table' in fixture)expect(await count(fixture.table)).toBe(1);
@@ -81,10 +115,10 @@ it.each(['hola','cuánto es 2+2','explícame la gravedad','qué opinas de esto']
   expect((await turn(text,llm)).text).toBe('Aquí tienes una respuesta útil.');
   expect(await count('tool_executions')).toBe(0);expect(llm.generate).toHaveBeenCalledOnce();
 });
-it('exact fast path uses Policy and execution without Gemini; partial input goes natural',async()=>{
-  const llm=scripted(reply([{name:'xp_balance',args:{}}]));
-  expect((await turn('bot xp',llm)).text).toContain('1000 XP');expect(llm.generate).not.toHaveBeenCalled();
-  expect((await turn('bot xp porfa',llm)).text).toContain('1000 XP');expect(llm.generate).toHaveBeenCalledOnce();
+it('formerly exact and partial human input both go through Gemini and Policy',async()=>{
+  const llm=scripted(reply([{name:'xp_balance',args:{}}]),reply([{name:'xp_balance',args:{}}]));
+  expect((await turn('bot xp',llm)).text).toContain('1000 XP');expect(llm.generate).toHaveBeenCalledOnce();
+  expect((await turn('bot xp porfa',llm)).text).toContain('1000 XP');expect(llm.generate).toHaveBeenCalledTimes(2);
 });
 it.each([{actorId:owner},{chatId:chat},{role:'owner'},{nested:{actorId:owner}}])('strict model args cannot inject backend context: %j',async extra=>{
   const result=await turn('anota algo',scripted(reply([{name:'notes_create',args:{body:'injected',...extra}}])),undefined,{senderId:member});
@@ -113,7 +147,7 @@ it('owner confirmation is SessionV2 + core.session_confirm + reevaluated Policy,
 });
 it('notes confirmation describes the note, then really deletes through Policy via core.session_confirm',async()=>{
   await db.query('INSERT INTO notes(chat_id,author_id,body) VALUES($1,$2,\'comprar tortillas\')',[chat,owner]);
-  const llm=scripted(input=>reply([{name:'notes_delete',args:{noteRef:envelope(input).REFERENCE_DATA.notes[0]!.ref}}]));
+  const llm=scripted(reply([{name:'core_load_capability',args:{domain:'productivity'}}]),input=>reply([{name:'notes_delete',args:{noteRef:envelope(input).REFERENCE_DATA.notes[0]!.ref}}]));
   expect((await turn('borra la nota',llm)).text).toContain('nota «comprar tortillas»');
   expect((await turn('sí',scripted(reply([{name:'core_session_confirm',args:{}}])))).text).toContain('borré');
   expect((await db.query('SELECT deleted_at FROM notes')).rows[0]?.deleted_at).toBeTruthy();
@@ -187,13 +221,14 @@ it('Gemini failure before effects is honest; synthesis timeout preserves success
   const llm=scripted(reply([{name:'web_search',args:{query:'x'}}]));
   const output=await turn('busca x',llm);expect(output.text).toContain('no pude preparar');expect(await count('tool_executions')).toBe(1);
 });
-it.each(['qué raza será?','qué dice ahí?','cuánto cuesta esto?','qué opinas de este meme?'])('vision uses the same actual image without question-specific heuristics: %s',async text=>{
+it.each(['qué raza será?','qué dice ahí?','cuánto cuesta esto?','qué opinas de este meme?'])('old vision requires model-selected SafeRef: %s',async text=>{
   await context({text:'foto'},async ctx=>{await backing(ctx,{mime:'image/png',bytes:png});});
   const llm=scripted(input=>{
-    expect(JSON.stringify(input.contents)).toContain(png.toString('base64'));
-    return say('Veo la imagen. No puedo asegurar la raza o el precio solo con esta foto.');
-  });
-  expect((await turn(text,llm)).text).toContain('Veo la imagen');expect(llm.generate).toHaveBeenCalledOnce();
+    expect(JSON.stringify(input.contents)).not.toContain(png.toString('base64'));
+    const state=JSON.parse((input.contents[0] as {parts:{text:string}[]}).parts[0]!.text).ARTIFACT_STATE as {RECENT:{ref:string}[]};
+    return reply([{name:'core_load_artifact_context',args:{artifactRef:state.RECENT[0]!.ref}}]);
+  },input=>{expect(JSON.stringify(input.contents)).toContain(png.toString('base64'));return say('Veo la imagen.');});
+  expect((await turn(text,llm)).text).toContain('Veo la imagen');expect(llm.generate).toHaveBeenCalledTimes(2);
 });
 it.each(['100@s.whatsapp.net','123e4567-e89b-12d3-a456-426614174000','2026-10-17T12:00:00Z','/home/botsky/.env','notes.create','{"actorId":"x"}','GEMINI_API_KEY','Trabajo #13','queued','uncertain'])('output sanitizer removes internal UX: %s',async internal=>{
   const output=sanitizeOutputV2(`Dato interno: ${internal}`);expect(output).not.toContain(internal);clean(output);
@@ -326,10 +361,12 @@ it('ignores stale calls in an inconsistent legacy reply field; current original 
   expect(result.text).toContain('XP');expect(await count('notes')).toBe(0);
   expect((await db.query('SELECT tool_name FROM tool_executions WHERE turn_id=$1',[result.turnId])).rows).toEqual([{tool_name:'xp.balance'}]);
 });
-it.each(['school_schedule_propose','school_schedule_import','school_destination','media_search','drive_upload'])('unsafe or unavailable bridge remains naturally blocked: %s',async name=>{
+it.each(['school_schedule_propose','school_schedule_import','school_destination','media_search','drive_upload'])('connected adapters still validate required inputs and configuration: %s',async name=>{
+  vi.spyOn(mediaSources,'searchMedia').mockResolvedValue([]);
   const args=name==='media_search'?{query:'saludo',type:'audio'}:name==='media_collect'?{operation:'images_pdf'}:name==='school_schedule_propose'?{lessons:[]} : {};
   const result=await turn('botsky escuela media drive',scripted(reply([{name,args}])));
-  expect(result.text).toMatch(/no pude|no está|apagado|válidos|no la tengo conectada/iu);
+  if(name==='school_destination')expect(result.text).toContain('Destino escolar configurado');
+  else expect(result.text).not.toMatch(/guardé|subido|enviado|entregado/iu);
   expect(await count('jobs')).toBe(0);expect(await count('school_imports')).toBe(0);expect(await count('bulk_ops')).toBe(0);
 });
 it('group member can ask about an explicitly quoted peer image without transferring its ownership',async()=>{
@@ -465,7 +502,7 @@ it('retries an action_required draft with simulated calls, executing only the ac
   const draft=JSON.stringify({outcome:'action_required',text:'Aquí va tu QR',effects:[{name:'media_process',arguments:{operation:'qr_create',text:'fiesta'}}]});
   const llm=scripted(say(draft,false),reply([{name:'media_process',args:{operation:'qr_create',text:'fiesta'}}]));
   await turn('bot haz un QR que diga fiesta',llm);
-  expect(llm.generate).toHaveBeenCalledTimes(2);
+  expect(llm.generate).toHaveBeenCalledTimes(3);
   expect(await count('jobs')).toBe(1);
 });
 it('keeps web sources when synthesis returns prose instead of the required outcome',async()=>{
@@ -476,7 +513,7 @@ it('keeps web sources when synthesis returns prose instead of the required outco
   expect(llm.generate.mock.calls[1]?.[0].responseJsonSchema).toBeDefined();
 });
 it('changes only the hour of a reminder while keeping its existing text and date',async()=>{
-  const llm=scripted(input=>{
+  const llm=scripted(reply([{name:'core_load_capability',args:{domain:'productivity'}}]),input=>{
     const ref=envelope(input).REFERENCE_DATA.reminders[0]!.ref;
     return reply([{name:'reminders_edit',args:{reminderRef:ref,time:{kind:'date',date:'2026-12-01',hour:21,meridiem:'pm'}}}]);
   });

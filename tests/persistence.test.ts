@@ -14,7 +14,7 @@ import { product } from '../config/product.js';
 const {url}=JSON.parse(readFileSync('.local/test-db.json','utf8')) as {url:string};
 if (!new URL(url).pathname.startsWith('/botsky_test_')) throw new Error('Tests require isolated database');
 const db=createDb(url);
-const config=readConfig({GEMINI_API_KEY:'fixture-gemini-key',DATABASE_URL:url,EVOLUTION_URL:'http://mock',EVOLUTION_APIKEY:'test',INSTANCE:'test',WEBHOOK_SECRET:'x'.repeat(32),OWNER_JIDS:'100@s.whatsapp.net',BOT_JIDS:'200@s.whatsapp.net,222@lid',LAB_CHAT_ID:'300@g.us',TRANSPORT:'mock'});
+const config=readConfig({ROUTER_MODE:'v1',GEMINI_API_KEY:'fixture-gemini-key',DATABASE_URL:url,EVOLUTION_URL:'http://mock',EVOLUTION_APIKEY:'test',INSTANCE:'test',WEBHOOK_SECRET:'x'.repeat(32),OWNER_JIDS:'100@s.whatsapp.net',BOT_JIDS:'200@s.whatsapp.net,222@lid',LAB_CHAT_ID:'300@g.us',TRANSPORT:'mock'});
 const msg=(id='one',overrides:Partial<Msg>={}):Msg=>({id,chatId:config.LAB_CHAT_ID,senderId:'100@s.whatsapp.net',isGroup:true,ts:new Date(),text:'bot ping',fromMe:false,mentions:[],attachments:[],...overrides});
 async function clearGap():Promise<void>{await db.query("UPDATE outbox SET sending_at=NULL,next_try_at=now()-interval '1 second'");}
 async function drain(mock:MockEvolution):Promise<void>{while(await processNext(db,config)){ /* Drain persisted inbox in arrival order. */ }for(let i=0;i<50;i++){await clearGap();if(!await sendNext(db,mock,config))break;}}

@@ -21,7 +21,7 @@ import type { Msg } from '../src/wa/types.js';
 const {url}=JSON.parse(readFileSync('.local/test-db.json','utf8')) as {url:string};
 if(!new URL(url).pathname.startsWith('/botsky_test_'))throw new Error('Unsafe test database');
 const db=createDb(url);
-const config=readConfig({GEMINI_API_KEY:'fixture-gemini-key',DATABASE_URL:url,EVOLUTION_URL:'http://mock',EVOLUTION_APIKEY:'test',INSTANCE:'test',WEBHOOK_SECRET:'x'.repeat(32),OWNER_JIDS:'100@s.whatsapp.net',BOT_JIDS:'200@s.whatsapp.net',LAB_CHAT_ID:'300@g.us',TRANSPORT:'mock'});
+const config=readConfig({ROUTER_MODE:'v1',GEMINI_API_KEY:'fixture-gemini-key',DATABASE_URL:url,EVOLUTION_URL:'http://mock',EVOLUTION_APIKEY:'test',INSTANCE:'test',WEBHOOK_SECRET:'x'.repeat(32),OWNER_JIDS:'100@s.whatsapp.net',BOT_JIDS:'200@s.whatsapp.net',LAB_CHAT_ID:'300@g.us',TRANSPORT:'mock'});
 const msg=(text:string,senderId='100@s.whatsapp.net',chatId=config.LAB_CHAT_ID):Msg=>({id:randomUUID(),chatId,senderId,isGroup:chatId.endsWith('@g.us'),ts:new Date(),text,fromMe:false,mentions:[],attachments:[]});
 async function command(text:string,sender='100@s.whatsapp.net',chat=config.LAB_CHAT_ID):Promise<string|undefined>{
   const input=msg(text,sender,chat);await receive(db,config,input);await processNext(db,config);

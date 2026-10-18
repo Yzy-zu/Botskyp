@@ -1,3 +1,4 @@
+import { observer } from '../observer/index.js';
 import { z } from 'zod';
 import type { PoolClient } from 'pg';
 import type { Config } from '../config.js';
@@ -29,6 +30,7 @@ export function decideSessionV2(session: SessionV2 | undefined, text: string, no
 }
 export async function readSessionV2(c: PoolClient, actorId: string, chatId: string): Promise<SessionV2 | undefined> {
   const row = (await c.query(`SELECT * FROM sessions_v2 WHERE actor_id=$1 AND chat_id=$2 AND status='active' ORDER BY created_at DESC LIMIT 1`, [actorId, chatId])).rows[0];
+  observer.emit(()=>({eventType:'SESSION_BEFORE',stage:'session.read',payload:{actorId,chatId,session:row ?? null}}));
   return row ? sessionV2Schema.parse(row) : undefined;
 }
 async function replaceForeground(c: PoolClient, actorId: string, chatId: string): Promise<void> {
@@ -37,13 +39,13 @@ async function replaceForeground(c: PoolClient, actorId: string, chatId: string)
   // Superseding a confirmation also invalidates its backend handle, never just its conversational shell.
   await c.query(`UPDATE tool_confirmations_v2 SET invalidated=true WHERE id IN(
     SELECT confirmation_id FROM sessions_v2 WHERE actor_id=$1 AND chat_id=$2 AND status='active') AND consumed_execution_id IS NULL`, [actorId, chatId]);
-  await c.query("UPDATE sessions_v2 SET status=CASE WHEN expires_at<=clock_timestamp() THEN 'expired' ELSE 'cancelled' END,version=version+1 WHERE actor_id=$1 AND chat_id=$2 AND status='active'", [actorId, chatId]);
+  await observer.rows(c.query("UPDATE sessions_v2 SET status=CASE WHEN expires_at<=clock_timestamp() THEN 'expired' ELSE 'cancelled' END,version=version+1 WHERE actor_id=$1 AND chat_id=$2 AND status='active' RETURNING *", [actorId, chatId]),'session.persisted','SESSION_AFTER');
 }
 export async function openCollectionSessionV2(c: PoolClient, actorId: string, chatId: string, operation: 'images_pdf'|'pdf_merge', artifactIds: string[], now: Date): Promise<void> {
   await replaceForeground(c,actorId,chatId);
-  await c.query(`INSERT INTO sessions_v2(actor_id,chat_id,kind,pending_tool,partial_args,prompt,code,expires_at)
-    VALUES($1,$2,'media_collect','media.process',$3,'Envía los archivos y dime «terminar».','MEDIA_COLLECTION',$4)`,
-    [actorId,chatId,JSON.stringify({operation,artifactIds}),new Date(now.getTime()+product.sessionMinutes*60_000)]);
+  await observer.rows(c.query(`INSERT INTO sessions_v2(actor_id,chat_id,kind,pending_tool,partial_args,prompt,code,expires_at)
+    VALUES($1,$2,'media_collect','media.process',$3,'Envía los archivos y dime «terminar».','MEDIA_COLLECTION',$4) RETURNING *`,
+    [actorId,chatId,JSON.stringify({operation,artifactIds}),new Date(now.getTime()+product.sessionMinutes*60_000)]),'session.persisted','SESSION_AFTER');
 }
 export async function openClarificationV2(c: PoolClient, mode: Config['ROUTER_MODE'], input: {
   actorId: string; chatId: string; pendingTool: string; partialArgs: Record<string, unknown>;
@@ -56,16 +58,18 @@ export async function openClarificationV2(c: PoolClient, mode: Config['ROUTER_MO
   const existing = await readSessionV2(c, input.actorId, input.chatId);
   const code = input.code ?? 'CLARIFICATION';
   if (existing && existing.kind === 'clarify' && existing.pending_tool === input.pendingTool) {
-    const updated = (await c.query(`UPDATE sessions_v2 SET partial_args=$1,missing_slots=$2,prompt=$3,code=$4,
+    const updated = (await observer.rows(c.query(`UPDATE sessions_v2 SET partial_args=$1,missing_slots=$2,prompt=$3,code=$4,
       expires_at=$5,version=version+1 WHERE id=$6 RETURNING *`,
       [JSON.stringify(input.partialArgs), JSON.stringify(slots), input.prompt, code,
-       new Date(input.now.getTime() + product.sessionMinutes * 60_000), existing.id])).rows[0];
+       new Date(input.now.getTime() + product.sessionMinutes * 60_000), existing.id]),'session.persisted','SESSION_AFTER')).rows[0];
+    observer.emit(()=>({eventType:'SESSION_UPDATED',stage:'session.clarification',payload:{before:existing,after:updated}}));
     return sessionV2Schema.parse(updated);
   }
   await replaceForeground(c, input.actorId, input.chatId);
-  const row = (await c.query(`INSERT INTO sessions_v2(actor_id,chat_id,kind,pending_tool,partial_args,missing_slots,prompt,code,expires_at)
+  const row = (await observer.rows(c.query(`INSERT INTO sessions_v2(actor_id,chat_id,kind,pending_tool,partial_args,missing_slots,prompt,code,expires_at)
     VALUES($1,$2,'clarify',$3,$4,$5,$6,$7,$8) RETURNING *`, [input.actorId, input.chatId, input.pendingTool,
-    JSON.stringify(input.partialArgs), JSON.stringify(slots), input.prompt, code, new Date(input.now.getTime() + product.sessionMinutes * 60_000)])).rows[0];
+    JSON.stringify(input.partialArgs), JSON.stringify(slots), input.prompt, code, new Date(input.now.getTime() + product.sessionMinutes * 60_000)]),'session.persisted','SESSION_AFTER')).rows[0];
+  observer.emit(()=>({eventType:'SESSION_UPDATED',stage:'session.created',payload:{session:row}}));
   return sessionV2Schema.parse(row);
 }
 export async function bindConfirmationSessionV2(c: PoolClient, mode: Config['ROUTER_MODE'], confirmationId: string, prompt: string): Promise<void> {
@@ -73,9 +77,9 @@ export async function bindConfirmationSessionV2(c: PoolClient, mode: Config['ROU
   const pending = (await c.query<{ actor_id: string; chat_id: string; tool_name: string }>('SELECT actor_id,chat_id,tool_name FROM tool_confirmations_v2 WHERE id=$1', [confirmationId])).rows[0];
   if (!pending) throw new Error('Unknown confirmation');
   await replaceForeground(c, pending.actor_id, pending.chat_id);
-  await c.query(`INSERT INTO sessions_v2(actor_id,chat_id,kind,pending_tool,prompt,code,args_hash,logical_action_id,parent_execution_id,confirmation_id,expires_at)
+  await observer.rows(c.query(`INSERT INTO sessions_v2(actor_id,chat_id,kind,pending_tool,prompt,code,args_hash,logical_action_id,parent_execution_id,confirmation_id,expires_at)
     SELECT actor_id,chat_id,'confirm',tool_name,$2,'CONFIRM_ACTION',args_hash,logical_action_id,execution_id,id,expires_at
-    FROM tool_confirmations_v2 WHERE id=$1 ON CONFLICT(confirmation_id) DO NOTHING`, [confirmationId, pending.tool_name === 'bulk.nuclear' ? prompt : '¿Confirmas la operación pendiente?']);
+    FROM tool_confirmations_v2 WHERE id=$1 ON CONFLICT(confirmation_id) DO NOTHING RETURNING *`, [confirmationId, pending.tool_name === 'bulk.nuclear' ? prompt : '¿Confirmas la operación pendiente?']),'session.persisted','SESSION_AFTER');
 }
 export async function cancelSessionV2(c: PoolClient, mode: Config['ROUTER_MODE'], actorId: string, chatId: string, now: Date): Promise<'cancelled' | 'expired' | 'not_found'> {
   if (mode !== 'v1_1') return 'not_found';
@@ -85,10 +89,11 @@ export async function cancelSessionV2(c: PoolClient, mode: Config['ROUTER_MODE']
   if (!live) return 'not_found';
   const current = sessionV2Schema.parse(live);
   const status = current.expires_at <= now ? 'expired' : 'cancelled';
-  await c.query("UPDATE sessions_v2 SET status=$2,version=version+1 WHERE id=$1 AND version=$3 AND status='active'", [current.id, status, current.version]);
+  await observer.rows(c.query("UPDATE sessions_v2 SET status=$2,version=version+1 WHERE id=$1 AND version=$3 AND status='active' RETURNING *", [current.id, status, current.version]),'session.persisted','SESSION_AFTER');
   if (current.confirmation_id) {
     await c.query('UPDATE tool_confirmations_v2 SET invalidated=true WHERE id=$1 AND consumed_execution_id IS NULL', [current.confirmation_id]);
   }
+  observer.emit(()=>({eventType:'SESSION_UPDATED',stage:'session.cancel',payload:{before:current,status}}));
   return status;
 }
 /** Mutates only expiry/lifecycle state; never parses natural language or invokes a handler. */
@@ -100,7 +105,7 @@ export async function coordinateSessionV2(c: PoolClient, mode: Config['ROUTER_MO
   const current = sessionV2Schema.parse(live);
   const decision = decideSessionV2(current, text, now);
   if (decision.kind === 'expired') {
-    await c.query("UPDATE sessions_v2 SET status='expired',version=version+1 WHERE id=$1 AND version=$2 AND status='active'", [session.id, current.version]);
+    await observer.rows(c.query("UPDATE sessions_v2 SET status='expired',version=version+1 WHERE id=$1 AND version=$2 AND status='active' RETURNING *", [session.id, current.version]),'session.persisted','SESSION_AFTER');
     if (current.confirmation_id) await c.query('UPDATE tool_confirmations_v2 SET invalidated=true WHERE id=$1 AND consumed_execution_id IS NULL', [current.confirmation_id]);
   }
   return decision;

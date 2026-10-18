@@ -1,3 +1,4 @@
+import { observer } from '../observer/index.js';
 import { z } from 'zod';
 import type { Config } from '../config.js';
 import { product } from '../../config/product.js';
@@ -16,12 +17,14 @@ export class Evolution implements Transport {
   private readonly base:URL;
   constructor(private readonly config:Config){this.base=new URL(config.EVOLUTION_URL);}
   private async request(path:string,body?:unknown):Promise<unknown>{
+    const record=observer.ids().turnId || observer.ids().jobId || path.startsWith('/message/') || path.startsWith('/chat/findMessages/');
+    if(record)observer.emit(()=>({eventType:'EVOLUTION_REQUEST',stage:'evolution.http',payload:{path,body}}));
     const response=await fetch(new URL(path,this.base),{
       method:body===undefined?'GET':'POST',headers:{apikey:this.config.EVOLUTION_APIKEY,'content-type':'application/json'},
       ...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(product.requestTimeoutMs),redirect:'error',
     });
     if(!response.ok){const header=response.headers.get('retry-after');const delay=header && /^\d+$/.test(header)?Number(header)*1000:header?Date.parse(header)-Date.now():undefined;await response.body?.cancel();throw new ProviderError(response.status,delay!==undefined && Number.isFinite(delay)?Math.min(product.providerMaxRetryMs,Math.max(0,delay)):undefined);}
-    return response.json();
+    const raw:unknown=await response.json();if(record)observer.emit(()=>({eventType:'EVOLUTION_RESPONSE',stage:'evolution.http',payload:{path,status:response.status,raw}}));return raw;
   }
   async state():Promise<boolean>{
     const data=z.object({instance:z.object({instanceName:z.string(),state:z.string()})}).parse(
@@ -46,6 +49,7 @@ export class Evolution implements Transport {
       if(delivery.requireReceipt && !receipt(response.status))return {status:'uncertain',reason:'provider_accepted_pending_receipt',id:response.key.id};
       return {status:'sent',id:response.key.id};
     }catch(error){
+      observer.emit({eventType:'EVOLUTION_ERROR',stage:'evolution.send',payload:{error,outboxId:delivery.id}});
       if(error instanceof ProviderError){
         if(error.status===429)return {status:'retry',reason:'provider_rate_limit',...(error.retryAfterMs!==undefined?{retryAfterMs:error.retryAfterMs}:{})};
         if(error.status>=400 && error.status<500 && error.status!==408)return {status:'failed',reason:`provider_${error.status}`};

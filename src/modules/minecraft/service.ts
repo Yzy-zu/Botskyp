@@ -1,3 +1,4 @@
+import { observer } from '../../observer/index.js';
 import { z } from 'zod';
 import type { Config } from '../../config.js';
 import { transaction,type Db } from '../../db/client.js';
@@ -38,11 +39,16 @@ export async function tickMinecraft(db:Db,config:Config,client:MinecraftClient=c
     return row;
   });
   if(!op)return;
+  return observer.source({chatId:op.chat_id,actorId:op.actor_id,sourceMessageId:op.source_id},async()=>{
+  observer.emit(()=>({eventType:'BUSINESS_MUTATION',stage:'minecraft.claim',payload:{operation:op}}));
   if(op.status==='cancelled'){await finish(db,op,'cancelled','Cancelada antes del envío: módulo, permisos o controles ya no permiten ejecutarla.');return;}
   // Any failure after committing sending might have changed the remote server.
   try{
+    observer.emit(()=>({eventType:'PROCESS_STARTED',stage:'minecraft.gateway',payload:{operation:op}}));
     const response=await client(op.request,op.id);
+    observer.emit(()=>({eventType:'PROCESS_OUTPUT',stage:'minecraft.gateway',payload:{operationId:op.id,response}}));
     const uncertain=['uncertain','conflict','failed'].includes(response.code);
     await finish(db,op,uncertain?'review':'done',formatResponse(response),response);
-  }catch{await finish(db,op,'review','redspi no responde, hubo un timeout SSH o una respuesta inesperada. Resultado incierto; no repetiré la acción.');}
+  }catch(error){observer.emit({eventType:'TOOL_ERROR',stage:'minecraft.gateway',payload:{error,operationId:op.id}});await finish(db,op,'review','redspi no responde, hubo un timeout SSH o una respuesta inesperada. Resultado incierto; no repetiré la acción.');}
+  });
 }

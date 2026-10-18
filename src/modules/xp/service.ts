@@ -1,3 +1,4 @@
+import { observer } from '../../observer/index.js';
 import { randomInt } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { product } from '../../../config/product.js';
@@ -18,6 +19,7 @@ export async function moveXp(c:PoolClient,user:string,delta:number,reason:string
   if(current.balance+delta<0)throw new EconomyError('No tienes XP suficiente.');
   await c.query('INSERT INTO xp_ledger(user_id,delta,reason,ref,chat_id,config_version) VALUES($1,$2,$3,$4,$5,$6)',[user,delta,reason,ref,chat,product.economyVersion]);
   await c.query('UPDATE wallets SET balance=balance+$2 WHERE user_id=$1',[user,delta]);
+  observer.emit(()=>({eventType:'BUSINESS_MUTATION',stage:'xp.ledger_wallet',payload:{user,chat,delta,reason,ref,before:current.balance,after:current.balance+delta,transaction:'pending_commit'}}));
   return true;
 }
 export function dailyReward(roll:number,streak:number):number{

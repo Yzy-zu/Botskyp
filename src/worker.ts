@@ -1,3 +1,4 @@
+import { startObserver, observer } from './observer/index.js';
 import { recoverDrive,claimDrive,processDrive } from './modules/drive/worker.js';
 import { advanceBulk } from './modules/messaging/worker.js';
 import { recoverLibrarySync,scheduleSync,syncLibrary } from './modules/library/sync.js';
@@ -11,7 +12,8 @@ import { reportMediaDeliveries } from './modules/media/delivery.js';
 import { cleanOrphanTemporaries } from './modules/media/process.js';
 const config=readConfig();
 const db=createDb(config.DATABASE_URL);
-await migrate(db);
+const stopObserver=startObserver(config,'worker');
+try{await migrate(db);}catch(error){observer.emit({eventType:'TURN_FAILED',stage:'worker.startup.migrate',payload:{error}});throw error;}
 const lock=await db.connect();
 const held=await lock.query<{locked:boolean}>("SELECT pg_try_advisory_lock(hashtext('botsky-worker')) AS locked");
 if (!held.rows[0]?.locked) throw new Error('Another worker is active');
@@ -32,7 +34,8 @@ while (!stop) {
     const job=await claimMedia(db);
     if(job)await processMedia(db,config,job);
     else await delay(product.tickMs);
-  }catch{
+  }catch(error){
+    observer.emit({eventType:'JOB_FAILED',stage:'worker.loop',payload:{error}});
     // A persistence failure must stop this worker. Startup recovery owns orphaned work.
     process.exitCode=1;stop=true;
   }
@@ -40,4 +43,4 @@ while (!stop) {
 clearInterval(heartbeat);
 await bulk;
 await lock.query("SELECT pg_advisory_unlock(hashtext('botsky-worker'))");
-lock.release();await db.end();
+lock.release();await stopObserver();await db.end();

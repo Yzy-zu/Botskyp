@@ -537,3 +537,13 @@ Evolution verde. Evolution API/PostgreSQL/Redis, PostgreSQL Botsky y SearXNG sin
 cambios de ID, imagen o StartedAt. Rollback privado inmediato preparado a 6b70610.
 Sin merge: main sigue en 0c1a19e. WhatsApp manual pendiente. Evidencia:
 [WS-AI-FIRST-PRODUCTION](v1.1/WS-AI-FIRST-PRODUCTION.md).
+
+### Observer temporal — preparación, 18-10-2026
+
+Baseline 73ee8b8; rama phase-observer-flight-recorder. Volumen dedicado compartido
+app/worker botsky_botsky_observer; spool /var/lib/botsky-observer/spool, retención
+7 días y límite aproximado 512 MiB. Pool separado y replay idempotente.
+Export local aislado de la app: scripts/observer.sh o npm --silent run observer:turn.
+260/260 focalizadas, checks estáticos y secretos PASS. Suite histórica con fallos
+previos documentados en FASE-OBSERVER-PRUEBAS.md; sin corregir el cerebro.
+Configuración anterior preservada en .local/observer-rollback/compose.json.

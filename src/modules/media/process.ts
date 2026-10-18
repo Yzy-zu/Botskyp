@@ -1,3 +1,4 @@
+import { observer } from '../../observer/index.js';
 import { spawn } from 'node:child_process';
 import { readFile,writeFile,lstat,readdir,rm,mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -23,18 +24,21 @@ export async function cleanOrphanTemporaries(root=temporaryRoot):Promise<void>{
 }
 export type ProcessRequest={operation:Operation;inputs:string[];text?:string|undefined;start?:number|undefined;end?:number|undefined;summary?:boolean|undefined};
 export async function runProcess(cwd:string,input:ProcessRequest,signal?:AbortSignal):Promise<{files:string[]}>{
+  observer.emit(()=>({eventType:'PROCESS_STARTED',stage:'media.processor',payload:{cwd,input}}));
   const combined=AbortSignal.any([AbortSignal.timeout(product.mediaTimeoutMs),...(signal?[signal]:[])]);
   return new Promise((resolve,reject)=>{
     const child=spawn('/usr/bin/python3',['-I','/app/scripts/media/runner.py'],{cwd,detached:true,stdio:['pipe','pipe','pipe'],
       env:{PATH:'/usr/bin:/bin',HOME:cwd,TMPDIR:cwd,LANG:'C.UTF-8',OMP_NUM_THREADS:'1',OPENBLAS_NUM_THREADS:'1',MKL_NUM_THREADS:'1',MALLOC_ARENA_MAX:'2'}});
+    let stderr='';
     let stdout='';let bytes=0;let settled=false;let failure:Error|undefined;
     const finish=(error?:Error)=>{if(settled)return;settled=true;combined.removeEventListener('abort',abort);if(error)reject(error);else{try{resolve(z.strictObject({files:z.array(z.string().regex(/^result(?:-\d+)?\.(?:mp3|ogg|wav|mp4|png|jpg|webp|pdf|txt)$/)).max(product.mediaPdfPages)}).parse(JSON.parse(stdout)));}catch{reject(new Error('process_invalid_result'));}}};
     const kill=()=>{if(child.pid){try{process.kill(-child.pid,'SIGKILL');}catch(error){if((error as NodeJS.ErrnoException).code!=='ESRCH')failure=new Error('process_kill_failed');}}};
     const abort=()=>{failure=new Error('process_timeout');kill();};
     child.stdout.on('data',(b:Buffer)=>{bytes+=b.length;if(bytes>product.mediaApiBytes){abort();return;}stdout+=b.toString('utf8');});
-    child.stderr.on('data',()=>{/* Drain sanitized diagnostics without retaining input or process details. */});
+    child.stderr.on('data',(b:Buffer)=>{if(observer.enabled && stderr.length<16384)stderr+=b.toString('utf8').slice(0,16384-stderr.length);});
     child.on('error',()=>finish(new Error('process_unavailable')));
     child.on('close',code=>{
+      observer.emit(()=>({eventType:'PROCESS_OUTPUT',stage:'media.processor',payload:{code,stdout,stderr,error:failure}}));
       kill();
       if(code!==0 && !failure){
         try{const parsed=z.strictObject({error:z.string().regex(/^[a-z_]{1,80}$/)}).parse(JSON.parse(stdout));failure=new Error(parsed.error);}

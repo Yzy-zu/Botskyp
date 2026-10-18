@@ -51,6 +51,7 @@ if git rev-parse --abbrev-ref '@{upstream}' >/dev/null 2>&1; then
   git pull --ff-only
 fi
 [[ -z $(git status --porcelain --untracked-files=no) ]]
+export BOTSKY_GIT_COMMIT="$(git rev-parse HEAD)"
 image="botsky:$(git rev-parse --short=12 HEAD)"
 worker_image="botsky-worker:$(git rev-parse --short=12 HEAD)"
 BOTSKY_IMAGE="$image" BOTSKY_WORKER_IMAGE="$worker_image" compose build app worker

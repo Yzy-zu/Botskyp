@@ -1,3 +1,4 @@
+import { observer } from '../observer/index.js';
 import type { PoolClient } from 'pg';
 import type { Config } from '../config.js';
 import type { ArtifactRecord } from './chat-artifacts.js';
@@ -10,10 +11,10 @@ export type ArtifactRegistration = Backing & {
 /** Caller already owns its transaction. No downloads, new bytes, model arguments or retention extension. */
 export async function registerArtifactV2(c: PoolClient, mode: Config['ROUTER_MODE'], input: ArtifactRegistration): Promise<ArtifactRecord | undefined> {
   if (mode !== 'v1_1') return undefined;
-  const backing = (await c.query<{ mime: string; size: string; expires_at: Date; kind: string; artifact_index:number }>(`SELECT mime,size,expires_at,artifact_index,
+  const backing = (await c.query<{ mime: string; size: string; expires_at: Date; kind: string; artifact_index:number;sha256:string|null }>(`SELECT mime,size,expires_at,artifact_index,sha256,
     CASE WHEN mime LIKE 'image/%' THEN 'image' WHEN mime LIKE 'audio/%' THEN 'audio' WHEN mime LIKE 'video/%' THEN 'video' ELSE 'document' END kind
     FROM media_attachments WHERE id=$1 AND chat_id=$3 AND owner_id=$4 AND data IS NOT NULL AND expires_at>clock_timestamp()
-    UNION ALL SELECT mime,size::bigint,expires_at,0,kind FROM school_attachments
+    UNION ALL SELECT mime,size::bigint,expires_at,0,NULL::text,kind FROM school_attachments
     WHERE id=$2 AND chat_id=$3 AND owner_id=$4 AND data IS NOT NULL AND expires_at>clock_timestamp()`,
   [input.mediaId ?? null, input.schoolId ?? null, input.chatId, input.actorId])).rows[0];
   if (!backing) return undefined;
@@ -36,6 +37,7 @@ export async function registerArtifactV2(c: PoolClient, mode: Config['ROUTER_MOD
   if (artifact && input.outboxId && !(await c.query("SELECT 1 FROM outbox WHERE id=$1 AND chat_id=$2 AND payload->>'attachmentId'=$3",
     [input.outboxId,input.chatId,input.mediaId ?? input.schoolId])).rowCount) throw new Error('Artifact delivery backing mismatch');
   if (artifact && input.outboxId) await c.query(`INSERT INTO artifact_deliveries(artifact_id,chat_id,outbox_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, [artifact.id, input.chatId, input.outboxId]);
+  observer.emit(()=>({eventType:'ARTIFACT_REGISTERED',stage:'artifact.registration',turnId:turn.id,payload:{input,artifact,backing,transaction:'pending_commit'}}));
   return artifact;
 }
 

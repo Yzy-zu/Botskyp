@@ -1,3 +1,5 @@
+import { observer } from '../observer/index.js';
+import { contentHash } from '../observer/redact.js';
 import { currentResultV2 } from './current-result-v2.js';
 import { readFileSync } from 'node:fs';
 import pino from 'pino';
@@ -23,6 +25,11 @@ import { capabilityBehaviorV2 } from './capability-manifest-v2.js';
 const persona=readFileSync(new URL('../../config/persona.md',import.meta.url),'utf8');
 const catalog=createToolRegistryV2(createRegistry());
 const log=pino({level:'info'});
+function observedOutputV2(text:string):string{
+  const safe=sanitizeOutputV2(text);
+  observer.emit(()=>({eventType:'OUTPUT_SANITIZED',stage:'router.output',payload:{before:text,after:safe}}));
+  return safe;
+}
 export const MAX_TOOL_CALLS_PER_TURN=product.maxToolCallsPerTurn;
 export function selectToolsForTurn(input:ToolExposureInput):ToolExposureTurn{return new ToolExposureTurn(catalog,input);}
 
@@ -46,7 +53,7 @@ export async function routeNaturalV2(ctx:ToolCtx,llm?:Llm):Promise<string|undefi
   const metrics:RouterMetricsV2={callsPerTurn:0,inputTokens:0,outputTokens:0,toolCount:0,capabilityExpansion:0,synthesisUsed:false,mutationRetry:0,routerLatency:0,backendFieldAttempts:0};
   try{
     const intercepted=await interceptSession(ctx);
-    if(intercepted!==undefined){if(typeof intercepted==='string')return sanitizeOutputV2(intercepted);metrics.toolCount++;return sanitizeOutputV2(localPresenterV2(await currentResultV2(ctx,intercepted))) || undefined;}
+    if(intercepted!==undefined){if(typeof intercepted==='string')return observedOutputV2(intercepted);metrics.toolCount++;return observedOutputV2(localPresenterV2(await currentResultV2(ctx,intercepted))) || undefined;}
     await prepareArtifactsV2(ctx);
     // First snapshot supplies live entities; relevant domains then load bounded refs for selection.
     const initial=await buildTurnContextV2(ctx);
@@ -60,6 +67,7 @@ export async function routeNaturalV2(ctx:ToolCtx,llm?:Llm):Promise<string|undefi
       openPoll:Boolean(snapshot.poll),activeGame:Boolean(snapshot.game),openCooperacha:Boolean(snapshot.cooperacha)};
     const exposure=selectToolsForTurn(input);
     const context=await buildTurnContextV2(ctx,exposure.exposure.relevantDomains);
+    observer.emit(()=>({eventType:'CONTEXT_BUILT',stage:'router.context',payload:{envelope:context.envelope,serialized:serializeContextV2(context),manifestHash:contentHash(JSON.stringify(context.envelope.CAPABILITY_MANIFEST)),safeRefs:context.safeRefMap,domains:exposure.exposure.relevantDomains,schemas:exposure.exposure.schemas}}));
     const images:Image[]=[];
     if(initial.runtime.enabledModules.includes('vision')){
       const state=context.envelope.ARTIFACT_STATE;
@@ -73,12 +81,14 @@ export async function routeNaturalV2(ctx:ToolCtx,llm?:Llm):Promise<string|undefi
     }
     if(!initial.runtime.enabledModules.includes('conversation'))return 'La conversación está apagada en este chat.';
 
-    return sanitizeOutputV2(await naturalToolLoopV2(ctx,llm ?? new Gemini(ctx.db,ctx.config,ctx.actor.id),catalog,context,exposure,naturalRouterSystemV2(exposure),serializeContextV2(context),images,metrics)) || undefined;
-  }catch{
+    return observedOutputV2(await naturalToolLoopV2(ctx,llm ?? new Gemini(ctx.db,ctx.config,ctx.actor.id),catalog,context,exposure,naturalRouterSystemV2(exposure),serializeContextV2(context),images,metrics)) || undefined;
+  }catch(error){
+    observer.emit({eventType:'TURN_FAILED',stage:'router',payload:{error,status:'caught_router_error'}});
     return 'No pude procesar la solicitud en este momento. No confirmo ninguna operación.';
   }finally{
     metrics.routerLatency=Math.round(performance.now()-started);
-    log.info({routerV2:metrics},'Natural router v2');
+    observer.emit(()=>({eventType:'ROUTER_METRICS',stage:'router',payload:metrics}));
+    log.info({...observer.ids(),routerV2:metrics},'Natural router v2');
   }
 }
 

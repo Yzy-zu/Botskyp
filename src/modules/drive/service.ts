@@ -1,3 +1,4 @@
+import { observer } from '../../observer/index.js';
 import { z } from 'zod';
 import type { PoolClient } from 'pg';
 import type { Config } from '../../config.js';
@@ -36,6 +37,7 @@ export async function enqueueDrive(ctx:ToolCtx,operation:'search'|'download'|'up
   const queued=await ctx.c.query("SELECT 1 FROM jobs WHERE status IN ('queued','running')");
   if((active.rowCount ?? 0)>=product.mediaMaxJobs || (queued.rowCount ?? 0)>=product.mediaQueueLimit)return fail('La cola está ocupada. Espera a que terminen los trabajos.');
   const job=(await ctx.c.query<{id:string}>("INSERT INTO jobs(kind,payload,chat_id,owner_id,source_message_id) VALUES('drive',$1,$2,$3,$4) RETURNING id",[JSON.stringify(parsed.data),ctx.chat.id,ctx.actor.id,ctx.msg.id])).rows[0]!;
+  observer.emit(()=>({eventType:'JOB_QUEUED',stage:'drive.enqueue',jobId:job.id,payload:{id:job.id,kind:'drive',payload:parsed.data,transaction:'pending_commit'}}));
   await ctx.c.query('INSERT INTO drive_operations(job_id) VALUES($1)',[job.id]);
   return ok(`Trabajo Drive #${job.id} en cola. Todavía no se ha subido ni entregado nada.`,{jobId:job.id});
 }

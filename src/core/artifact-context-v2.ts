@@ -1,3 +1,4 @@
+import { observer } from '../observer/index.js';
 import { z } from 'zod';
 import { product } from '../../config/product.js';
 import { safeRefSchema } from './model-args.js';
@@ -15,7 +16,7 @@ export const loadArtifactContextMetaTool={
   modelArgsSchema:loadArtifactContextSchema,
 };
 /** Rebuild authenticated scope, validate the delivered opaque ref and recheck live bytes/TTL. */
-export async function loadArtifactContextV2(ctx:ToolCtx,safeRefMap:SafeRefs,args:unknown):Promise<{status:string;image?:Image;artifactRef?:string}>{
+async function loadArtifactContextImplV2(ctx:ToolCtx,safeRefMap:SafeRefs,args:unknown):Promise<{status:string;image?:Image;artifactRef?:string}>{
   const parsed=loadArtifactContextSchema.safeParse(args);
   if(!parsed.success)return {status:'INVALID_MODEL_ARGUMENTS'};
   const scope=await loadExecutionContext(ctx,{callOrigin:'llm',safeRefMap});
@@ -25,8 +26,15 @@ export async function loadArtifactContextV2(ctx:ToolCtx,safeRefMap:SafeRefs,args
   const selected=await resolveArtifactForOperation('vision',{c:ctx.c,...scope,...(scope.legacy.msg.quoted?{quotedMessageId:scope.legacy.msg.quoted.id}:{})},parsed.data.artifactRef);
   if(selected.status!=='ok')return {status:selected.status};
   const a=selected.artifact;
+  observer.emit(()=>({eventType:'ARTIFACT_CONTEXT_LOADED',stage:'artifact.selected',payload:{args,artifact:a}}));
   const bytes=(await ctx.c.query<{data:Buffer}>(`SELECT data FROM media_attachments WHERE id=$1 AND chat_id=$3 AND owner_id=$4 AND data IS NOT NULL AND expires_at>clock_timestamp()
     UNION ALL SELECT data FROM school_attachments WHERE id=$2 AND chat_id=$3 AND owner_id=$4 AND data IS NOT NULL AND expires_at>clock_timestamp()`,[a.media_attachment_id,a.school_attachment_id,scope.chatId,a.actor_id])).rows[0]?.data;
   if(!bytes || bytes.length>product.visionMaxBytes)return {status:'SOURCE_UNAVAILABLE'};
   return {status:'ok',artifactRef:parsed.data.artifactRef,image:{mimeType:a.mime,data:bytes.toString('base64')}};
+}
+
+export async function loadArtifactContextV2(ctx:ToolCtx,safeRefMap:SafeRefs,args:unknown):ReturnType<typeof loadArtifactContextImplV2>{
+  observer.emit(()=>({eventType:'ARTIFACT_CONTEXT_LOADED',stage:'artifact.request',payload:{args,safeRefs:safeRefMap}}));
+  try{const result=await loadArtifactContextImplV2(ctx,safeRefMap,args);observer.emit(()=>({eventType:'ARTIFACT_CONTEXT_LOADED',stage:'artifact.result',payload:result}));return result;}
+  catch(error){observer.emit({eventType:'ARTIFACT_CONTEXT_LOADED',stage:'artifact.error',payload:{args,error}});throw error;}
 }

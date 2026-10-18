@@ -1,3 +1,4 @@
+import { observer } from '../observer/index.js';
 import { verifiedLimitationV2 } from './capability-truth-v2.js';
 import { loadArtifactContextV2 } from './artifact-context-v2.js';
 import { currentResultV2 } from './current-result-v2.js';
@@ -6,7 +7,7 @@ import pino from 'pino';
 import { z } from 'zod';
 import type { ToolCtx } from './tools.js';
 import type { Llm, Image, LlmReply } from './llm.js';
-import { LlmUnavailable } from './llm.js';
+import { Gemini, LlmUnavailable } from './llm.js';
 import type { ToolMetadataV2 } from './tool-registry-v2.js';
 import { backendOnlyFields, modelDeclaration } from './tool-registry-v2.js';
 import type { TurnContextV2 } from './context-v2.js';
@@ -63,7 +64,11 @@ export async function naturalToolLoopV2(ctx:ToolCtx,llm:Llm,catalog:readonly Too
       request.tools=[...exposure.exposure.schemas];
       request.system=system+`\n${currentFunctionProtocolV2(request.tools.map(t=>t.name))}`;
     }
-    const reply=await llm.generate(request);
+    const started=performance.now();
+    if(!(llm instanceof Gemini))observer.emit(()=>({eventType:'LLM_REQUEST',stage:'gemini.logical',turnId:ctx.turnId!,payload:{ordinal:metrics.callsPerTurn,model:ctx.config.GEMINI_MODEL,synthesis,request}}));
+    let reply:LlmReply;
+    try{reply=await llm.generate(request);if(!(llm instanceof Gemini))observer.emit(()=>({eventType:'LLM_RESPONSE',stage:'gemini.logical',payload:{ordinal:metrics.callsPerTurn,latencyMs:performance.now()-started,reply}}));}
+    catch(error){if(!(llm instanceof Gemini))observer.emit({eventType:'LLM_ERROR',stage:'gemini.logical',payload:{ordinal:metrics.callsPerTurn,latencyMs:performance.now()-started,error}});throw error;}
     metrics.inputTokens+=reply.usage?.inputTokens ?? 0;metrics.outputTokens+=reply.usage?.outputTokens ?? 0;
     return reply;
   }
@@ -89,6 +94,7 @@ export async function naturalToolLoopV2(ctx:ToolCtx,llm:Llm,catalog:readonly Too
       let expanded=false;
       const loadedImages:Image[]=[];
       for(const {call} of provider.calls){
+        observer.emit(()=>({eventType:'TOOL_PROPOSED',stage:'tool_loop',payload:{toolName:call.name,args:call.args,call}}));
         // Every proposed call, including failed/unknown/meta calls, consumes a hard slot.
         if(metrics.toolCount>=product.maxToolCallsPerTurn){stopped=true;responses.push(geminiFunctionResult(call,{status:'denied',message:'Se alcanzó el límite de acciones del turno.'}));continue;}
         metrics.toolCount++;
@@ -101,7 +107,9 @@ export async function naturalToolLoopV2(ctx:ToolCtx,llm:Llm,catalog:readonly Too
         }
         metrics.backendFieldAttempts+=backendAttempts(call.args);
         if(call.name==='core_load_capability' || call.name==='core.load_capability'){
+          const before=exposure.exposure.schemas;
           const expansion=exposure.loadCapability(call.args);
+          observer.emit(()=>({eventType:'CAPABILITY_LOAD',stage:'tool_loop',payload:{args:call.args,before,after:exposure.exposure.schemas,result:expansion}}));
           if(expansion.status==='ok'){
             metrics.capabilityExpansion++;expanded=true;
             const updated=await buildTurnContextV2(ctx,exposure.exposure.relevantDomains);
@@ -162,6 +170,7 @@ export async function naturalToolLoopV2(ctx:ToolCtx,llm:Llm,catalog:readonly Too
         if(result.toolName==='school.schedule_import' && result.status==='ok')expanded=true;
         results.push(result);responses.push(geminiFunctionResult(call,visibleToolResultV2(result)));
       }
+      observer.emit(()=>({eventType:'PRESENTER_INPUT',stage:'tool_loop.function_responses',payload:{results,responses}}));
       contents.push({role:'user',parts:[...responses,...loadedImages.map(inlineData=>({inlineData}))]});
       rememberDeliveredArtifacts();
       if(stopped)break;
@@ -194,6 +203,7 @@ export async function naturalToolLoopV2(ctx:ToolCtx,llm:Llm,catalog:readonly Too
     }
     return `${local()}${results.length?'\n\n':''}Llegué al límite de acciones de esta solicitud. Lo que falte, pídemelo en otro mensaje.`;
   }catch(error){
+    observer.emit({eventType:'TURN_FAILED',stage:'tool_loop',payload:{error,status:'caught_provider_or_tool_failure'}});
     log.info({routerOutcome:error instanceof LlmUnavailable?(error.kind==='blocked'?'provider_blocked':'technical_failure'):'technical_failure',reason:error instanceof LlmUnavailable?error.kind:'internal',turnId:ctx.turnId},'Natural router failure');
     return results.length?local():providerFailure(error);
   }

@@ -428,3 +428,15 @@ completos: 189/189. Recheck de disponibilidad real 1/1. Typecheck/lint/build/sec
 por script oficial: salud y Lab v1.1/resto v1 confirmados; infraestructura ajena
 conservada. Manifest real del contenedor 96/96. Cierre documental y detenerse.
 No iniciar backends faltantes, otro workstream ni merge a main.
+
+## 22. Observer temporal — plan autorizado (18-10-2026)
+
+1. Baseline 73ee8b8; rama phase-observer-flight-recorder, un constructor.
+2. API central fail-open, redacción técnica y correlación AsyncLocalStorage.
+3. Spool fsync persistente app/worker y pool independiente, replay idempotente.
+4. Instrumentar fronteras existentes sin modificar decisiones ni resultados.
+5. Eventos append-only y vista reconstruible; retención predeterminada siete días.
+6. Exportación exclusivamente local; ninguna consulta HTTP/WhatsApp nueva.
+7. Pruebas de fallos/reinicio/rollback y medición ON/OFF.
+8. Checks, commit/push, deploy oficial enabled, salud y smoke técnico mínimo.
+9. Sin merge a main ni corrección de bugs ajenos; detenerse al entregar.

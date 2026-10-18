@@ -1,3 +1,4 @@
+import { observer } from '../../observer/index.js';
 import { runSchoolImportV2 } from '../school-import-v2.js';
 import { enqueueDrive } from '../../modules/drive/service.js';
 import { confirmationPromptV2 } from '../confirmation-presenter-v2.js';
@@ -42,7 +43,8 @@ export function policyDecisionDebug(ctx: Pick<ExecutionContextV2, 'callOrigin'>,
     requiredConfirmation: d.status === 'needs_confirmation', toolExposureCount: count, callOrigin: ctx.callOrigin };
 }
 function logDecision(ctx: ExecutionContextV2, name: string, domain: string, d: PolicyDecision, count: number): void {
-  log.info(policyDecisionDebug(ctx, name, domain, d, count), 'Tool policy v2');
+  observer.emit(()=>({eventType:'POLICY_EVALUATED',stage:'policy',payload:{toolName:name,decision:d,permission:metadata(name)?.tool.permission,risk:metadata(name)?.legacy.risk,input:{callOrigin:ctx.callOrigin,actorId:ctx.actorId,chatId:ctx.chatId,role:ctx.role,sourceMessageId:ctx.sourceMessageId,actor:ctx.actor,chat:ctx.chat,now:ctx.now,executionKey:ctx.executionKey,logicalActionId:ctx.logicalActionId,parentExecutionId:ctx.parentExecutionId,confirmedArgsHash:ctx.confirmedArgsHash,safeRefs:ctx.safeRefMap}}}));
+  log.info({...observer.ids(),...policyDecisionDebug(ctx, name, domain, d, count)}, 'Tool policy v2');
 }
 /** Public read-only evaluation entry; callers never supply a trusted policy decision. */
 export async function evaluateToolV2(ctx: ToolCtx, name: string, modelArgs: unknown, call: BackendCall): Promise<PolicyDecision | undefined> {
@@ -84,6 +86,7 @@ export async function executeToolV2(ctx: ToolCtx, name: string, modelArgs: unkno
     if (call.confirmationId) pending = await readPendingConfirmation(c, context, call.confirmationId);
     if (pending) context = { ...context, logicalActionId: pending.logical_action_id, parentExecutionId: pending.execution_id,
       confirmedArgsHash: pending.args_hash };
+    observer.emit(()=>({eventType:'TOOL_PROPOSED',stage:'policy.arguments',payload:{toolName:name,modelArgs,effectiveArgs,call,safeRefs:call.safeRefMap}}));
     const decision = await evaluateToolPolicy(context, entry.tool, entry.legacy, effectiveArgs,
       pending?.tool_name === name ? pending.resolved_args : undefined, pending?.scope_state.resources ?? []);
     const hash = pending?.tool_name === name ? pending.args_hash : decision.argsHash;
@@ -128,12 +131,13 @@ export async function executeToolV2(ctx: ToolCtx, name: string, modelArgs: unkno
     async function finish(value: ToolResult): Promise<ToolResult> {
       if (pending && confirmationFailure !== 'DENIED_CONFIRMATION_INPUT' && ['ok','queued','uncertain','error','denied'].includes(value.status)) {
         const sessionStatus = pending.expires_at <= context.now ? 'expired' : pending.invalidated ? 'cancelled' : 'done';
-        await c.query("UPDATE sessions_v2 SET status=$2,version=version+1 WHERE confirmation_id=$1 AND status='active'", [pending.id, sessionStatus]);
+        await observer.rows(c.query("UPDATE sessions_v2 SET status=$2,version=version+1 WHERE confirmation_id=$1 AND status='active' RETURNING *", [pending.id, sessionStatus]),'session.persisted','SESSION_AFTER');
       }
       if (activeSession?.kind === 'clarify' && activeSession.pending_tool === name && ['ok','queued'].includes(value.status)) {
-        await c.query("UPDATE sessions_v2 SET status='done',version=version+1 WHERE id=$1 AND status='active'", [activeSession.id]);
+        await observer.rows(c.query("UPDATE sessions_v2 SET status='done',version=version+1 WHERE id=$1 AND status='active' RETURNING *", [activeSession.id]),'session.persisted','SESSION_AFTER');
       }
       await c.query('UPDATE tool_executions SET status=$2,result_json=$3,finished_at=clock_timestamp() WHERE id=$1', [id, value.status, JSON.stringify(value)]);
+      observer.emit(()=>({eventType:'TOOL_RESULT',stage:'handler',payload:{executionId:id,toolName:name,result:value,transaction:'pending_commit'}}));
       return value;
     }
     if (confirmationFailure) return finish(result(name, entry.tool.domain, 'denied', confirmationFailure));
@@ -158,6 +162,8 @@ export async function executeToolV2(ctx: ToolCtx, name: string, modelArgs: unkno
     }
     await c.query('SAVEPOINT v2_handler');
     let normalized: ToolResult;
+    const handlerStarted=performance.now();
+    observer.emit(()=>({eventType:'TOOL_STARTED',stage:'handler',payload:{executionId:id,toolName:name,handler:entry.legacy.name,resolvedArgs:decision.resolvedArgs,resolvedSafeRefs:decision.resolvedSafeRefs}}));
     try {
       let outcome;
       if(name==='school.schedule_import')outcome=await runSchoolImportV2(context,decision);
@@ -181,13 +187,17 @@ export async function executeToolV2(ctx: ToolCtx, name: string, modelArgs: unkno
           outcome = await confirm(context.legacy, op.id, op.args_hash);
         }
       } else outcome = await entry.legacy.run(context.legacy, decision.resolvedArgs);
+      observer.emit(()=>({eventType:risk==='read'?'TOOL_RESULT':'BUSINESS_MUTATION',stage:'handler.receipt',payload:{executionId:id,toolName:name,risk,args:decision.resolvedArgs,outcome,latencyMs:performance.now()-handlerStarted,transaction:'pending_commit'}}));
       normalized = await normalizeLegacyResult(context, entry.tool, outcome, decision.resolvedArgs);
       if (!outcome.ok) {
+        observer.emit({eventType:'TRANSACTION_ROLLBACK',stage:'handler.savepoint',payload:{executionId:id,toolName:name,outcome:'legacy_rejected'}});
         await c.query('ROLLBACK TO SAVEPOINT v2_handler');
         // Keep the sanitized user-facing failure; the rolled-back handler produced no effect.
         normalized = {...normalized,status:'error',code:'LEGACY_REJECTED'};
       } else if (risk !== 'read') await c.query('INSERT INTO audit_log(actor_id,chat_id,action) VALUES($1,$2,$3)', [context.actorId, context.chatId, name]);
     } catch (error) {
+      observer.emit({eventType:'TOOL_ERROR',stage:'handler',payload:{executionId:id,toolName:name,error,latencyMs:performance.now()-handlerStarted}});
+      observer.emit({eventType:'TRANSACTION_ROLLBACK',stage:'handler.savepoint',payload:{executionId:id,toolName:name,outcome:'rollback_requested'}});
       await c.query('ROLLBACK TO SAVEPOINT v2_handler');
       await c.query('RELEASE SAVEPOINT v2_handler');
       // All supported effects are transactional DB mutations or durable queues, never remote writes.

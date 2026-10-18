@@ -33,7 +33,7 @@ it('listens with Evolution unavailable, reports degraded health and later syncs 
     const address=await app.listen({host:'127.0.0.1',port:0});
     const degraded=await fetch(`${address}/health`);
     expect(degraded.status).toBe(503);
-    expect(await degraded.json()).toEqual({ok:false,database:true,evolution:false,transport:'evolution'});
+    expect(await degraded.json()).toEqual({observer:{enabled:false},ok:false,database:true,evolution:false,transport:'evolution'});
     transport.connected=true;
     await vi.advanceTimersByTimeAsync(product.membershipRefreshMs);
     expect(refreshWork).toBeDefined();
@@ -42,7 +42,7 @@ it('listens with Evolution unavailable, reports degraded health and later syncs 
     expect(memberships.rowCount).toBe(2);
     const recovered=await fetch(`${address}/health`);
     expect(recovered.status).toBe(200);
-    expect(await recovered.json()).toEqual({ok:true,database:true,evolution:true,transport:'evolution'});
+    expect(await recovered.json()).toEqual({observer:{enabled:false},ok:true,database:true,evolution:true,transport:'evolution'});
   } finally {
     stop?.();await app.close();await db.end();vi.useRealTimers();vi.restoreAllMocks();
   }

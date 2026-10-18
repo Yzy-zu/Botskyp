@@ -1557,3 +1557,16 @@ botsky-20261018T165820-1584174.dump, migración 015 y health verificados. Global
 sin allowlist, sin inscribir chats. Solo se revirtió messaging OFF por canary en Lab,
 con auditoría específica. Segundo grupo real no existe; WhatsApp manual pendiente.
 Rollback inmediato conserva imágenes/configuración de 6b70610. Sin merge a main.
+
+## DEC-070 — Observer temporal pasivo (18-10-2026)
+
+Petición directa del dueño, baseline 73ee8b8, rama propia sin merge a main.
+Se añade recorder fail-open con spool JSONL/fsync en volumen persistente compartido,
+pool independiente del negocio, UUID idempotente y replay con checkpoint durable.
+Retención predeterminada siete días; solo segmentos antiguos confirmados se borran.
+No se analiza SQL ni se cambia NLU/Policy/prompts/capacidades/selección de tools.
+Los recibos de negocio se emiten desde fronteras existentes y conservan evidencia
+independiente ante rollback. El CLI owner-local combina spool+DB; sin interfaz
+HTTP/WhatsApp de consulta ni servicios adicionales. Si ambos sinks fallan, perder
+evidencia es preferible a detener negocio. Cobertura y límites en
+[FASE-OBSERVER](fases/FASE-OBSERVER.md). Deploy enabled expresamente autorizado.

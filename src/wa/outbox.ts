@@ -1,3 +1,4 @@
+import { observer } from '../observer/index.js';
 import { sanitizeOutputV2 } from '../core/output-sanitizer-v2.js';
 import { mediaAllowed } from '../modules/media/access.js';
 import { transaction } from '../db/client.js';
@@ -18,7 +19,7 @@ type Row = {id:string;chat_id:string;payload:unknown;kind:string;status:string;a
 export async function recoverSending(db:Db):Promise<void> {
   await db.query("UPDATE outbox SET status='uncertain',last_error='interrupted',next_try_at=now() WHERE status='sending'");
 }
-export async function sendNext(db:Db, transport:Transport, config:Config):Promise<boolean> {
+async function sendNextImpl(db:Db, transport:Transport, config:Config):Promise<boolean> {
   const emergency=await db.query("SELECT key FROM system_flags WHERE key='emergency' AND value='true'::jsonb");
   if (emergency.rowCount) return false;
   const result = await db.query<Row>(`SELECT o.* FROM outbox o WHERE o.status IN ('queued','uncertain') AND o.next_try_at<=now()
@@ -30,13 +31,19 @@ export async function sendNext(db:Db, transport:Transport, config:Config):Promis
     ORDER BY o.id LIMIT 1`,[product.maxReconcileAttempts,product.outboxGapMs]);
   const row=result.rows[0];
   if (!row) return false;
+  const operation=await observer.operationSource(row.payload);
+  return observer.source({...operation,chatId:operation.chatId ?? row.chat_id,sourceMessageId:operation.sourceMessageId || ((row.payload as {sourceId?:string}).sourceId ?? ''),...((row.payload as {jobId?:string}).jobId?{jobId:(row.payload as {jobId:string}).jobId}:{}),routerMode:config.ROUTER_MODE},async()=>{
+  try{
   config=configForChat(config,row.chat_id);
   const payload=payloadSchema.parse(row.payload);
+  observer.bind({chatId:row.chat_id,sourceMessageId:payload.sourceId});
+  observer.emit(()=>({eventType:'OUTBOX_STARTED',stage:'outbox.claim',payload:row}));
   const delivery:Delivery={id:row.id,chatId:row.chat_id,text:payload.text,sourceId:payload.sourceId,...(payload.attachmentId?{attachmentId:payload.attachmentId}:{}),...(['bulk_text','drive_file','drive_link'].includes(row.kind)?{requireReceipt:true}:{})};
   if (row.status==='uncertain') {
     let resolution;
     try { resolution=await transport.reconcile(delivery,row.provider_msg_id ?? undefined); }
     catch { resolution={status:'unknown'} as const; }
+    observer.emit(()=>({eventType:'OUTBOX_RECONCILED',stage:'outbox.reconcile',payload:{outboxId:row.id,resolution}}));
     if (resolution.status==='found') {
       await db.query("UPDATE outbox SET status='sent',provider_msg_id=$2,sent_at=now(),last_error=NULL WHERE id=$1",[row.id,resolution.id]);
     } else if (resolution.status==='absent' && row.attempts<product.maxSendAttempts) {
@@ -110,8 +117,10 @@ export async function sendNext(db:Db, transport:Transport, config:Config):Promis
   const claimed=row.kind==='bulk_text'?{rowCount:await claimBulk(db,config,row)?1:0}:await db.query("UPDATE outbox SET status='sending',sending_at=now(),attempts=attempts+1 WHERE id=$1 AND status='queued' AND (kind<>'media_progress' OR EXISTS(SELECT 1 FROM jobs j WHERE j.id::text=outbox.payload->>'jobId' AND j.status IN ('queued','running'))) AND (chat_id NOT LIKE '%@g.us' OR EXISTS(SELECT 1 FROM chats ch WHERE ch.id=outbox.chat_id AND ch.enabled AND ch.is_group)) RETURNING id",[row.id]);
   if (!claimed.rowCount) return false;
   let sent;
+  observer.emit(()=>({eventType:'EVOLUTION_REQUEST',stage:'outbox.send',payload:{outboxId:row.id,delivery}}));
   try { sent=await transport.send(delivery); }
-  catch { sent={status:'uncertain',reason:'transport_exception'} as const; }
+  catch(error) { observer.emit({eventType:'EVOLUTION_ERROR',stage:'outbox.send',payload:{error,outboxId:row.id}});sent={status:'uncertain',reason:'transport_exception'} as const; }
+  observer.emit(()=>({eventType:sent.status==='sent'?'OUTBOX_SENT':'OUTBOX_FAILED',stage:'outbox.provider_result',payload:{outboxId:row.id,result:sent,finalReply:delivery.text}}));
   if (sent.status==='sent') {
     await db.query("UPDATE outbox SET status='sent',provider_msg_id=$2,sent_at=now(),last_error=NULL WHERE id=$1",[row.id,sent.id]);
   } else {
@@ -122,4 +131,11 @@ export async function sendNext(db:Db, transport:Transport, config:Config):Promis
     if (status==='failed') await db.query("INSERT INTO error_log(where_,msg_id,detail) VALUES('outbox',$1,$2)",[row.id,sent.reason]);
   }
   return true;
+  }catch(error){observer.emit({eventType:'OUTBOX_FAILED',stage:'outbox.persistence_or_delivery',payload:{outboxId:row.id,error}});throw error;}
+  finally{await observer.snapshot('outbox',row.id,'outbox.persisted');}
+  });
+}
+
+export async function sendNext(db:Db,transport:Transport,config:Config):Promise<boolean>{
+  return sendNextImpl(db,transport,config);
 }

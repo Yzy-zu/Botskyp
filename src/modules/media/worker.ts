@@ -1,3 +1,4 @@
+import { observer } from '../../observer/index.js';
 import { sanitizeOutputV2 } from '../../core/output-sanitizer-v2.js';
 import { registerArtifactV2, registerIncomingArtifactsV2 } from '../../core/artifact-registration-v2.js';
 import { rememberContextResultV2, type ContextResultKind } from '../../core/context-results-v2.js';
@@ -26,6 +27,7 @@ export async function recoverMedia(db:Db,routing:Config|Config['ROUTER_MODE']='v
   await transaction(db,async c=>{
     const rows=(await c.query<MediaJob>("SELECT * FROM jobs WHERE kind='media' AND status='running' FOR UPDATE")).rows;
     for(const job of rows){
+      observer.emit(()=>({eventType:'JOB_RECOVERED',stage:'worker.startup',jobId:job.id,payload:{job,reason:'interrupted'}}));
       const mode=typeof routing==='string'?routing:configForChat(routing,job.chat_id).ROUTER_MODE;
       const failed=job.attempts>=product.mediaMaxAttempts;
       let outboxId:string|null=null;if(failed)outboxId=await notify(c,job,mediaFailure('interrupted'),mode);
@@ -45,6 +47,7 @@ export async function retainMedia(db:Db):Promise<void>{
 export async function claimMedia(db:Db):Promise<MediaJob|undefined>{
   return transaction(db,async c=>{
     const job=(await c.query<MediaJob>("SELECT * FROM jobs WHERE kind='media' AND status='queued' AND run_after<=now() ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1")).rows[0];
+    if(job)observer.emit(()=>({eventType:'JOB_CLAIMED',stage:'worker.claim',jobId:job.id,payload:job}));
     if(job)await c.query("UPDATE jobs SET status='running',attempts=attempts+1,updated_at=now(),error=NULL WHERE id=$1",[job.id]);return job;
   });
 }
@@ -103,13 +106,14 @@ async function finish(db:Db,config:Config,job:MediaJob,artifacts:Artifact[],sour
         else await registerArtifactV2(c,config.ROUTER_MODE,{chatId:job.chat_id,actorId:job.owner_id,sourceMessageId:job.source_message_id,
           mediaId:attachment.id,origin:'bot_output',jobId:job.id,outboxId:row.id,filename:a.name,kind:a.kind,...(parentId?{parentId}:{})});
       }
+      observer.emit(()=>({eventType:'OUTBOX_QUEUED',stage:'media.delivery',payload:{outboxId:row.id,attachmentId:attachment.id,text:finalText,sourceMessageId:job.source_message_id,index,mime:a.mime,size:a.bytes.length,transaction:'pending_commit'}}));
       first ??=row.id;
     }
     await c.query("UPDATE jobs SET status='done',outbox_id=$2,result=$3,updated_at=now() WHERE id=$1 AND status='running'",[job.id,first,JSON.stringify({artifacts:artifacts.length,delivery:'pending'})]);
     await c.query("INSERT INTO audit_log(actor_id,chat_id,action,detail) VALUES($1,$2,'media.processed',jsonb_build_object('jobId',$3::text,'result','queued_for_delivery'))",[job.owner_id,job.chat_id,job.id]);
   });
 }
-export async function processMedia(db:Db,config:Config,job:MediaJob,deps:WorkerDeps=defaults):Promise<void>{
+async function processMediaImpl(db:Db,config:Config,job:MediaJob,deps:WorkerDeps=defaults):Promise<void>{
   config=configForChat(config,job.chat_id);
   if(config.ROUTER_MODE==='v1_1' && (await db.query<{status:string}>('SELECT status FROM jobs WHERE id=$1',[job.id])).rows[0]?.status!=='running')return;
   let cwd:string|undefined;
@@ -154,8 +158,10 @@ export async function processMedia(db:Db,config:Config,job:MediaJob,deps:WorkerD
       await writeFile(join(cwd,'result.txt'),reply.text,{mode:0o600});result.files=['result.txt'];
     }
     const artifacts=await readArtifacts(cwd,job.id,result.files,args.operation);signal.throwIfAborted();
+    observer.emit(()=>({eventType:'JOB_OUTPUT',stage:'media.processor.result',payload:{files:result.files,artifacts:artifacts.map(a=>({mime:a.mime,name:a.name,kind:a.kind,size:a.bytes.length,sha256:digest(a.bytes)}))}}));
     await finish(db,config,job,artifacts,source);
   }catch(error){
+    observer.emit({eventType:'JOB_FAILED',stage:'media.worker',payload:{error}});
     const rawCode=error instanceof z.ZodError?'invalid_payload':error instanceof Error && /^[a-z_]+$/.test(error.message)?error.message:'processing_failed';
     const code=config.ROUTER_MODE==='v1_1' && rawCode==='no_text_found'?(operation==='ocr'?'ocr_empty':operation==='qr_read'?'qr_empty':'read_empty'):rawCode;
     await transaction(db,async c=>{
@@ -168,4 +174,13 @@ export async function processMedia(db:Db,config:Config,job:MediaJob,deps:WorkerD
       await c.query("INSERT INTO audit_log(actor_id,chat_id,action,detail) VALUES($1,$2,'media.failed',jsonb_build_object('jobId',$3::text,'result',$4::text))",[job.owner_id,job.chat_id,job.id,code]);
     });
   }finally{if(cwd)await cleanTemporary(job.id,deps.root);}
+}
+
+export async function processMedia(db:Db,config:Config,job:MediaJob,deps:WorkerDeps=defaults):Promise<void>{
+  return observer.source({jobId:job.id,chatId:job.chat_id,actorId:job.owner_id,sourceMessageId:job.source_message_id,providerMsgId:job.source_message_id,routerMode:config.ROUTER_MODE},async()=>{
+    const started=performance.now();observer.emit(()=>({eventType:'JOB_CLAIMED',stage:'media.worker.claimed',payload:job}));observer.emit(()=>({eventType:'JOB_STARTED',stage:'media.worker',payload:job}));
+    try{await processMediaImpl(db,config,job,deps);}
+    catch(error){observer.emit({eventType:'JOB_FAILED',stage:'media.worker.escape',payload:{error}});throw error;}
+    finally{observer.emit({eventType:'JOB_OUTPUT',stage:'media.worker.finished',payload:{latencyMs:performance.now()-started}});await observer.snapshot('jobs',job.id,'media.worker.persisted');}
+  });
 }

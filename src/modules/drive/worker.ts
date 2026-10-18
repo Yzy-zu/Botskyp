@@ -1,3 +1,4 @@
+import { observer } from '../../observer/index.js';
 import { registerArtifactV2 } from '../../core/artifact-registration-v2.js';
 import type { PoolClient } from 'pg';
 import { product } from '../../../config/product.js';
@@ -17,6 +18,7 @@ export async function recoverDrive(db:Db):Promise<void>{
   await transaction(db,async c=>{
     const jobs=(await c.query<DriveJob&{phase:string}>("SELECT j.*,d.phase FROM jobs j JOIN drive_operations d ON d.job_id=j.id WHERE j.kind='drive' AND j.status='running' FOR UPDATE OF j")).rows;
     for(const job of jobs){
+      observer.emit(()=>({eventType:'JOB_RECOVERED',stage:'drive.startup',jobId:job.id,payload:{job,reason:'interrupted'}}));
       const review=['creating','sharing'].includes(job.phase);
       await c.query("UPDATE jobs SET status=$2,error=$3 WHERE id=$1",[job.id,review || job.attempts>=product.maxSendAttempts?'failed':'queued',review?'drive_write_interrupted':'interrupted']);
       await c.query('UPDATE drive_operations SET phase=$2,detail=$3,updated_at=clock_timestamp() WHERE job_id=$1',[job.id,review?'review':'queued',review?'Resultado remoto incierto; no se repite.':'interrupted']);
@@ -27,6 +29,7 @@ export async function recoverDrive(db:Db):Promise<void>{
 export async function claimDrive(db:Db):Promise<DriveJob|undefined>{
   return transaction(db,async c=>{
     const job=(await c.query<DriveJob>("SELECT * FROM jobs j WHERE kind='drive' AND status='queued' AND run_after<=clock_timestamp() AND NOT EXISTS(SELECT 1 FROM jobs older WHERE older.kind='media' AND older.status='queued' AND older.run_after<=clock_timestamp() AND older.id<j.id) ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED")).rows[0];
+    if(job)observer.emit(()=>({eventType:'JOB_CLAIMED',stage:'worker.claim',jobId:job.id,payload:job}));
     if(job)await c.query("UPDATE jobs SET status='running',attempts=attempts+1 WHERE id=$1",[job.id]);return job;
   });
 }
@@ -38,7 +41,7 @@ function verifyFile(file:DriveFile,folder:string):void{
   if(file.trashed || file.driveId || !file.ownedByMe || (file.parents?.length!==1 || !file.parents.includes(folder)) || !file.size || !/^[1-9]\d*$/.test(file.size) || Number(file.size)>product.driveLinkMaxBytes || file.mimeType.startsWith('application/vnd.google-apps.'))throw new Error('drive_file_unavailable');
   extension(file.mimeType);
 }
-export async function processDrive(db:Db,config:Config,job:DriveJob,deps:DriveDeps=defaults):Promise<void>{
+async function processDriveImpl(db:Db,config:Config,job:DriveJob,deps:DriveDeps=defaults):Promise<void>{
   config=configForChat(config,job.chat_id);
   let writing=false;
   try{
@@ -118,7 +121,8 @@ export async function processDrive(db:Db,config:Config,job:DriveJob,deps:DriveDe
       await c.query("UPDATE drive_operations SET phase='done',remote_id=$2,updated_at=clock_timestamp() WHERE job_id=$1",[job.id,file.id]);
       await c.query("INSERT INTO audit_log(actor_id,chat_id,action,detail) VALUES($1,$2,'drive.completed',$3)",[job.owner_id,job.chat_id,JSON.stringify({jobId:job.id,operation:input.operation,delivery:'queued',bytes:bytes?.length ?? 0})]);
     });
-  }catch{
+  }catch(error){
+    observer.emit({eventType:'JOB_FAILED',stage:'drive.worker',payload:{error}});
     await transaction(db,async c=>{
       const current=(await c.query<{status:string}>('SELECT status FROM jobs WHERE id=$1 FOR UPDATE',[job.id])).rows[0];if(current?.status!=='running')return;
       const status=writing?'review':'failed';const message=writing?'Resultado remoto incierto; no se repite. Requiere revisión técnica.':'Drive no disponible, archivo faltante/cambiado o acceso no verificable. No se entregó ningún archivo ni enlace.';
@@ -128,4 +132,13 @@ export async function processDrive(db:Db,config:Config,job:DriveJob,deps:DriveDe
       await c.query("INSERT INTO audit_log(actor_id,chat_id,action,detail) VALUES($1,$2,'drive.failed',$3)",[job.owner_id,job.chat_id,JSON.stringify({jobId:job.id,result:status})]);
     });
   }
+}
+
+export async function processDrive(db:Db,config:Config,job:DriveJob,deps:DriveDeps=defaults):Promise<void>{
+  return observer.source({jobId:job.id,chatId:job.chat_id,actorId:job.owner_id,sourceMessageId:job.source_message_id,providerMsgId:job.source_message_id,routerMode:config.ROUTER_MODE},async()=>{
+    observer.emit(()=>({eventType:'JOB_STARTED',stage:'drive.worker',payload:job}));
+    try{await processDriveImpl(db,config,job,deps);}
+    catch(error){observer.emit({eventType:'JOB_FAILED',stage:'drive.worker.escape',payload:{error}});throw error;}
+    finally{await observer.snapshot('jobs',job.id,'drive.worker.persisted');}
+  });
 }

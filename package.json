@@ -17,7 +17,12 @@
     "test": "vitest run",
     "eval:phase1": "tsx tests/phase1-vision-search.eval.ts",
     "migrate": "bash scripts/migrate.sh",
-    "eval:phase2": "tsx tests/phase2-school.eval.ts"
+    "eval:phase2": "tsx tests/phase2-school.eval.ts",
+    "observer:turn": "bash scripts/observer.sh turn",
+    "observer:user": "bash scripts/observer.sh user",
+    "observer:chat": "bash scripts/observer.sh chat",
+    "observer:errors": "bash scripts/observer.sh errors",
+    "observer:health": "bash scripts/observer.sh health"
   },
   "dependencies": {
     "fastify": "^5.12.7",

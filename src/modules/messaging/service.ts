@@ -1,3 +1,4 @@
+import { observer } from '../../observer/index.js';
 import { product } from '../../../config/product.js';
 import { argumentHash,openSession } from '../../core/sessions.js';
 import { fail,ok,type ToolCtx,type ToolResult } from '../../core/tools.js';
@@ -48,6 +49,7 @@ export async function confirm(ctx:ToolCtx,id:string,hash:string):Promise<ToolRes
   const queue=await ctx.c.query("SELECT 1 FROM jobs WHERE status IN ('queued','running')");
   if((jobs.rowCount ?? 0)>=product.mediaMaxJobs || (queue.rowCount ?? 0)>=product.mediaQueueLimit)return fail('Límite de trabajos activos alcanzado. Espera o cancela una operación.');
   const job=(await ctx.c.query<{id:string}>("INSERT INTO jobs(kind,payload,chat_id,owner_id,source_message_id) VALUES('bulk',$1,$2,$3,$4) RETURNING id",[JSON.stringify({opId:id}),op.chat_id,op.actor_id,`bulk:${id}`])).rows[0]!;
+  observer.emit(()=>({eventType:'JOB_QUEUED',stage:'bulk.enqueue',jobId:job.id,payload:{id:job.id,opId:id,sourceMessageId:op.source_id,operation:op,transaction:'pending_commit'}}));
   for(let i=0;i<p.count;i++){
     const target=p.targets[op.kind==='nuclear'?0:i]!;
     await ctx.c.query('INSERT INTO bulk_targets(op_id,position,target_id,label,text) VALUES($1,$2,$3,$4,$5)',[id,i,target.target,target.label,op.kind==='nuclear'?`${p.text} [${i+1}/${p.count}]`:p.text]);

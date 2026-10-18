@@ -1,3 +1,4 @@
+import { observer } from '../observer/index.js';
 import { prepareArtifactsV2 } from './prepare-artifacts-v2.js';
 import { readSessionV2, decideSessionV2 } from './sessions-v2.js';
 import { recentReminderV2 } from './recent-followup-v2.js';
@@ -19,7 +20,7 @@ import { searxSearch } from '../modules/web/index.js';
 import { commandText } from './shortcuts.js';
 import { activated, enableCommand } from './activation.js';
 
-export async function receive(db: Db, config: Config, input: Msg, now = new Date()):Promise<string> {
+export async function receive(db: Db, config: Config, input: Msg, now = new Date(), rawEvolution?:unknown):Promise<string> {
   const msg = msgSchema.parse(input);
   if(msg.isGroup!==msg.chatId.endsWith('@g.us'))return 'ignored';
   if (msg.fromMe || now.getTime() - msg.ts.getTime() > config.STALE_SECONDS * 1000 || msg.ts.getTime() - now.getTime() > product.futureToleranceSeconds * 1000) return 'ignored';
@@ -31,7 +32,11 @@ export async function receive(db: Db, config: Config, input: Msg, now = new Date
   return transaction(db, async c => {
     const inserted = await c.query('INSERT INTO seen_events(provider_msg_id) VALUES($1) ON CONFLICT DO NOTHING RETURNING provider_msg_id',[key]);
     if (!inserted.rowCount) return 'duplicate';
-    await c.query('INSERT INTO inbox(provider_msg_id,chat_id,payload) VALUES($1,$2,$3)',[key,msg.chatId,JSON.stringify(msg)]);
+    const accepted=await c.query<{id:string;turn_id:string}>('INSERT INTO inbox(provider_msg_id,chat_id,payload) VALUES($1,$2,$3) RETURNING id,turn_id',[key,msg.chatId,JSON.stringify(msg)]);
+    const row=accepted.rows[0]!;
+    observer.bindClient(c,{turnId:row.turn_id,inboxId:row.id,chatId:msg.chatId,actorId:msg.senderId,providerMsgId:msg.id,sourceMessageId:msg.id,routerMode:config.ROUTER_MODE});
+    observer.emit(()=>({eventType:'INBOUND_ACCEPTED',stage:'evolution.inbound',payload:{rawEvolution,providerDedupeKey:key,transaction:'pending_commit'}}));
+    observer.emit(()=>({eventType:'INBOUND_NORMALIZED',stage:'normalization',payload:{userText:msg.text,isGroup:msg.isGroup,msg}}));
     return 'accepted';
   });
 }
@@ -43,9 +48,15 @@ export async function processNext(db: Db, baseConfig: Config):Promise<boolean> {
     if (!row) return false;
     const msg = msgSchema.parse(row.payload);
     const config=configForChat(baseConfig,msg.chatId);
+    observer.bindClient(c,{turnId:row.turn_id,inboxId:row.id,chatId:msg.chatId,actorId:msg.senderId,providerMsgId:msg.id,sourceMessageId:msg.id,routerMode:config.ROUTER_MODE});
+    observer.bindClient(c,{...observer.clientIds(c),processing:true});
+    observer.emit({eventType:'TRANSACTION_STARTED',stage:'inbox.business'});
+    observer.emit({eventType:'TURN_STARTED',stage:'inbox',payload:{inboxId:row.id}});
     const actor=await actorFor(c,msg,config);
+    observer.bindClient(c,{...observer.clientIds(c),actorId:actor.id});
     const owner=actor.role==='owner';
     if (!msg.isGroup && msg.chatId===msg.senderId) msg.chatId=actor.id;
+    observer.bindClient(c,{...observer.clientIds(c),chatId:msg.chatId});
     // Preserve the raw envelope key while following v1's authenticated private-chat canonicalization.
     if (row.chat_id!==msg.chatId) await c.query('UPDATE message_turns SET resolved_chat_id=$2 WHERE id=$1 AND resolved_chat_id<>$2',[row.turn_id,msg.chatId]);
     if (msg.quoted) {
@@ -106,10 +117,13 @@ export async function processNext(db: Db, baseConfig: Config):Promise<boolean> {
         }
       }
     }
+    observer.emit(()=>({eventType:'OUTPUT_SANITIZED',stage:'inbox.before_sanitizer',payload:{text:reply}}));
     if (reply && config.ROUTER_MODE==='v1_1') reply=sanitizeOutputV2(reply);
+    observer.emit(()=>({eventType:'OUTPUT_SANITIZED',stage:'inbox.after_sanitizer',payload:{finalReply:reply}}));
     if (reply) {
-      await c.query(`INSERT INTO outbox(chat_id,payload,dedupe_key) VALUES($1,$2,$3) ON CONFLICT(dedupe_key) DO NOTHING`,
+      const queued=await c.query(`INSERT INTO outbox(chat_id,payload,dedupe_key) VALUES($1,$2,$3) ON CONFLICT(dedupe_key) DO NOTHING RETURNING id`,
         [msg.chatId,JSON.stringify({text:reply,sourceId:msg.id}),`reply:${row.provider_msg_id}`]);
+      observer.emit(()=>({eventType:'OUTBOX_QUEUED',stage:'inbox.reply',payload:{outboxId:queued.rows[0]?.id,chatId:msg.chatId,payload:{text:reply,sourceId:msg.id},transaction:'pending_commit'}}));
     }
     await c.query("UPDATE inbox SET status='done' WHERE id=$1",[row.id]);
     return true;

@@ -1,3 +1,4 @@
+import { startObserver, observer } from './observer/index.js';
 import { geminiKeyPool } from './core/gemini-key-pool.js';
 import { readConfig } from './config.js';
 import { createDb } from './db/client.js';
@@ -12,7 +13,8 @@ import { syncEnabledGroups } from './core/membership.js';
 import { startMembershipRefresh } from './core/membership-refresh.js';
 const config=readConfig();
 const db=createDb(config.DATABASE_URL);
-await migrate(db);
+const stopObserver=startObserver(config,'app');
+try{await migrate(db);}catch(error){observer.emit({eventType:'TURN_FAILED',stage:'app.startup.migrate',payload:{error}});throw error;}
 await db.query('INSERT INTO chats(id,is_group,enabled) VALUES($1,true,true) ON CONFLICT DO NOTHING',[config.LAB_CHAT_ID]);
 const transport=config.TRANSPORT==='evolution'?new Evolution(config):new MockEvolution();
 async function refreshMembers():Promise<void>{
@@ -26,7 +28,7 @@ await app.listen({host:'0.0.0.0',port:config.PORT});
 let closing=false;
 async function close():Promise<void> {
   if(closing)return;closing=true;
-  stopMembershipRefresh();await app.close();await stopRuntime();await db.end();
+  stopMembershipRefresh();await app.close();await stopRuntime();await stopObserver();await db.end();
 }
 process.on('SIGTERM',()=>{void close();});
 process.on('SIGINT',()=>{void close();});

@@ -1,3 +1,4 @@
+import { observer } from '../observer/index.js';
 import { z } from 'zod';
 import type { Config } from '../config.js';
 import type { Db } from '../db/client.js';
@@ -36,7 +37,7 @@ function isTimeout(error:unknown,signal:AbortSignal):boolean{
 export class Gemini implements Llm {
   readonly counters={calls:0,inputTokens:0,outputTokens:0};
   constructor(private db:Db,private config:Config,private actor:string,private budget:CallBudget={used:0},private http:typeof fetch=fetch,private parentSignal?:AbortSignal){}
-  private async request(input:LlmInput,search=false):Promise<z.infer<typeof responseSchema>>{
+  private async requestImpl(input:LlmInput,search=false):Promise<z.infer<typeof responseSchema>>{
     if(!this.config.GEMINI_FREE_TIER_CONFIRMED)throw new LlmUnavailable('disabled');
     const textOnly=JSON.stringify({...input,contents:input.contents},(key,value:unknown)=>key==='data'?'[image]':value);
     if(textOnly.length>product.llmMaxRequestChars)throw new LlmUnavailable('invalid');
@@ -44,7 +45,7 @@ export class Gemini implements Llm {
     // No paid grounding with Gemini 3.x; this route is exclusively for the legacy free allowance.
     if(this.budget.used>=product.llmMaxCalls)throw new LlmUnavailable('local_limit','message');
     this.budget.used++;
-    return geminiKeyPool(this.config).run(async apiKey=>{
+    return geminiKeyPool(this.config).run(async (apiKey,keyIndex)=>{
       const hasImage=JSON.stringify(input.contents,(key,value:unknown)=>key==='data'?'[bytes]':value).includes('"inlineData"');
       const id=await reserveCall(this.db,this.actor,model,search?'web':hasImage?'vision':'router',estimateInputTokens(input),{
         userRpm:this.config.LLM_LOCAL_USER_RPM, globalRpm:this.config.LLM_LOCAL_GLOBAL_RPM,
@@ -52,6 +53,8 @@ export class Gemini implements Llm {
       },input.turnId);this.counters.calls++;
       const signal=AbortSignal.any([AbortSignal.timeout(hasImage?product.llmVisionTimeoutMs:product.llmTimeoutMs),...(this.parentSignal?[this.parentSignal]:[])]);
       let response:Response;
+      const attemptStarted=performance.now();
+      observer.emit(()=>({eventType:'LLM_ATTEMPT_STARTED',stage:'gemini.http',payload:{ordinal:this.counters.calls,keyIndex,model,usageId:id,input,search}}));
       try {
         response=await this.http(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,{
           method:'POST',headers:{'x-goog-api-key':apiKey,'content-type':'application/json'},
@@ -63,15 +66,18 @@ export class Gemini implements Llm {
           }),signal,redirect:'error',
         });
       }catch(error){
+        observer.emit({eventType:'LLM_ATTEMPT_ERROR',stage:'gemini.http',payload:{error,latencyMs:performance.now()-attemptStarted}});
         const timeout=isTimeout(error,signal);
         await this.db.query('UPDATE llm_usage SET status=$2 WHERE id=$1',[id,timeout?'timeout':'network_error']);
         throw new GeminiAttemptError(timeout?'timeout':'provider');
       }
       if(!response.ok){
+        observer.emit({eventType:'LLM_ATTEMPT_ERROR',stage:'gemini.http',payload:{httpStatus:response.status,retryAfterMs:retryAfterMs(response.headers.get('retry-after')),latencyMs:performance.now()-attemptStarted}});
         let invalidKey=false;
         if(response.status===400){
           try{
-            const details=errorSchema.safeParse(await response.json());
+            const rawError:unknown=await response.json();observer.emit(()=>({eventType:'LLM_ATTEMPT_ERROR',stage:'gemini.provider_error',payload:{rawError,httpStatus:response.status}}));
+            const details=errorSchema.safeParse(rawError);
             invalidKey=details.success && Boolean(details.data.error.details?.some(detail=>detail.reason==='API_KEY_INVALID'));
           }catch(error){
             if(isTimeout(error,signal)){
@@ -88,8 +94,9 @@ export class Gemini implements Llm {
         throw new GeminiAttemptError(response.status===429?'quota':'provider',invalidKey?401:response.status,retryAfterMs(response.headers.get('retry-after')));
       }
       let result:z.infer<typeof responseSchema>;
-      try{result=responseSchema.parse(await response.json());}
+      try{const raw=await response.json();observer.emit(()=>({eventType:'LLM_ATTEMPT_RESPONSE',stage:'gemini.http',payload:{model,ordinal:this.counters.calls,raw,latencyMs:performance.now()-attemptStarted}}));result=responseSchema.parse(raw);}
       catch(error){
+        observer.emit({eventType:'LLM_ATTEMPT_ERROR',stage:'gemini.parse',payload:{error,latencyMs:performance.now()-attemptStarted}});
         const timeout=isTimeout(error,signal);
         await this.db.query('UPDATE llm_usage SET status=$2 WHERE id=$1',[id,timeout?'timeout':'invalid']);
         throw new GeminiAttemptError(timeout?'timeout':'invalid');
@@ -106,6 +113,13 @@ export class Gemini implements Llm {
       if(status!=='ok')throw new GeminiAttemptError('invalid');
       return result;
     },this.parentSignal);
+  }
+  private logicalOrdinal=0;
+  private async request(input:LlmInput,search=false):Promise<z.infer<typeof responseSchema>>{
+    const ordinal=++this.logicalOrdinal,started=performance.now();
+    observer.emit(()=>({eventType:'LLM_REQUEST',stage:'gemini.logical',...(input.turnId?{turnId:input.turnId}:{}),payload:{ordinal,model:search?product.llmLegacySearchModel:this.config.GEMINI_MODEL,input,search}}));
+    try{const result=await this.requestImpl(input,search);observer.emit(()=>({eventType:'LLM_RESPONSE',stage:'gemini.logical',payload:{ordinal,result,latencyMs:performance.now()-started}}));return result;}
+    catch(error){observer.emit({eventType:'LLM_ERROR',stage:'gemini.logical',payload:{ordinal,error,latencyMs:performance.now()-started}});throw error;}
   }
   async generate(input:LlmInput):Promise<LlmReply>{
     const result=await this.request(input);

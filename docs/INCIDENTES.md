@@ -247,3 +247,20 @@ Regresiones y límites del nuevo deploy se registran en v1.1/WS-PARITY-1.md.
 Segunda ventana, código 79336fb desde 01:02:32 UTC: «para oí, para las 8 piem» y «QUE PARA OOIII» no completaron la fecha; se normaliza el reloj dictado y el fragmento para-fecha solo dentro del slot pendiente. «Kon esas hazlo» volvió a llamar collect/start, aunque conservó las dos imágenes: faltaba una acción finish en el contrato del modelo. Se agrega en v1.1 y se reutiliza el cierre existente, sin otro sistema de jobs. Gemini real aislado ya interpretó el cierre natural y dejó una única conversión en cola; entrega real se verificará después del tercer despliegue.
 
 La revisión histórica detectó además «cancelalo mejor» → texto «ya te lo anulé» sin ToolExecution; el recordatorio quedó pending. El listado posterior sin tool también negó pendientes. Causa: gramática de cancelación no admitía mejor al final, señal de exposición no incluía recordatorios en plural y el diagnóstico de efecto no cubría ya te lo anulé. Se corrigen esos tres puntos y se añaden cuatro regresiones. Gemini real aislado confirmó create → mañana → cancel/ok → list/ok. No se cancela silenciosamente el registro histórico ni se acredita como cancelado: necesita una nueva selección/orden segura desde WhatsApp.
+
+## 18-10-2026 — validación del observer: expectativa heredada de ping
+
+Durante la suite completa se detectó `natural-foundations.test.ts:133`: exige
+`pong` determinista en v1.1 aunque Gemini está deshabilitado. La promoción AI-first
+anterior retiró ese fast path. Reproducido en worktree aislado del baseline
+73ee8b8, sin observer: mismo fallo y misma respuesta de indisponibilidad del modelo.
+Sin incidente productivo nuevo. Por instrucción del dueño, solo se documenta:
+no se corrige el test ni se cambia el cerebro. Evidencia privada en
+`.local/observer-baseline-test.log`; el informe de pruebas conserva esta excepción.
+
+En la misma validación se reprodujeron sin observer dos fixtures más: shadow
+espera selección léxica de Minecraft, y la regex `dealer.*10` de context-v2 alcanza
+un `10` en una SafeRef posterior aunque `dealerVisible` vale 9. Los smoke reales
+usan reloj fijo 16:00 UTC: Scenario 3 falla igual en baseline por expires_at anterior
+al created_at real (`sessions_v2_check`), antes de llamar a Gemini; también hubo
+cuota en la tanda real. No se cambian fixtures, sesiones, Policy ni exposición.

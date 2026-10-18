@@ -1,3 +1,4 @@
+import { observer } from './observer/index.js';
 import { checkConnection } from './wa/connection.js';
 import Fastify, { LogController } from 'fastify';
 import { timingSafeEqual } from 'node:crypto';
@@ -20,17 +21,19 @@ export function makeApp(db:Db,config:Config,transport:Transport,normalize:Normal
     try {await db.query('SELECT 1');database=true;} catch {app.log.warn({where:'health.db'},'Base no disponible');}
     try {evolution=await checkConnection(db,config,transport);} catch {app.log.warn({where:'health.evolution'},'Evolution no disponible');}
     const ok=database && evolution;
-    return reply.code(ok?200:503).send({ok,database,evolution:config.TRANSPORT==='evolution'?evolution:null,transport:config.TRANSPORT});
+    return reply.code(ok?200:503).send({observer:observer.health(),ok,database,evolution:config.TRANSPORT==='evolution'?evolution:null,transport:config.TRANSPORT});
   });
   app.post('/webhook',async(req,reply)=>{
     const header=req.headers['x-webhook-secret'];
     const actual=Buffer.from(typeof header==='string'?header:'');const expected=Buffer.from(config.WEBHOOK_SECRET);
     if (actual.length!==expected.length || !timingSafeEqual(actual,expected)) return reply.code(401).send({error:'unauthorized'});
     let msg:Msg|null;
-    try {msg=normalize(req.body);} catch {return reply.code(400).send({error:'invalid_event'});}
+    try {msg=normalize(req.body);} catch(error) {observer.emit(()=>({eventType:'TURN_FAILED',stage:'normalization',payload:{error,rawEvolution:req.body,status:'invalid_event'}}));return reply.code(400).send({error:'invalid_event'});}
     if (!msg) return {status:'ignored'};
     const start=performance.now();
-    const status=await receive(db,config,msg);
+    let status:string;
+    try{status=await receive(db,config,msg,new Date(),req.body);}
+    catch(error){observer.emit(()=>({eventType:'TURN_FAILED',stage:'inbound.receive',payload:{error,msg,rawEvolution:req.body}}));throw error;}
     app.log.info({msgId:msg.id,chatId:msg.chatId,tool:'inbox',routerMode:configForChat(config,msg.chatId).ROUTER_MODE,ms:Math.round(performance.now()-start),status},'Evento recibido');
     return {status};
   });

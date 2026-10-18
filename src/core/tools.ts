@@ -1,3 +1,4 @@
+import { observer } from '../observer/index.js';
 import { z } from 'zod';
 import pino from 'pino';
 import { product } from '../../config/product.js';
@@ -29,7 +30,12 @@ export interface Tool<A extends z.ZodType=z.ZodType> {
 export const ok=(reply:string,facts:Record<string,unknown>={}):ToolResult=>({ok:true,reply,facts});
 export const fail=(message:string):ToolResult=>({ok:false,kind:'user',message});
 export function defineTool<A extends z.ZodType>(tool:Tool<A>):Tool{
-  return {...tool,run:(ctx,value)=>tool.run(ctx,tool.args.parse(value))};
+  return {...tool,run:async(ctx,value)=>{
+    const args=tool.args.parse(value);
+    observer.emit(()=>({eventType:'TOOL_STARTED',stage:'legacy.handler',payload:{toolName:tool.name,args}}));
+    try{const outcome=await tool.run(ctx,args);observer.emit(()=>({eventType:tool.risk==='read'?'TOOL_RESULT':'BUSINESS_MUTATION',stage:'legacy.handler.receipt',payload:{toolName:tool.name,args,outcome,transaction:'pending_commit'}}));return outcome;}
+    catch(error){observer.emit({eventType:'TOOL_ERROR',stage:'legacy.handler',payload:{toolName:tool.name,error}});throw error;}
+  }};
 }
 export class ToolRegistry {
   private tools=new Map<string,Tool>();

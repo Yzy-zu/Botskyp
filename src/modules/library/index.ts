@@ -1,3 +1,4 @@
+import { observer } from '../../observer/index.js';
 import { z } from 'zod';
 import { product } from '../../../config/product.js';
 import { defineTool,ok,fail,type Tool,type ToolCtx } from '../../core/tools.js';
@@ -22,6 +23,7 @@ export const libraryTools:Tool[]=[
     if(!await access(ctx))return fail('No.');
     if(args.source==='drive' && !ctx.config.LIBRARY_DRIVE_ENABLED)return fail('Drive no está configurado localmente; la biblioteca local sigue disponible.');
     const r=await ctx.c.query<{id:string}>('INSERT INTO library_syncs(source,actor_id) VALUES($1,$2) ON CONFLICT DO NOTHING RETURNING id',[args.source,ctx.actor.id]);
+    if(r.rows[0])observer.emit(()=>({eventType:'JOB_QUEUED',stage:'library.enqueue',jobId:`library:${r.rows[0]!.id}`,payload:{syncId:r.rows[0]!.id,source:args.source,transaction:'pending_commit'}}));
     return ok(r.rows[0]?`Actualización #${r.rows[0].id} en cola; todavía no se confirma sincronización.`:'Ya hay una actualización de biblioteca pendiente.');
   }}),
   defineTool({...base,name:'library.sync_status',capability:{summary:'Consultar sincronización.',produces:'estado'},permission:'config.global',description:'Ver estado de sincronización sanitizado, sin rutas ni credenciales.',examples:['bot biblioteca estado'],args:z.strictObject({}),async run(ctx){

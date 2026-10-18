@@ -1,3 +1,4 @@
+import { observer } from '../../observer/index.js';
 import { execFile } from 'node:child_process';
 import { mkdtemp,readFile,lstat,rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -39,6 +40,7 @@ export async function syncLibrary(db:Db,config:Config,options:{root?:string;runn
     const flags=await lock.query<{key:string}>("SELECT key FROM system_flags WHERE key IN ('emergency','maintenance') AND value='true'::jsonb");
     if(flags.rows.some(f=>f.key==='emergency' || (f.key==='maintenance' && request.actor_id==='system:library')))return false;
     id=request.id;
+    observer.emit(()=>({eventType:'JOB_STARTED',stage:'library.sync',jobId:`library:${id}`,payload:{syncId:id,request}}));
     if(request.actor_id!=='system:library' && (request.actor_id.endsWith('@lid') || !config.OWNER_JIDS.includes(request.actor_id)))throw new Error('sync_not_authorized');
     await lock.query("UPDATE library_syncs SET status='running',started_at=clock_timestamp() WHERE id=$1",[id]);
     let root=options.root ?? libraryRoot;
@@ -52,9 +54,11 @@ export async function syncLibrary(db:Db,config:Config,options:{root?:string;runn
     await transaction(db,async c=>{
       await publish(c,request.source,files);
       await c.query("UPDATE library_syncs SET status='done',item_count=$2,finished_at=clock_timestamp() WHERE id=$1",[id,files.length]);
+      observer.emit(()=>({eventType:'JOB_COMPLETED',stage:'library.sync',jobId:`library:${id}`,payload:{syncId:id,itemCount:files.length,transaction:'pending_commit'}}));
     });
     return true;
-  }catch{
+  }catch(error){
+    observer.emit({eventType:'JOB_FAILED',stage:'library.sync',...(id?{jobId:`library:${id}`} : {}),payload:{syncId:id,error}});
     if(id)await lock.query("UPDATE library_syncs SET status='failed',error='sync_unavailable_or_invalid',finished_at=clock_timestamp() WHERE id=$1",[id]);
     return Boolean(id);
   }finally{

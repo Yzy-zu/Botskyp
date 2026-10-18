@@ -177,7 +177,10 @@ it('runs DOCX → PDF → compress → read → resend with real worker persiste
     const selected=await resolve(ctx,'resend');expect(selected).toMatchObject({status:'ok',ref:'A_LAST',artifact:{id:lastPdf}});
     expect((await resendArtifactV2(ctx,empty())).status).toBe('queued');
     expect(vi.mocked(deps.process)).toHaveBeenCalledTimes(calls);expect(await count('jobs')).toBe(3);
-    const contextResult=await buildTurnContextV2(ctx);expect(contextResult.envelope.REFERENCE_DATA.recentResults[0]?.excerpt).toBe('Texto del PDF comprimido');
+    const contextResult=await buildTurnContextV2(ctx);expect(contextResult.envelope.REFERENCE_DATA.recentResults).toEqual([]);
+  });
+  await context({text:'resume lo anterior'},async ctx=>{
+    expect((await buildTurnContextV2(ctx)).envelope.REFERENCE_DATA.recentResults[0]?.excerpt).toBe('Texto del PDF comprimido');
   });
 });
 it('preserves incoming sticker kind and provider filename as data',async()=>{

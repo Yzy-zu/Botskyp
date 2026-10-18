@@ -35,5 +35,5 @@ export function ambiguousTime(text:string):boolean{
   if(!clock)return false;
   const hour=clock[1]==='ocho'?8:Number(clock[1]);
   if(hour>12)return false;
-  return !/(?:de la|de|por la)\s+(ma[ñn]ana|tarde|noche|madrugada)|\b[ap]\.?\s*m\.?/iu.test(text);
+  return !/(?:de la|de|por la)\s+(ma[ñn]ana|tarde|noche|madrugada)|(?<![\p{L}])[ap]\.?\s*m\.?/iu.test(text);
 }

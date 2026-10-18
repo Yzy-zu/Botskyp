@@ -18,7 +18,7 @@ export async function runMediaBridgeV2(ctx:ExecutionContextV2,decision:PolicyDec
   }
   const args=requestSchema.parse(decision.resolvedArgs);
   const sources:unknown[]=[];
-  if(a){
+  for(const a of [...new Map(decision.resolvedSafeRefs.filter(r=>r.kind==='artifactRef').map(r=>[r.id,r])).values()]){
     const row=(await ctx.legacy.c.query<{media_attachment_id:string|null;school_attachment_id:string|null}>(
       'SELECT media_attachment_id,school_attachment_id FROM chat_artifacts WHERE id=$1 AND chat_id=$2 AND actor_id=$3 AND expires_at>clock_timestamp()', [a.id,ctx.chatId,ctx.actorId])).rows[0];
     if(!row)return fail('Ese archivo ya no está disponible. Reenvíalo.');

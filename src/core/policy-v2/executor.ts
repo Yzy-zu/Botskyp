@@ -1,6 +1,7 @@
 import { confirmationPromptV2 } from '../confirmation-presenter-v2.js';
 import { openTimeClarificationV2 } from '../clarification-v2.js';
 import { runMediaBridgeV2 } from '../media-bridge-v2.js';
+import { beginCollectionV2 } from '../media-collection-v2.js';
 import { confirmationInputV2 } from '../session-input-v2.js';
 import { randomUUID } from 'node:crypto';
 import pino from 'pino';
@@ -146,6 +147,7 @@ export async function executeToolV2(ctx: ToolCtx, name: string, modelArgs: unkno
     try {
       let outcome;
       if(name==='media.process')outcome=await runMediaBridgeV2(context,decision);
+      else if(name==='media.collect')outcome=await beginCollectionV2(context,decision);
       else if (['bulk.nuclear','bulk.broadcast','messaging.send'].includes(name)) {
         const kind = name === 'bulk.nuclear' ? 'nuclear' : name === 'bulk.broadcast' ? 'broadcast' : 'message';
         const prepared = await draft(context.legacy, kind, String(decision.resolvedArgs.text),
@@ -168,6 +170,7 @@ export async function executeToolV2(ctx: ToolCtx, name: string, modelArgs: unkno
       await c.query('RELEASE SAVEPOINT v2_handler');
       // All supported effects are transactional DB mutations or durable queues, never remote writes.
       const failure = result(name, entry.tool.domain, 'error', error instanceof EconomyError ? 'DOMAIN_REJECTED' : 'HANDLER_ERROR');
+      if(name==='web.search')failure.presentation='No pude completar la búsqueda en este momento. Inténtalo más tarde.';
       await finish(failure);
       if (pending) await c.query('UPDATE tool_confirmations_v2 SET consumed_execution_id=$2 WHERE id=$1', [pending.id, id]);
       return failure;

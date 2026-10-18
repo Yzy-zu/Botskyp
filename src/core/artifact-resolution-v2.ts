@@ -4,7 +4,7 @@ import { conversions, extensions, type Operation } from '../modules/media/catalo
 import { artifactsForTurn, type ArtifactRecord } from './chat-artifacts.js';
 import type { SafeRefs } from './safe-refs.js';
 export type ArtifactOperation = Operation | 'resend' | 'vision';
-export type ArtifactScopeV2 = { c: PoolClient; chatId: string; actorId: string; sourceMessageId: string; quotedMessageId?: string; now: Date; safeRefMap: SafeRefs };
+export type ArtifactScopeV2 = { c: PoolClient; chatId: string; actorId: string; sourceMessageId: string; quotedMessageId?: string; now: Date; safeRefMap: SafeRefs; allowRecentVision?: boolean };
 export type ArtifactResolution = { status: 'ok'; artifact: ArtifactRecord; ref: string } | { status: 'not_found' | 'incompatible' | 'needs_clarification' };
 export function artifactCompatible(operation: ArtifactOperation, artifact: Pick<ArtifactRecord, 'mime'>): boolean {
   if (operation === 'resend') return true;
@@ -52,6 +52,8 @@ export async function resolveVisionArtifactV2(context: ArtifactScopeV2): Promise
   for (const [ref, candidates] of [['A_CURRENT',files.current],['A_REPLY',files.reply]] as const) {
     const images = candidates.filter(a => artifactCompatible('vision',a));
     if (images.length) return images.length === 1 ? { status:'ok',artifact:images[0]!,ref } : { status:'needs_clarification' };
+    if (candidates.length) return { status:'not_found' };
   }
+  if(context.quotedMessageId || context.allowRecentVision===false)return {status:'not_found'};
   return resolveArtifactForOperation('vision', { c: context.c, chatId: context.chatId, actorId: context.actorId, sourceMessageId: '', now: context.now, safeRefMap: context.safeRefMap });
 }

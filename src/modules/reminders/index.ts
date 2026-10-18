@@ -13,7 +13,7 @@ export const reminderTools:Tool[]=[
         await openSession(ctx.c,ctx.actor.id,ctx.chat.id,'clarify',{action:'reminders.create',args,missing:'body'},['contenido','cancelar']);
         return ok('¿Qué quieres que te recuerde?');
       }
-      if(!args.dueAt || ambiguousTime(ctx.msg.text)){
+      if(!args.dueAt || (ctx.config.ROUTER_MODE!=='v1_1' && ambiguousTime(ctx.msg.text))){
         await openSession(ctx.c,ctx.actor.id,ctx.chat.id,'clarify',{action:'reminders.create',args},['fecha','cancelar']);
         return ok(args.dueAt?'¿A las ocho de la mañana o de la tarde/noche?':'¿Cuándo quieres que te lo recuerde?');
       }

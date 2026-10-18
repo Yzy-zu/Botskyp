@@ -3,6 +3,8 @@ import type { PoolClient } from 'pg';
 import type { Config } from '../config.js';
 import { product } from '../../config/product.js';
 import { confirmationInputV2 } from './session-input-v2.js';
+import { sessionTextV2 } from './session-input-v2.js';
+import { reminderSlotUpdateV2, mergeSessionSlotsV2 } from './reminder-slots-v2.js';
 
 export const missingSlotV2 = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('am_pm'), hour: z.number().int().min(1).max(12) }),
@@ -17,26 +19,28 @@ export const sessionV2Schema = z.object({
 });
 export type SessionV2 = z.infer<typeof sessionV2Schema>;
 export type SessionDecisionV2 = { kind: 'not_consumed' | 'expired' | 'cancel' | 'confirm' }
-  | { kind: 'continue'; slots: { period: 'am' | 'pm'; hour24: number } | Record<string, string> }
-  | { kind: 'collect' };
+  | { kind: 'continue' | 'update'; slots: Record<string, unknown>; missingSlots?:SessionV2['missing_slots'] }
+  | { kind: 'collect' | 'finish_collection' };
 export function decideSessionV2(session: SessionV2 | undefined, text: string, now: Date, hasAttachment = false): SessionDecisionV2 {
   if (!session || session.status !== 'active') return { kind: 'not_consumed' };
   if (session.expires_at <= now) return { kind: 'expired' };
   const confirmation = confirmationInputV2(text);
   if (confirmation === 'cancel') return { kind: 'cancel' };
   if (session.kind === 'confirm') return { kind: confirmation };
-  if (session.kind === 'media_collect') return { kind: hasAttachment && !text.trim() ? 'collect' : 'not_consumed' };
+  if (session.kind === 'media_collect') return { kind: /^(?:ya|termina|terminar|hazlo|haz el pdf|listo)$/u.test(sessionTextV2(text))?'finish_collection':hasAttachment?'collect':'not_consumed' };
+  const temporal=reminderSlotUpdateV2(session,text,now);
+  if(temporal)return {kind:temporal.ready?'continue':'update',slots:temporal.args,...(!temporal.ready?{missingSlots:temporal.missingSlots}:{})};
   // Multiple missing slots cannot be filled by guessing which one a fragment addresses.
   if (session.missing_slots.length !== 1) return { kind: 'not_consumed' };
   const slot = session.missing_slots[0]!;
-  const normalized = text.trim().toLocaleLowerCase('es-MX').replaceAll('.', '').replace(/!+$/u, '');
+  const normalized = sessionTextV2(text).replaceAll('.', '');
   if (slot.kind === 'choice') {
-    const choices = slot.choices.filter(choice => choice.toLocaleLowerCase('es-MX') === normalized);
+    const choices = slot.choices.filter(choice => sessionTextV2(choice) === normalized);
     return choices.length === 1 ? { kind: 'continue', slots: { [slot.field]: choices[0]! } } : { kind: 'not_consumed' };
   }
-  const match = /^(?:(\d{1,2})\s*)?(am|pm|(?:de|en|por) la (?:mañana|noche|tarde))$/u.exec(normalized);
+  const match = /^(?:(\d{1,2})\s*)?(am|pm|(?:de|en|por) la (?:manana|noche|tarde))$/u.exec(normalized);
   if (!match || (match[1] && Number(match[1]) !== slot.hour)) return { kind: 'not_consumed' };
-  const period = /^(?:am|.*mañana)$/u.test(match[2]!) ? 'am' : 'pm';
+  const period = /^(?:am|.*manana)$/u.test(match[2]!) ? 'am' : 'pm';
   return { kind: 'continue', slots: { period, hour24: slot.hour % 12 + (period === 'pm' ? 12 : 0) } };
 }
 export async function readSessionV2(c: PoolClient, actorId: string, chatId: string): Promise<SessionV2 | undefined> {
@@ -50,6 +54,12 @@ async function replaceForeground(c: PoolClient, actorId: string, chatId: string)
   await c.query(`UPDATE tool_confirmations_v2 SET invalidated=true WHERE id IN(
     SELECT confirmation_id FROM sessions_v2 WHERE actor_id=$1 AND chat_id=$2 AND status='active') AND consumed_execution_id IS NULL`, [actorId, chatId]);
   await c.query("UPDATE sessions_v2 SET status=CASE WHEN expires_at<=clock_timestamp() THEN 'expired' ELSE 'cancelled' END,version=version+1 WHERE actor_id=$1 AND chat_id=$2 AND status='active'", [actorId, chatId]);
+}
+export async function openCollectionSessionV2(c: PoolClient, actorId: string, chatId: string, operation: 'images_pdf'|'pdf_merge', artifactIds: string[], now: Date): Promise<void> {
+  await replaceForeground(c,actorId,chatId);
+  await c.query(`INSERT INTO sessions_v2(actor_id,chat_id,kind,pending_tool,partial_args,prompt,code,expires_at)
+    VALUES($1,$2,'media_collect','media.process',$3,'Envía los archivos y dime «terminar».','MEDIA_COLLECTION',$4)`,
+    [actorId,chatId,JSON.stringify({operation,artifactIds}),new Date(now.getTime()+product.sessionMinutes*60_000)]);
 }
 export async function openClarificationV2(c: PoolClient, mode: Config['ROUTER_MODE'], input: {
   actorId: string; chatId: string; pendingTool: string; partialArgs: Record<string, unknown>;
@@ -80,6 +90,12 @@ export async function coordinateSessionV2(c: PoolClient, mode: Config['ROUTER_MO
   if (!live) return { kind: 'not_consumed' };
   const current = sessionV2Schema.parse(live);
   const decision = decideSessionV2(current, text, now);
+  if(decision.kind==='update'){
+    const args=mergeSessionSlotsV2(current.partial_args,decision.slots);
+    const time=args.time as {hour:number};
+    await c.query(`UPDATE sessions_v2 SET partial_args=$2,missing_slots=$3,prompt=$4,version=version+1 WHERE id=$1 AND version=$5 AND status='active'`,
+      [session.id,JSON.stringify(args),JSON.stringify(decision.missingSlots ?? [{kind:'am_pm',hour:time.hour}]),decision.missingSlots?.some(s=>s.kind==='choice' && s.field==='date')?'¿Para hoy o mañana?':`¿A las ${time.hour} de la mañana o de la noche?`,current.version]);
+  }
   const status = decision.kind === 'expired' ? 'expired' : decision.kind === 'cancel' ? 'cancelled' : decision.kind === 'continue' ? 'done' : undefined;
   if (status) {
     await c.query(`UPDATE sessions_v2 SET status=$2,version=version+1,

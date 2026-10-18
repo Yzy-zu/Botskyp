@@ -318,10 +318,10 @@ it('ignores stale calls in an inconsistent legacy reply field; current original 
   expect(result.text).toContain('XP');expect(await count('notes')).toBe(0);
   expect((await db.query('SELECT tool_name FROM tool_executions WHERE turn_id=$1',[result.turnId])).rows).toEqual([{tool_name:'xp.balance'}]);
 });
-it.each(['school_schedule_propose','school_schedule_import','school_destination','media_search','media_collect','drive_upload'])('unsafe or unavailable bridge remains naturally blocked: %s',async name=>{
+it.each(['school_schedule_propose','school_schedule_import','school_destination','media_search','drive_upload'])('unsafe or unavailable bridge remains naturally blocked: %s',async name=>{
   const args=name==='media_search'?{query:'saludo',type:'audio'}:name==='media_collect'?{operation:'images_pdf'}:name==='school_schedule_propose'?{lessons:[]} : {};
   const result=await turn('botsky escuela media drive',scripted(reply([{name,args}])));
-  expect(result.text).toMatch(/no pude|no está|apagado|válidos/iu);
+  expect(result.text).toMatch(/no pude|no está|apagado|válidos|no la tengo conectada/iu);
   expect(await count('jobs')).toBe(0);expect(await count('school_imports')).toBe(0);expect(await count('bulk_ops')).toBe(0);
 });
 it('group member can ask about an explicitly quoted peer image without transferring its ownership',async()=>{

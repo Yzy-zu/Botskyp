@@ -13,6 +13,7 @@ import { total } from '../modules/games/rules.js';
 import { contextData } from './context-data-v2.js';
 import { sanitizeOutputV2 } from './output-sanitizer-v2.js';
 import { budgetContextV2 } from './context-budget-v2.js';
+import { referencesPreviousContentV2, allowsPreviousVisionV2 } from './artifact-relevance-v2.js';
 import type { TurnContextV2, SafeConversationSnapshotV2, SafeArtifactV2 } from './context-v2-types.js';
 export type { TurnContextV2 } from './context-v2-types.js';
 const rules = [
@@ -99,9 +100,9 @@ export async function buildTurnContextV2(ctx: ToolCtx, domains: readonly string[
     if (!entry) throw new Error('Missing scoped reference');
     return entry.ref;
   }
-  const safeFile = (a: ArtifactRecord, alias?: SafeArtifactV2['ref']): SafeArtifactV2 => ({
+  const safeFile = (a: ArtifactRecord, alias?: SafeArtifactV2['ref'], includeFilename = true): SafeArtifactV2 => ({
     ref: alias ?? ref('artifactRef', a.id), kind: contextData(a.kind), mime: contextData(a.mime),
-    ...(a.filename ? { filename: contextData(a.filename) } : {}), ...(a.bytes ? { bytes: Number(a.bytes) } : {}),
+    ...(a.filename && includeFilename ? { filename: contextData(a.filename) } : {}), ...(a.bytes ? { bytes: Number(a.bytes) } : {}),
   });
   const mentioned = members.filter(m => m.id !== actorId);
   const identityMatches = (m: typeof members[number], id: string | undefined) => m.id === id || (id !== undefined && m.aliases.includes(id));
@@ -115,7 +116,7 @@ export async function buildTurnContextV2(ctx: ToolCtx, domains: readonly string[
     ...(files.current[0] ? { currentArtifact: safeFile(files.current[0], 'A_CURRENT') } : {}),
     ...(msg.quoted ? { quotedMessage: { ...(msg.quoted.text ? { text: contextData(msg.quoted.text) } : {}), ...(authorRef ? { authorRef } : {}),
       ...(files.reply[0] ? { artifactRef: 'A_REPLY' as const, artifact: safeFile(files.reply[0], 'A_REPLY') } : {}) } } : {}),
-    recentArtifacts: files.recent.map(a => safeFile(a)), notes: notes.map(n => ({ ref: ref('noteRef', n.id), text: contextData(n.body) })),
+    recentArtifacts: files.recent.map(a => safeFile(a,undefined,referencesPreviousContentV2(msg.text))), notes: notes.map(n => ({ ref: ref('noteRef', n.id), text: contextData(n.body) })),
     reminders: reminders.map(r => ({ ref: ref('reminderRef', r.id), text: contextData(r.body), dueLocal: local(r.due_at) })),
     ...(poll ? { poll: { ref: 'P_ACTIVE' as const, pollRef: ref('pollRef', poll.id), question: contextData(poll.question), options: poll.options.map(contextData), status: 'open' as const } } : {}),
     ...(game ? { game: { kind: game.kind, status: game.status } } : {}),
@@ -123,9 +124,9 @@ export async function buildTurnContextV2(ctx: ToolCtx, domains: readonly string[
     school: school.map(s => ({ ref: ref(s.kind === 'task' ? 'taskRef' : 'subjectRef', s.id), kind: s.kind, label: contextData(s.label), ...(s.due_at ? { dueLocal: local(s.due_at) } : {}) })),
     members: mentioned.map(m => ({ ref: ref('memberRef', m.id), displayName: contextData(m.display_name ?? 'Miembro') })),
     personalMemoryAvailable, personalMemories: memories.map(m => ({ ref: ref('memoryRef', m.id), text: contextData(m.body) })),
-    recentResults: results.map((r, i) => ({ ref: i === 0 ? 'R_LAST' : `R_${i + 1}` as const, kind: r.result_kind, excerpt: contextData(r.text).slice(0, product.contextV2ResultChars), ageSec: Math.max(0, Math.floor((now.getTime() - r.created_at.getTime()) / 1000)) })),
+    recentResults: (!files.current.length && !msg.attachments.length && !msg.quoted && referencesPreviousContentV2(msg.text)?results:[]).map((r, i) => ({ ref: i === 0 ? 'R_LAST' : `R_${i + 1}` as const, kind: r.result_kind, excerpt: contextData(r.text).slice(0, product.contextV2ResultChars), ageSec: Math.max(0, Math.floor((now.getTime() - r.created_at.getTime()) / 1000)) })),
     recentEvents: events.map(e => ({ kind: 'resolved_event', summary: summaries[e.tool_name] ?? 'Una operación anterior terminó.', ageSec: Math.max(0, Math.floor((now.getTime() - e.created_at.getTime()) / 1000)) })),
-    recentDialogue:dialogue,
+    recentDialogue:!msg.attachments.length && !files.current.length && referencesPreviousContentV2(msg.text)?dialogue:[],
   };
   if (game?.kind === 'blackjack' && snapshot.game) {
     const state = stateSchema.safeParse(game.state);
@@ -136,7 +137,7 @@ export async function buildTurnContextV2(ctx: ToolCtx, domains: readonly string[
     }
   }
   const vision = await resolveVisionArtifactV2( { c, ...scope, sourceMessageId, now, safeRefMap,
-    ...(msg.quoted ? { quotedMessageId: msg.quoted.id } : {}) });
+    allowRecentVision:!msg.attachments.length && allowsPreviousVisionV2(msg.text), ...(msg.quoted ? { quotedMessageId: msg.quoted.id } : {}) });
   if(vision.status==='ok')snapshot.visionArtifact=safeFile(vision.artifact,vision.ref as SafeArtifactV2['ref']);
   const envelope = budgetContextV2({ SYSTEM_RULES: rules, REFERENCE_DATA: snapshot,
     CURRENT_USER_TURN: { userText: contextData(msg.text), ...(msg.quoted?.text ? { quotedText: contextData(msg.quoted.text) } : {}),

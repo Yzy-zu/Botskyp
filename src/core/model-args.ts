@@ -71,6 +71,7 @@ export const modelArgsSchemas = {
   'library.rain': object({ enabled: bool, config: object({ schedule: summarySchema, count: integer(product.rainMaxItems), category: short.optional() }).optional() }),
   'media.process': object({
     artifactRef: z.union([ref('artifactRef'), z.enum(['A_CURRENT','A_REPLY','A_LAST'])]).optional(),
+    artifactRefs: z.array(ref('artifactRef')).min(1).max(product.mediaMaxFiles).optional(),
     operation: z.enum(['resend','download','mp3','ogg','wav','mp4','png','jpeg','webp','sticker','animated_sticker','bass','fast','slow','qr_create','qr_read','ocr','read','office_pdf','pdf_compress','pdf_crop','pdf_merge','pdf_images','images_pdf','transcribe','speak']),
     url: z.url().max(2048).regex(/^https?:\/\//u).optional(), text: z.string().trim().min(1).max(product.mediaTextChars).optional(),
     start: integer(product.mediaPdfPages).optional(), end: integer(product.mediaPdfPages).optional(), summary: bool.optional(),

@@ -51,6 +51,7 @@ const descriptions: Partial<Record<BusinessToolName, string>> = {
   'notes.create': 'Crear una nota compartida del chat por petición explícita de nota. Guardar memoria personal corresponde a memory.remember.',
   'notes.list': 'Consultar notas del chat. Para listar todas omite query; úsalo solo si el usuario pidió buscar un tema concreto, nunca la palabra genérica notas.',
   'media.process': 'Crear o procesar archivos. Para crear un código QR llama esta función con operation=qr_create y text con el contenido exacto, sin artifactRef. Para leer QR usa qr_read y el archivo. Para sticker usa sticker. No presentes archivos como creados antes del resultado del worker.',
+  'media.collect': 'Reunir fotos en un PDF (images_pdf) o unir varios PDF (pdf_merge). Inicia una colección del usuario en este chat; puede mandar archivos sucesivos y terminar o cancelar. No procesa ni entrega hasta que termine la colección.',
   'notes.edit': 'Editar o corregir una nota existente del chat por su noteRef en REFERENCE_DATA.notes.',
   'memory.remember': 'Guardar memoria personal solo por petición explícita: guarda en tu memoria, acuérdate de que o recuerda que. Nunca crear una nota compartida para esa petición.',
   'memory.forget': 'Borrar una memoria personal por referencia o contenido, o todas (all), con confirmación.',
@@ -62,6 +63,9 @@ const descriptions: Partial<Record<BusinessToolName, string>> = {
   'school.task_edit': 'Editar título o fecha de una tarea propia por referencia. Owner/admin pueden editar otras del grupo; el backend valida propiedad. time=null quita la fecha.',
   'school.destination': 'Configurar destino escolar autorizado por referencia; restringido a owner/admin.',
   'minecraft.status': 'Consultar estado del servidor Minecraft.',
+  'minecraft.players': 'Consultar quién está jugando en el servidor configurado: hay alguien en el maicra, quién anda en el server.',
+  'xp.daily': 'Cobrar el premio diario propio: daily, premio de hoy, recompensa, giro gratis de hoy. No es una apuesta ni ruleta. Un giro sin contexto puede necesitar aclaración.',
+  'xp.balance': 'Consultar XP, puntos o saldo propios: cuánta XP traigo, cuántos puntos tengo, ando pobre o qué.',
 };
 
 /** Read-only metadata catalog: deliberately exposes no business run/execute method. */

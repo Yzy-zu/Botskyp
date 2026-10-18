@@ -9,6 +9,7 @@ export const product = {
   maxToolsPerTurn: 20,
   maxToolCallsPerTurn: 3,
   maxMutationRetriesPerTurn: 1,
+  recentOperationMs: 5 * 60_000,
   mediaProgressDelayMs: 2_500,
   mediaChatTextChars: 3_000,
   maxCapabilityExpansionsPerTurn: 1,

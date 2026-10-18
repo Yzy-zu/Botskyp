@@ -49,7 +49,8 @@ export async function evaluateToolPolicy(ctx: ExecutionContextV2, tool: ToolMeta
     const parsed = tool.modelArgsSchema.safeParse(modelArgs);
     if (!parsed.success) return decision('denied', 'INVALID_MODEL_ARGUMENTS');
     const input={...parsed.data as Record<string,unknown>};
-    if(tool.name==='media.process' && !['download','qr_create','speak'].includes(String(input.operation)) && !input.artifactRef)input.artifactRef='A_LAST';
+    if(tool.name==='media.process' && input.artifactRefs && (!['images_pdf','pdf_merge'].includes(String(input.operation)) || input.artifactRef))return decision('denied','INVALID_MODEL_ARGUMENTS');
+    if(tool.name==='media.process' && !['download','qr_create','speak'].includes(String(input.operation)) && !input.artifactRef && !input.artifactRefs)input.artifactRef='A_LAST';
     const resolved = await resolveReferences(ctx, input, tool.name==='media.process'?String(input.operation):undefined);
     args = resolved.args; refs = resolved.refs; ownership = resolved.ownership;
     if (resolved.failure) return decision(resolved.failure, resolved.failure === 'not_found' ? 'REF_NOT_FOUND' : 'REF_AMBIGUOUS');
@@ -71,6 +72,9 @@ export async function evaluateToolPolicy(ctx: ExecutionContextV2, tool: ToolMeta
     if (!live) return decision('not_found', 'REF_NOT_FOUND');
     if(resource.kind==='artifactRef')resourceState.push(argumentHash('artifact_selection',{id:resource.id}));
     if (live.state) resourceState.push(argumentHash('resource_version', { kind: resource.kind, id: resource.id, state: live.state }));
+  }
+  if(tool.name==='media.process' && refs.filter(r=>r.kind==='artifactRef').length>1){
+    resourceState.push(argumentHash('artifact_order',refs.filter(r=>r.kind==='artifactRef').map(r=>r.id)));
   }
   resourceState.sort();
   if (tool.name === 'memory.forget') {

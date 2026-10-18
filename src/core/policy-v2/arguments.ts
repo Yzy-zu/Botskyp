@@ -1,12 +1,12 @@
 import { DateTime } from 'luxon';
 import type { Tool } from '../tools.js';
-import { resolveSemanticTime, semanticTimeSchema } from '../../modules/reminders/semantic-time.js';
+import { resolveSemanticTime, semanticTimeSchema, explicitClock } from '../../modules/reminders/semantic-time.js';
 import { ambiguousTime, recurrenceMatchesDue, validateDue } from '../../modules/reminders/time.js';
 import type { ExecutionContextV2 } from './types.js';
 
 /** Deliberately bounded adapters. Unknown contracts fail closed instead of guessing backend arguments. */
 const adapters = new Set<string>([
-  'media.process','core.ping','core.help','notes.create','notes.list','notes.edit',
+  'media.process','media.collect','core.ping','core.help','notes.create','notes.list','notes.edit',
   'notes.delete','reminders.create','reminders.list','reminders.edit','reminders.cancel',
   'memory.remember','memory.list','memory.forget','web.search','polls.create',
   'polls.vote','polls.results','polls.close','drive.cancel','drive.search',
@@ -33,6 +33,7 @@ export function legacyArguments(ctx: ExecutionContextV2, tool: Tool, input: Reco
   if(tool.name==='games.play')args.move=({hit:'carta',stand:'plantarse',double:'doblar'} as Record<string,string>)[String(args.move)] ?? args.move;
   if(tool.name==='media.process'){
     delete args.artifactRef;
+    delete args.artifactRefs;
     if(args.operation==='resend')return {status:'ok',args:{operation:'resend'}};
   }
   for (const field of ['noteRef','reminderRef','pollRef','taskRef','subjectRef','opRef','driveRef']) {
@@ -50,7 +51,10 @@ export function legacyArguments(ctx: ExecutionContextV2, tool: Tool, input: Reco
     else {
       const parsed = semanticTimeSchema.safeParse(args.time);
       if (!parsed.success) return { status: 'denied', code: 'INVALID_TIME' };
-      const time = resolveSemanticTime(parsed.data, ctx.now);
+      const clock=tool.name.startsWith('reminders.')?explicitClock(ctx.legacy.msg.text):undefined;
+      const value=parsed.data.kind!=='relative' && clock?{...parsed.data,...clock}:parsed.data.kind!=='relative' && ctx.callOrigin!=='session' && ambiguousTime(ctx.legacy.msg.text)?{...parsed.data,meridiem:undefined}:parsed.data;
+      if(tool.name==='reminders.create' && ctx.callOrigin!=='session' && value.kind==='today' && clock && !/\b(?:hoy|mañana|pasado|lunes|martes|miércoles|miercoles|jueves|viernes|sábado|sabado|domingo)\b|\d{4}-\d{2}-\d{2}/iu.test(ctx.legacy.msg.text))return {status:'needs_clarification',code:'MISSING_DATE'};
+      const time = resolveSemanticTime(value, ctx.now);
       if (time.status !== 'ok') return { status: time.status === 'needs_clarification' ? 'needs_clarification' : 'denied', code: time.code.toUpperCase() };
       // Preserve absolute semantics through confirmation; never rebase a relative date on turn B.
       args.dueAt = DateTime.fromJSDate(time.dueAt, { zone: time.timezone }).toISO();
@@ -59,7 +63,6 @@ export function legacyArguments(ctx: ExecutionContextV2, tool: Tool, input: Reco
     delete args.time;
   }
   if (tool.name === 'reminders.create' || tool.name === 'reminders.edit') {
-    if (tool.name === 'reminders.create' && ambiguousTime(ctx.legacy.msg.text)) return { status: 'needs_clarification', code: 'AMBIGUOUS_HOUR' };
     if (!args.body || !args.dueAt) return { status: 'needs_clarification', code: !args.body ? 'MISSING_BODY' : 'MISSING_TIME' };
     const due = validateDue(String(args.dueAt), String(args.timezone ?? 'America/Mexico_City'), ctx.now);
     if (!due) return { status: 'denied', code: 'INVALID_TIME' };

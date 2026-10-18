@@ -5,10 +5,12 @@ import { extension } from '../modules/media/catalog.js';
 import { registerIncomingArtifactsV2 } from './artifact-registration-v2.js';
 import { moduleEnabled } from './permissions.js';
 import type { ToolCtx } from './tools.js';
+import { referencesPreviousContentV2 } from './artifact-relevance-v2.js';
 
 /** Capture only an accepted authenticated message, own or explicitly quoted in this group. Quotes never fall back to another file. */
 export async function prepareArtifactsV2(ctx:ToolCtx):Promise<void>{
   if(!moduleEnabled(ctx.chat,'media',ctx.config) && !moduleEnabled(ctx.chat,'vision',ctx.config))return;
+  if(!ctx.msg.attachments.length && !ctx.msg.quoted && !referencesPreviousContentV2(ctx.msg.text) && !/\b(?:sticker|pdf|ocr|transcribe)\b/iu.test(ctx.msg.text))return;
   const row=(await ctx.c.query<{payload:unknown;canonical_owner:string}>(`SELECT i.payload,coalesce(ua.user_id,i.payload->>'senderId') canonical_owner FROM inbox i JOIN message_turns t ON t.id=i.turn_id
     LEFT JOIN user_aliases ua ON ua.alias=i.payload->>'senderId' AND ua.evidence NOT LIKE 'conflict:%'
     WHERE t.resolved_chat_id=$1 AND (coalesce(ua.user_id,i.payload->>'senderId')=$2 OR ($5::boolean AND t.source_message_id=$3)) AND i.status<>'failed'

@@ -14,8 +14,9 @@ import { geminiContentSchema, geminiToolContext, geminiFunctionResult } from './
 import { executeToolV2, evaluateToolV2 } from './policy-v2/executor.js';
 import type { ToolResult } from './tool-result.js';
 import { localPresenterV2, visibleToolResultV2, conversationTextV2, conversationalOutcomeV2 } from './composer-v2.js';
+import { capabilityTruthTargets, shouldRetryCapabilityTruth } from './capability-truth-v2.js';
 
-export type RouterMetricsV2={callsPerTurn:number;inputTokens:number;outputTokens:number;toolCount:number;capabilityExpansion:number;synthesisUsed:boolean;mutationRetry:number;routerLatency:number;backendFieldAttempts:number};
+export type RouterMetricsV2={callsPerTurn:number;inputTokens:number;outputTokens:number;toolCount:number;capabilityExpansion:number;synthesisUsed:boolean;mutationRetry:number;routerLatency:number;backendFieldAttempts:number;capability_truth_retry?:boolean};
 const retryInstruction='El usuario pidió una acción. Selecciona una tool disponible o explica por qué no puede realizarse. No afirmes que ocurrió sin tool.';
 const log=pino({level:'info'});
 const synthesisSchema=z.toJSONSchema(conversationalOutcomeV2);
@@ -41,7 +42,7 @@ export async function naturalToolLoopV2(ctx:ToolCtx,llm:Llm,catalog:readonly Too
   async function generate(synthesis=false):Promise<LlmReply>{
     if(metrics.callsPerTurn>=product.llmMaxCalls)throw new LlmUnavailable('local_limit','message');
     metrics.callsPerTurn++;
-    const reply=await llm.generate({...(ctx.turnId?{turnId:ctx.turnId}:{}),...(synthesis?{responseJsonSchema:synthesisSchema}:metrics.mutationRetry?{requireFunctionCall:true}:{}),system:system+(synthesis?'\nEsta vuelta solo sintetiza los resultados visibles. Contesta la pregunta con fuentes disponibles. No solicites acciones nuevas. Usa el mismo JSON de outcome sin effects.':''),contents:structuredClone(contents),tools:synthesis?[]:[...exposure.exposure.schemas]});
+    const reply=await llm.generate({...(ctx.turnId?{turnId:ctx.turnId}:{}),...(synthesis?{responseJsonSchema:synthesisSchema}:metrics.mutationRetry || metrics.capability_truth_retry?{requireFunctionCall:true}:{}),system:system+(synthesis?'\nEsta vuelta solo sintetiza los resultados visibles. Contesta la pregunta con fuentes disponibles. No solicites acciones nuevas. Usa el mismo JSON de outcome sin effects.':''),contents:structuredClone(contents),tools:synthesis?[]:[...exposure.exposure.schemas]});
     metrics.inputTokens+=reply.usage?.inputTokens ?? 0;metrics.outputTokens+=reply.usage?.outputTokens ?? 0;
     return reply;
   }
@@ -57,10 +58,14 @@ export async function naturalToolLoopV2(ctx:ToolCtx,llm:Llm,catalog:readonly Too
         if(results.length)return local();
         const text=provider.modelContent.parts.filter(p=>!p.thought).map(p=>p.text ?? '').join('');
         const outcome=conversationTextV2(text);
-        if(outcome.retry && metrics.mutationRetry<product.maxMutationRetriesPerTurn && metrics.callsPerTurn<product.llmMaxCalls){
+        if(!metrics.capability_truth_retry && !metrics.mutationRetry && metrics.callsPerTurn<product.llmMaxCalls && shouldRetryCapabilityTruth(ctx.msg.text,text,exposure.exposure)){
+          metrics.capability_truth_retry=true;
+          contents.push({role:'user',parts:[{text:`The requested capability is available in Botsky: ${capabilityTruthTargets(ctx.msg.text,exposure.exposure).join(', ')}. Use an available tool for it, or explain the real backend/tool error. Do not invent missing access/configuration. Fulfill the requested utility before humor.`}]});continue;
+        }
+        if(outcome.retry && !metrics.capability_truth_retry && metrics.mutationRetry<product.maxMutationRetriesPerTurn && metrics.callsPerTurn<product.llmMaxCalls){
           metrics.mutationRetry++;contents.push({role:'user',parts:[{text:retryInstruction}]});continue;
         }
-        return outcome.text;
+        return metrics.capability_truth_retry?'No pude consultar esa información: la herramienta no llegó a ejecutarse. Inténtalo otra vez.':outcome.text;
       }
       const responses:ReturnType<typeof geminiFunctionResult>[]=[];
       let expanded=false;

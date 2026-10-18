@@ -353,3 +353,16 @@ ni 429; pendientes aceptados en CANARY-LAB.md. Sin bugs A observados ni parches
 funcionales durante el smoke. Mensajería masiva Lab OFF; recordatorio pendiente
 informado. Checks focalizados y salud correctos. Main intacto, sin merge ni nuevas
 activaciones; conservar rollback y detenerse después del push documental.
+
+
+## 19. WS-PARITY-1 (18-10-2026) — plan autorizado
+
+1. Trabajar solo en feat/v1.1-natural-router desde f2be96d, un constructor sin delegación.
+2. Corregir exposición Minecraft/XP y contexto conceptual desde Registry.
+3. Recuperación de capability truth con un retry acotado, sin efectos directos.
+4. Corregir slots temporales, cancelación scoped y confirmación con invocación.
+5. Aislar semántica de artifacts antiguos; conservar A_LAST operativo.
+6. Cumplir búsqueda web explícita y seguimiento del job relevante.
+7. Abrir colección solo reutilizando SessionV2, artifacts y jobs existentes.
+8. Regresiones focalizadas, checks, documentación, commit/push y Canary Lab.
+9. Otros chats v1; sin merge, Nuclear/restart reales ni alcance multimedia excluido.

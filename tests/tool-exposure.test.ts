@@ -140,3 +140,15 @@ it('keeps reminder editing available after a QR and an open poll fill the contex
   expect(result.toolNames).toContain('polls.vote');
   expect(result.schemas.length).toBeLessThanOrEqual(20);
 });
+it.each(['maicra','maincra','mine','mc','bedrock','server','servidor','mimecragt'])('exposes Minecraft for alias %s without selecting an action',alias=>{
+  const result=select(`está activo el ${alias}?`);
+  expect(result.toolNames).toContain('minecraft.status');expect(result.toolNames).toContain('minecraft.players');
+  expect(result).not.toHaveProperty('args');expect(result.schemas.find(t=>t.name==='minecraft_restart')?.description).toContain('permission=infra.minecraft');
+});
+it.each(['dame mi daily','mi premio diario','dame mi premio de hoy','qué me tocó hoy?','dame mi recompensa','giro gratis','cuántos puntos tengo?','ando pobre o qué?'])('exposes economy slang %s',text=>{
+  expect(select(text).relevantDomains).toContain('economy');expect(select(text).toolNames).toContain('xp.daily');
+});
+it('does not select a daily action from an ambiguous giro or replace multimedia with web',()=>{
+  expect(select('dame un giro').relevantDomains).not.toContain('economy');expect(select('busca videos de gatos').relevantDomains).toContain('media');
+  expect(exactFastPathV2('dame un giro')).toBeUndefined();
+});

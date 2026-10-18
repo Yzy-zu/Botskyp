@@ -7,11 +7,12 @@ import type { ToolResult as LegacyResult } from '../tools.js';
 import type { ToolResult } from '../tool-result.js';
 import type { ToolMetadataV2 } from '../tool-registry-v2.js';
 import type { ExecutionContextV2 } from './types.js';
+import { mediaHistoryRequestV2 } from '../recent-followup-v2.js';
 
 /** Facts are authoritative. Never infer a successful effect by parsing human reply text. */
 export async function normalizeLegacyResult(ctx: ExecutionContextV2, tool: ToolMetadataV2, result: LegacyResult, args: Record<string, unknown>): Promise<ToolResult> {
   const base = { toolName: tool.name, domain: tool.domain, ...(result.ok ? {presentation:sanitizeOutputV2(result.reply)} : {}) };
-  if (!result.ok) return { ...base, status: 'error', code: 'LEGACY_REJECTED', data: { kind: result.kind }, presentation:sanitizeOutputV2(result.message === 'No.' ? 'No pude realizar esa operación con los datos disponibles.' : result.message) };
+  if (!result.ok) return { ...base, status: 'error', code: 'LEGACY_REJECTED', data: { kind: result.kind }, presentation:sanitizeOutputV2(tool.name.startsWith('minecraft.') && /SSH/u.test(result.message)?'No pude conectarme al servidor de Minecraft o tardó demasiado en responder. No puedo confirmar su estado.':result.message === 'No.' ? 'No pude realizar esa operación con los datos disponibles.' : result.message) };
   const code = tool.name.replace(/[.-]/gu, '_').toUpperCase();
   const c = ctx.legacy.c;
   if (tool.name === 'xp.balance' || tool.name === 'xp.daily') {
@@ -52,7 +53,18 @@ export async function normalizeLegacyResult(ctx: ExecutionContextV2, tool: ToolM
     if(co)return {...base,status:'ok',code,data:{total:co.total,goal:co.goal,open:co.status==='open'},presentation:`La cooperacha lleva ${co.total} de ${co.goal} XP.${co.status==='open'?' Sigue abierta.':' Ya terminó.'}`};
   }
   if (tool.name === 'media.status') {
-    const jobs = (await c.query(`SELECT id,status FROM jobs WHERE kind='media' AND chat_id=$1 AND owner_id=$2 ORDER BY id DESC LIMIT $3`, [ctx.chatId, ctx.actorId, product.mediaMaxFiles])).rows;
+    const history=mediaHistoryRequestV2(ctx.legacy.msg.text);
+    const wantsPdf=/\bpdf\b/iu.test(ctx.legacy.msg.text);
+    const jobs = (await c.query(`SELECT j.status,j.error,j.payload->>'operation' operation,
+      CASE WHEN EXISTS(SELECT 1 FROM outbox o WHERE o.kind IN ('media_result','media_text') AND o.payload->>'jobId'=j.id::text AND o.status='uncertain') THEN 'uncertain'
+      WHEN EXISTS(SELECT 1 FROM outbox o WHERE o.kind IN ('media_result','media_text') AND o.payload->>'jobId'=j.id::text AND o.status='failed') THEN 'failed'
+      WHEN EXISTS(SELECT 1 FROM outbox o WHERE o.kind IN ('media_result','media_text') AND o.payload->>'jobId'=j.id::text AND o.status='sent')
+        AND NOT EXISTS(SELECT 1 FROM outbox o WHERE o.kind IN ('media_result','media_text') AND o.payload->>'jobId'=j.id::text AND o.status<>'sent') THEN 'sent'
+      ELSE 'queued' END delivery
+      FROM jobs j WHERE j.kind='media' AND j.chat_id=$1 AND j.owner_id=$2
+        AND ($4::boolean OR j.created_at>$5::timestamptz-$6::int*interval '1 millisecond')
+        AND (NOT $7::boolean OR j.payload->>'operation' IN ('office_pdf','images_pdf','pdf_merge','pdf_compress','pdf_crop'))
+      ORDER BY j.id DESC LIMIT $3`, [ctx.chatId, ctx.actorId, history?product.mediaMaxFiles:1,history,ctx.now,product.artifactWindowMs,wantsPdf])).rows;
     return { ...base, status: 'ok', code, data: { jobs } };
   }
   if (tool.name === 'minecraft.status') return { ...base, status: 'ok', code, data: { observed: true, adapter: 'legacy_status' } };
@@ -67,7 +79,12 @@ export async function normalizeLegacyResult(ctx: ExecutionContextV2, tool: ToolM
     const op = (await c.query<{ id: string; status: string }>('SELECT id,status FROM bulk_ops WHERE chat_id=$1 AND actor_id=$2 AND source_id=$3 AND kind=$4', [ctx.chatId, ctx.actorId, ctx.sourceMessageId, tool.name === 'bulk.nuclear' ? 'nuclear' : tool.name === 'bulk.broadcast' ? 'broadcast' : 'message'])).rows[0];
     return { ...base, status: op?.status === 'queued' ? 'queued' : 'uncertain', code, data: { operationId: op?.id, operationStatus: op?.status, count: args.count ?? (Array.isArray(args.destinations) ? args.destinations.length : 1) } };
   }
-  if(tool.name==='reminders.create' || tool.name==='reminders.edit')return {...base,status:'ok',code,data:{body:args.body,dueAt:args.dueAt}};
+  if(tool.name==='reminders.create' || tool.name==='reminders.edit'){
+    const id=result.facts.id ?? args.id;
+    const row=(await c.query<{id:string;body:string;due_at:Date}>(`SELECT id::text,body,due_at FROM reminders WHERE id::text=$1 AND chat_id=$2 AND owner_id=$3 AND status='pending'`,[id ?? null,ctx.chatId,ctx.actorId])).rows[0];
+    if(!row || row.body!==args.body || row.due_at.getTime()!==new Date(String(args.dueAt)).getTime())return {...base,status:'uncertain',code:'REMINDER_NOT_MATCHED',data:{}};
+    return {...base,status:'ok',code,data:{body:row.body,dueAt:row.due_at.toISOString(),reminderId:row.id}};
+  }
   if(tool.name==='notes.create')return {...base,status:'ok',code,data:{body:args.body}};
   if (['memory.remember','notes.delete'].includes(tool.name)) return { ...base, status: 'ok', code, data: result.facts };
   if (tool.name.startsWith('drive.') && result.facts.jobId) return { ...base, status: 'queued', code: 'LEGACY_JOB_QUEUED', data: { jobId: result.facts.jobId } };

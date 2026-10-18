@@ -1440,3 +1440,35 @@ No cambian actor, permisos, Registry, tool loop, ledger ni confirmaciones. Se
 redacta chatId en los dos loggers que lo emitían; nunca se loggea la allowlist.
 No se cierran bridges ni se interviene DOCX. Migraciones aditivas 011–014.
 El smoke es entrada física del dueño, no eventos fabricados; informe CANARY-LAB.md.
+
+## 20. WS-PARITY-1 (18-10-2026)
+
+### DEC-066: Registry como verdad de capacidad y recuperación acotada de UX
+
+El dueño autoriza recuperar conexiones de capacidades existentes en
+feat/v1.1-natural-router desde f2be96d: un constructor, sin delegación, sin R6,
+portado Legacy ni merge. Lab sigue v1.1 y los demás chats v1. Se supera únicamente
+el bloqueo histórico de media.collect, después de comprobar SessionV2/artifacts.
+
+Las señales lexicales solo exponen dominios. Minecraft usa contexto conceptual sin
+configuración interna. Un retry máximo corrige falsas negativas de consultas
+read-only disponibles y búsquedas web explícitas, manteniendo los presupuestos
+R5/R3 y sin ejecutar efectos por señales. Daily conserva reglas económicas.
+
+El reloj explícito del mensaje autenticado complementa SemanticTime; la continuación
+fusiona fecha/hora sin perder otros slots pendientes. Confirmaciones eliminan solo
+invocación, nunca aceptan una corrección mixta como un sí puro. Cancelación inmediata
+usa recibo reciente scoped y SafeRef interna, no IDs expuestos ni último registro
+arbitrario. La creación coteja la fila persistida antes de afirmar éxito.
+
+A_LAST conserva referencias operativas; visión, extractos y prosa histórica requieren
+relevancia. Jobs/outbox existentes resuelven seguimiento media y estado de entrega.
+media.collect guarda refs en SessionV2 y cierra por media.process/Policy en la misma
+transacción; artifactRefs es una extensión estricta del schema, solo images_pdf/
+pdf_merge, con revalidación de propiedad/backing/MIME y orden de entrada. No hay
+tablas ni dependencias nuevas. Multiajuntos por evento requiere identidad individual
+y queda para WS-MULTIMEDIA, junto con timeout LibreOffice y selección media.search.
+
+Evidencias y límites en docs/v1.1/WS-PARITY-1.md y paridad priorizada en
+[legacy/PARITY-ROADMAP.md](legacy/PARITY-ROADMAP.md). Nuclear y escrituras Minecraft
+no se prueban remotamente. Mensajería masiva de Lab permanece apagada.

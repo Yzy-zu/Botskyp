@@ -39,16 +39,21 @@ export async function resolveReferences(ctx: ExecutionContextV2, args: Record<st
   const refs: { ref: string; kind: RefKind; id: string }[] = [], ownership: { kind: RefKind; id: string; ownerId: string | null; own: boolean }[] = [];
   let failure: ResolvedReferences['failure'];
   async function walk(value: unknown, field: string): Promise<unknown> {
-    if (Array.isArray(value)) return Promise.all(value.map(v => walk(v, field === 'destinations' ? 'destinationRef' : field)));
+    if (Array.isArray(value)) {
+      // Preserve source order in both resolved arguments and the collected provenance.
+      const resolved:unknown[]=[];
+      for(const item of value)resolved.push(await walk(item,field==='destinations'?'destinationRef':field==='artifactRefs'?'collectionArtifactRef':field));
+      return resolved;
+    }
     if (value !== null && typeof value === 'object') return Object.fromEntries(await Promise.all(Object.entries(value).map(async ([k, v]) => [k, await walk(v, k)])));
     if (typeof value !== 'string') return value;
-    const kind = refKinds.find(k => field === k)
+    const kind = (field==='collectionArtifactRef'?'artifactRef':refKinds.find(k => field === k))
       ?? (field === 'target' && value.startsWith('memoryRef_') ? 'memoryRef' : undefined)
       ?? (field === 'subject' && value.startsWith('subjectRef_') ? 'subjectRef' : undefined);
     if (value === 'SELF' && field === 'memberRef') return ctx.actorId;
     if (!kind && field !== 'subject') return value;
-    if(field==='artifactRef' && artifactOperation){
-      const selected=await resolveArtifactForOperation(artifactOperation as ArtifactOperation,{c:ctx.legacy.c,...ctx,...(ctx.legacy.msg.quoted?{quotedMessageId:ctx.legacy.msg.quoted.id}:{})},value);
+    if((field==='artifactRef' || field==='collectionArtifactRef') && artifactOperation){
+      const selected=await resolveArtifactForOperation(artifactOperation as ArtifactOperation,{c:ctx.legacy.c,...ctx,...(field==='collectionArtifactRef'?{sourceMessageId:''}:ctx.legacy.msg.quoted?{quotedMessageId:ctx.legacy.msg.quoted.id}:{})},value);
       if(selected.status!=='ok'){failure=selected.status==='not_found'?'not_found':'needs_clarification';return value;}
       refs.push({ref:value,kind:'artifactRef',id:selected.artifact.id});
       ownership.push({kind:'artifactRef',id:selected.artifact.id,ownerId:ctx.actorId,own:true});

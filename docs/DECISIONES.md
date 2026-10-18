@@ -1481,3 +1481,5 @@ modelo. El día faltante se pregunta incluso cuando Gemini inventa una fecha
 absoluta; se conserva la distinción de memoria frente a avisos futuros dictados.
 
 La segunda repetición expuso un contrato incompleto: media.collect solo admitía iniciar. En v1.1 se añade action=start|finish; Gemini recibe operación y número de archivos de la sesión, sin IDs. Finish valida actor/chat/vencimiento y reutiliza la misma ejecución media.process/Policy. v1 conserva su contrato. No se amplía indefinidamente un diccionario de frases para sustituir la interpretación del modelo. Las correcciones temporales aceptan «para hoy/mañana»; el homófono dictado «oí» solo se admite con prefijo para y una fecha pendiente.
+
+La revisión de recibos del smoke exige distinguir fallo de ejecución y efecto inventado: «cancelalo mejor» ahora usa la misma cancelación inequívoca; la normalización adicional solo afecta negativos, nunca convierte una corrección mixta en confirmación. El guard de efecto cubre la variante «ya te lo anulé» y exposición admite el plural recordatorios. El recordatorio histórico no se modifica mediante SQL ni se cancela por una referencia vencida.

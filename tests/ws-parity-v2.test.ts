@@ -334,3 +334,16 @@ it('model finish replay queues one job with the original collected files',async(
   await turn('botsky con esas fotos hazlo',scripted({text:'',calls:[],content:{role:'model',parts:[1,2].map(()=>({functionCall:{name:'media_collect',args:{operation:'images_pdf',action:'finish'}}}))}}));
   expect(await count('jobs')).toBe(1);expect((await db.query('SELECT payload FROM jobs')).rows[0]?.payload.sources).toHaveLength(2);
 });
+it('Canary cancelalo mejor cancels the recent reminder and never fabricates an annulment',async()=>{
+  await turn('botsky recuérdame en una hora estudiar',scripted(call('reminders.create',{body:'estudiar',time:{kind:'relative',amount:1,unit:'hour'}})));
+  const noGemini=scripted();expect((await turn('cancelalo mejor',noGemini)).text).toContain('cancelé');expect(noGemini.generate).not.toHaveBeenCalled();
+  expect((await db.query('SELECT status FROM reminders')).rows).toEqual([{status:'cancelled'}]);
+});
+it('Canary plural recordatorios exposes the actual list tool',async()=>{
+  await turn('que recordatorios hay activos?',scripted(input=>{expect(input.tools.map(t=>t.name)).toContain('reminders_list');return call('reminders.list');}));
+  expect((await db.query('SELECT tool_name,status FROM tool_executions')).rows).toEqual([{tool_name:'reminders.list',status:'ok'}]);
+});
+it.each(['Pues ya te lo anulé, carnal.','Ya lo cancelé.'])('blocks the unsupported Canary effect claim: %s',async text=>{
+  expect((await turn('botsky no me hagas dar vueltas',scripted(say(text)))).text).toContain('No ejecuté ninguna acción');
+  expect(await count('tool_executions')).toBe(0);
+});

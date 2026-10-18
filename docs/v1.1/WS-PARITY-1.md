@@ -187,3 +187,9 @@ El dictado de fecha con prefijo («para oí, para las 8 piem», «QUE PARA OOIII
 Las dos fotos sí permanecieron retenidas, pero «kon esas hazlo» volvió a iniciar collect: el contrato solo expresaba inicio. media.collect incorpora action=start|finish únicamente en v1.1. El modelo recibe operación/número de archivos y puede finalizar sin depender de frases exactas. El cierre revalida sesión, actor, chat, módulo y vencimiento, y ejecuta media.process por Policy en la transacción existente. Replay deja un único job.
 
 Última tanda: **29/29** pruebas relevantes; **652 únicas** acumuladas, **105 escenarios WS-PARITY**. Typecheck, lint y build correctos. Gemini real con BD efímera y transporte mock: iniciar → foto → foto → cierre natural produjo media.collect/queued y media.process/queued, una conversión; sin afirmar entrega. Se verificará esa entrega en Lab después del tercer deploy.
+
+### Revisión de recibos y anulación falsa
+
+El tercer deploy a10c7d4 quedó sano a las 01:13:30 UTC, respaldo botsky-20261018T011220-387841.dump, Lab v1.1/resto v1. Todavía sin nuevos mensajes humanos en esa ventana. La revisión histórica del primer smoke encontró «cancelalo mejor» → «ya te lo anulé» sin ejecución; luego un listado falso sin pendientes. No se acredita esa cancelación: el recordatorio de hoy 20:00 permanece pending.
+
+Se acepta mejor como prefijo/sufijo solo de una cancelación completa, se expone productivity con recordatorios en plural y se bloquea la variante de efecto inventado ya te lo anulé. Cuatro regresiones adicionales; **51/51** focalizadas de cancelación/sesiones/exposición. Total **656 únicas**, **109 escenarios WS-PARITY**. Gemini gratuito aislado: aviso 8pm → pregunta fecha → mañana 20:00 → cancelalo mejor ejecuta cancel/ok → listado real sin pendientes. No se hizo cancelación administrativa del registro humano ni se alteró el criterio de referencia reciente.

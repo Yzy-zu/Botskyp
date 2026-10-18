@@ -2,7 +2,8 @@
 export function confirmationInputV2(text: string): 'confirm' | 'cancel' | 'not_consumed' {
   const normalized = sessionTextV2(text);
   if (['sí','si','sip','va','dale','confirmo','hazlo'].includes(normalized)) return 'confirm';
-  if (['nel','no','mejor no','ya no','olvidalo','dejalo','cancelalo','cancela','cancelar','nel cancela','nel mejor cancela eso','cancela eso','mejor cancela eso'].includes(normalized)) return 'cancel';
+  const cancellation=normalized.replace(/^mejor\s+|\s+mejor$/gu,'');
+  if (['nel','no','mejor no','ya no','olvidalo','dejalo','cancelalo','cancela','cancelar','nel cancela','nel mejor cancela eso','cancela eso','mejor cancela eso'].includes(cancellation)) return 'cancel';
   return 'not_consumed';
 }
 

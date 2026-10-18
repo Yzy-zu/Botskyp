@@ -378,3 +378,5 @@ y cierre/repetición de colección. Total actualizado: 640 pruebas únicas; sin 
 de permisos ni subsistemas nuevos. Revalidación humana del segundo deploy pendiente.
 
 Cierre del segundo smoke: slots con prefijo/dictado y collect action=finish para que Gemini pueda cerrar una colección en lenguaje libre. Doce regresiones adicionales: 652 únicas acumuladas y 105 de WS-PARITY; 29/29 del último alcance, checks correctos. Tercer deploy y comprobación de entrega humana a continuación.
+
+Revisión de recibos del primer smoke: cancelación con mejor al final, plural recordatorios y guard de anulación falsa corregidos. 51/51 focalizadas y Gemini real aislado confirman cancelación persistida/listado real. Total acumulado 656 pruebas únicas, 109 de WS-PARITY. Registro histórico pendiente informado, sin cancelación administrativa oculta.

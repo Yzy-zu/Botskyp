@@ -31,7 +31,7 @@ export interface ToolExposure {
   readonly approximateSchemaBytes: number;
 }
 const signals: Readonly<Partial<Record<CapabilityDomain, RegExp>>> = {
-  productivity: /\b(?:memoria|recuerda|recuerdas|recuerdos?|acuerdate|memoriza|nota|notas|anota|recordatorio|recuerdame)\b/gu,
+  productivity: /\b(?:memoria|recuerda|recuerdas|recuerdos?|acuerdate|memoriza|nota|notas|anota|recordatorios?|recuerdame)\b/gu,
   web: /\b(?:web|internet|google|noticias)\b/gu,
   economy: /\b(?:xp|daily|diario|saldo|nivel|puntos|premio|recompensa|giro gratis|que me toco hoy|ando pobre|hora feliz)\b/gu,
   polls: /\b(?:voto|vota|votar|encuesta|encuestas|sondeo)\b/gu,

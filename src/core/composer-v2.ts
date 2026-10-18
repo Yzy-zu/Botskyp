@@ -92,7 +92,7 @@ export const conversationalOutcomeV2=z.strictObject({
 /** Plain provider prose has no authority. Local mutation templates always come from current receipts. */
 export function conversationTextV2(text: string): { text: string; retry: boolean; valid?: boolean } {
   // Secondary diagnostic for a provider violating its structured no-effects declaration.
-  const mutationClaim=/(?<![\p{L}\p{N}_])(?:voto registrad[oa]|listo[,.:!]?\s+(?:guardad[oa]|registrad[oa])|(?:te )?di \d+\s*XP|recordatorio creado|mensaje enviado|ya (?:guardé|envié|creé|borré|cancelé|registré|programé|anoté|actualicé|otorgué|te di|quedó))(?![\p{L}\p{N}_])/iu;
+  const mutationClaim=/(?<![\p{L}\p{N}_])(?:voto registrad[oa]|listo[,.:!]?\s+(?:guardad[oa]|registrad[oa])|(?:te )?di \d+\s*XP|recordatorio creado|mensaje enviado|ya (?:te )?(?:lo )?(?:guardé|envié|creé|borré|cancelé|anulé|registré|programé|anoté|actualicé|otorgué|di|quedó))(?![\p{L}\p{N}_])/iu;
   const noAction={text:'No ejecuté ninguna acción para esa solicitud.',retry:false};
   const invalid={text:'No pude preparar una respuesta clara. Inténtalo otra vez.',retry:false};
   let value: unknown;

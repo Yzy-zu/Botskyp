@@ -502,3 +502,5 @@ Evidencia y estado del smoke en [WS-PARITY-1](v1.1/WS-PARITY-1.md).
 Ajuste de continuaciones del mismo WS desplegado `79336fb`, respaldo verificado
 `botsky-20261018T010126-372701.dump`. Health y aislamiento Lab/resto confirmados
 nuevamente a las 01:02 UTC. Sin nuevas migraciones ni cambios a Evolution.
+
+Tercer ajuste desplegado `a10c7d41e1c98060577992acbd160d5b8ba1bac4`, respaldo verificado `botsky-20261018T011220-387841.dump`. Health y todos los servicios sanos; selector Lab v1.1/resto v1 comprobado a las 01:13:30 UTC.

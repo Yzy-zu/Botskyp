@@ -72,7 +72,47 @@ describe('Incident WhatsApp Hotfix Regressions', () => {
       });
     });
 
-    it('identifies cooldown caused by 429 as quota error', async () => {
+    it('bounds provider 5xx cooldown to 30s max with short initial backoff', async () => {
+      let now = 1000;
+      const pool = new GeminiKeyPool(['key-1'], { ...quiet, now: () => now });
+      const provErr = new GeminiAttemptError('provider', 503);
+
+      // Attempt 1: 1s backoff (1000 -> 2000)
+      await expect(pool.run(async () => { throw provErr; })).rejects.toMatchObject({ kind: 'provider' });
+      expect(pool.snapshot().keys[0]?.cooldownUntil).toBe(2000);
+
+      // Advance time past cooldown and fail again
+      now = 2001;
+      // Attempt 2: 2s backoff (2001 -> 4001)
+      await expect(pool.run(async () => { throw provErr; })).rejects.toMatchObject({ kind: 'provider' });
+      expect(pool.snapshot().keys[0]?.cooldownUntil).toBe(4001);
+
+      // Many attempts: capped at 30s (30,000 ms), NOT 60s
+      for (let i = 0; i < 10; i++) {
+        now = pool.snapshot().keys[0]!.cooldownUntil + 1;
+        await expect(pool.run(async () => { throw provErr; })).rejects.toMatchObject({ kind: 'provider' });
+      }
+      expect(pool.snapshot().keys[0]!.cooldownUntil - now).toBeLessThanOrEqual(30000);
+    });
+
+    it('bounds timeout cooldown to 15s max with fast recovery', async () => {
+      let now = 1000;
+      const pool = new GeminiKeyPool(['key-1'], { ...quiet, now: () => now });
+      const timeoutErr = new GeminiAttemptError('timeout');
+
+      // Attempt 1: 1s backoff (1000 -> 2000)
+      await expect(pool.run(async () => { throw timeoutErr; })).rejects.toMatchObject({ kind: 'timeout' });
+      expect(pool.snapshot().keys[0]?.cooldownUntil).toBe(2000);
+
+      // Many attempts: capped at 15s (15,000 ms), NOT 60s
+      for (let i = 0; i < 10; i++) {
+        now = pool.snapshot().keys[0]!.cooldownUntil + 1;
+        await expect(pool.run(async () => { throw timeoutErr; })).rejects.toMatchObject({ kind: 'timeout' });
+      }
+      expect(pool.snapshot().keys[0]!.cooldownUntil - now).toBeLessThanOrEqual(15000);
+    });
+
+    it('identifies cooldown caused by 429 as quota error with standard quota backoff', async () => {
       const now = 1000;
       const pool = new GeminiKeyPool(['key-1'], { ...quiet, now: () => now });
       const quotaErr = new GeminiAttemptError('quota', 429, 60000);
@@ -175,82 +215,159 @@ describe('Incident WhatsApp Hotfix Regressions', () => {
       expect(meta?.descriptionForModel).toContain('operation=speak');
       expect(meta?.descriptionForModel).toContain('audio o nota de voz');
     });
+
+    it('instructs natural content generation for speak when user describes intent without literal dictation', () => {
+      const registry = createRegistry();
+      const catalog = createToolRegistryV2(registry);
+      const turn = new ToolExposureTurn(catalog, { actorRole: 'owner', chatType: 'group', enabledModules: ['media'], toolCallingMode: 'full_96' });
+      const systemPrompt = naturalRouterSystemV2(turn, 'full_96');
+
+      expect(systemPrompt).toContain('Cuando una herramienta (como media_process con operation="speak")');
+      expect(systemPrompt).toContain('redacta tú mismo ese contenido en el argumento text');
+      expect(systemPrompt).toContain('sin pedir que el usuario lo dicte palabra por palabra');
+
+      const meta = catalog.find(t => t.name === 'media.process')!;
+      expect(meta.descriptionForModel).toContain('redacta naturalmente el contenido a pronunciar en text');
+    });
   });
 
   describe('Policy Incompatible Artifact Handling', () => {
-    const safeRefs = new SafeRefs([{
-      kind: 'artifactRef',
-      id: 'art-pdf-1',
-      chatId: 'chat-1',
-      label: 'document.pdf',
-      access: { visibility: 'personal', ownerId: 'usr-1' },
-    }]);
-    const safeRef = safeRefs.list({ chatId: 'chat-1', actorId: 'usr-1' })[0]!.ref;
-
-    it('resolveReferences flags incompatible artifact as failure: incompatible', async () => {
-      const mockQuery = vi.fn().mockImplementation(async (sql: string) => {
-        if (typeof sql === 'string' && sql.includes('WHERE a.id=$1')) {
-          return { rows: [{ id: 'art-pdf-1', mime: 'application/pdf', type: 'document', sha256: 'deadbeef' }] };
-        }
-        return { rows: [{ id: 'art-pdf-1', mime: 'application/pdf', type: 'document', sha256: 'deadbeef', is_current: true, is_reply: false, is_recent: false, created_at: new Date() }] };
-      });
-
-      const ctx = {
-        actorId: 'usr-1',
+    const multiSafeRefs = new SafeRefs([
+      {
+        kind: 'artifactRef',
+        id: 'art-pdf-1',
         chatId: 'chat-1',
-        isOwner: true,
-        isAdmin: true,
-        isPrivate: false,
-        envelope: {
-          CHAT_METADATA: { isGroup: true },
-          SESSION_STATE: null,
-          ARTIFACT_STATE: {
-            CURRENT: [{ ref: safeRef, mime: 'application/pdf', category: 'pdf' }],
-            RECENT: [],
-            REPLIED: null,
-          },
-        },
-        safeRefMap: safeRefs,
-        legacy: {
-          c: {
-            query: mockQuery,
-            chatArtifacts: {
-              get: vi.fn().mockResolvedValue({
-                id: 'art-pdf-1',
-                mime: 'application/pdf',
-                type: 'document',
-                sha256: 'deadbeef',
-              }),
-            },
-          },
-          msg: { quoted: null, attachments: [] },
-        },
-      } as unknown as ExecutionContextV2;
+        label: 'document.pdf',
+        access: { visibility: 'personal', ownerId: 'usr-1' },
+      },
+      {
+        kind: 'artifactRef',
+        id: 'art-png-1',
+        chatId: 'chat-1',
+        label: 'photo.png',
+        access: { visibility: 'personal', ownerId: 'usr-1' },
+      },
+    ]);
+    const pdfRef = multiSafeRefs.list({ chatId: 'chat-1', actorId: 'usr-1' }).find(r => r.label === 'document.pdf')!.ref;
+    const pngRef = multiSafeRefs.list({ chatId: 'chat-1', actorId: 'usr-1' }).find(r => r.label === 'photo.png')!.ref;
 
-      // office_pdf only accepts docx, xlsx, pptx; passing a pdf must return failure='incompatible'
+    const mockQueryMulti = vi.fn().mockImplementation(async (sql: string, params?: unknown[]) => {
+      if (typeof sql === 'string' && sql.includes('WHERE a.id=$1')) {
+        const id = Array.isArray(params) ? params[0] : null;
+        if (id === 'art-pdf-1') return { rows: [{ id: 'art-pdf-1', mime: 'application/pdf', type: 'document', sha256: 'deadbeef' }] };
+        if (id === 'art-png-1') return { rows: [{ id: 'art-png-1', mime: 'image/png', type: 'image', sha256: 'feedface' }] };
+      }
+      return {
+        rows: [
+          { id: 'art-pdf-1', mime: 'application/pdf', type: 'document', sha256: 'deadbeef', is_current: true, is_reply: false, is_recent: false, created_at: new Date() },
+          { id: 'art-png-1', mime: 'image/png', type: 'image', sha256: 'feedface', is_current: true, is_reply: false, is_recent: false, created_at: new Date() },
+        ],
+      };
+    });
+
+    const createMultiCtx = () => ({
+      actorId: 'usr-1',
+      chatId: 'chat-1',
+      isOwner: true,
+      isAdmin: true,
+      isPrivate: false,
+      envelope: {
+        CHAT_METADATA: { isGroup: true },
+        SESSION_STATE: null,
+        ARTIFACT_STATE: {
+          CURRENT: [
+            { ref: pdfRef, mime: 'application/pdf', category: 'pdf' },
+            { ref: pngRef, mime: 'image/png', category: 'image' },
+          ],
+          RECENT: [],
+          REPLIED: null,
+        },
+      },
+      safeRefMap: multiSafeRefs,
+      legacy: {
+        c: {
+          query: mockQueryMulti,
+          chatArtifacts: { get: vi.fn() },
+        },
+        msg: { quoted: null, attachments: [] },
+      },
+    } as unknown as ExecutionContextV2);
+
+    it('múltiples CURRENT: resolves explicit compatible source successfully (png for sticker)', async () => {
+      const ctx = createMultiCtx();
       const resolved = await resolveReferences(ctx, {
-        operation: 'office_pdf',
-        artifactRef: safeRef,
-      }, 'office_pdf');
+        operation: 'sticker',
+        artifactRef: pngRef,
+      }, 'sticker');
+
+      expect(resolved.failure).toBeUndefined();
+      expect(resolved.args.artifactRef).toBe('art-png-1');
+    });
+
+    it('fuente explícita incompatible: returns failure=incompatible when selecting pdf for sticker among multiple CURRENT', async () => {
+      const ctx = createMultiCtx();
+      const resolved = await resolveReferences(ctx, {
+        operation: 'sticker',
+        artifactRef: pdfRef,
+      }, 'sticker');
 
       expect(resolved.failure).toBe('incompatible');
     });
 
-    it('evaluateToolPolicy returns denied REF_INCOMPATIBLE when artifact is incompatible', async () => {
+    it('ninguna fuente compatible: single incompatible source returns failure=incompatible', async () => {
+      const singleRefs = new SafeRefs([{
+        kind: 'artifactRef',
+        id: 'art-pdf-1',
+        chatId: 'chat-1',
+        label: 'document.pdf',
+        access: { visibility: 'personal', ownerId: 'usr-1' },
+      }]);
+      const singlePdfRef = singleRefs.list({ chatId: 'chat-1', actorId: 'usr-1' })[0]!.ref;
+
+      const singleCtx = {
+        ...createMultiCtx(),
+        safeRefMap: singleRefs,
+        envelope: {
+          CHAT_METADATA: { isGroup: true },
+          SESSION_STATE: null,
+          ARTIFACT_STATE: {
+            CURRENT: [{ ref: singlePdfRef, mime: 'application/pdf', category: 'pdf' }],
+            RECENT: [],
+            REPLIED: null,
+          },
+        },
+      } as unknown as ExecutionContextV2;
+
+      const resolved = await resolveReferences(singleCtx, {
+        operation: 'sticker',
+        artifactRef: singlePdfRef,
+      }, 'sticker');
+
+      expect(resolved.failure).toBe('incompatible');
+    });
+
+    it('SafeRef válida pero mime incompatible: evaluateToolPolicy returns denied REF_INCOMPATIBLE', async () => {
       const registry = createRegistry();
       const catalog = createToolRegistryV2(registry);
       const tool = catalog.find(t => t.name === 'media.process')!;
       const legacyTool = registry.all().find(t => t.name === 'media.process')!;
 
       const mockQuery = vi.fn().mockImplementation(async (sql: string) => {
-        if (typeof sql === 'string' && sql.includes('system_flags')) {
-          return { rows: [] };
-        }
+        if (typeof sql === 'string' && sql.includes('system_flags')) return { rows: [] };
         if (typeof sql === 'string' && sql.includes('WHERE a.id=$1')) {
           return { rows: [{ id: 'art-pdf-1', mime: 'application/pdf', type: 'document', sha256: 'deadbeef' }] };
         }
         return { rows: [{ id: 'art-pdf-1', mime: 'application/pdf', type: 'document', sha256: 'deadbeef', is_current: true, is_reply: false, is_recent: false, created_at: new Date() }] };
       });
+
+      const singleRefs = new SafeRefs([{
+        kind: 'artifactRef',
+        id: 'art-pdf-1',
+        chatId: 'chat-1',
+        label: 'document.pdf',
+        access: { visibility: 'personal', ownerId: 'usr-1' },
+      }]);
+      const singlePdfRef = singleRefs.list({ chatId: 'chat-1', actorId: 'usr-1' })[0]!.ref;
 
       const ctx = {
         actorId: 'usr-1',
@@ -262,32 +379,23 @@ describe('Incident WhatsApp Hotfix Regressions', () => {
           CHAT_METADATA: { isGroup: true },
           SESSION_STATE: null,
           ARTIFACT_STATE: {
-            CURRENT: [{ ref: safeRef, mime: 'application/pdf', category: 'pdf' }],
+            CURRENT: [{ ref: singlePdfRef, mime: 'application/pdf', category: 'pdf' }],
             RECENT: [],
             REPLIED: null,
           },
         },
-        safeRefMap: safeRefs,
+        safeRefMap: singleRefs,
         legacy: {
-          c: {
-            query: mockQuery,
-            chatArtifacts: {
-              get: vi.fn().mockResolvedValue({
-                id: 'art-pdf-1',
-                mime: 'application/pdf',
-                type: 'document',
-                sha256: 'deadbeef',
-              }),
-            },
-          },
+          c: { query: mockQuery, chatArtifacts: { get: vi.fn() } },
           config: { MINECRAFT_ENABLED: true, DRIVE_ENABLED: true },
           msg: { quoted: null, attachments: [] },
         },
       } as unknown as ExecutionContextV2;
 
+      // office_pdf expects docx/xlsx/pptx; pdf is a valid SafeRef with incompatible mime
       const decision = await evaluateToolPolicy(ctx, tool, legacyTool, {
         operation: 'office_pdf',
-        artifactRef: safeRef,
+        artifactRef: singlePdfRef,
       });
 
       expect(decision.status).toBe('denied');

@@ -126,10 +126,18 @@ export class GeminiKeyPool {
             const backoff=Math.min(product.llmCooldownMs*2**Math.min(key.consecutive429-1,10),product.llmMaxCooldownMs);
             key.cooldownUntil=Math.max(key.cooldownUntil,this.#now()+(error.retryAfterMs ?? backoff));
             this.#log(`${key.id} cooldown: rate_limited`);
-          }else if(error.kind==='timeout' || (error.kind==='provider' && (error.status===undefined || error.status>=500))){
-            key.lastFailureKind=error.kind==='timeout'?'timeout':'provider';
-            const backoff=Math.min(product.llmBackoffMs*2**Math.min(key.consecutiveErrors-1,10),product.llmCooldownMs);
+          }else if(error.kind==='provider' && (error.status===undefined || error.status>=500)){
+            key.lastFailureKind='provider';
+            const maxProviderCooldownMs=30_000;
+            const backoff=Math.min(product.llmBackoffMs*2**Math.min(key.consecutiveErrors-1,10),maxProviderCooldownMs);
             key.cooldownUntil=Math.max(key.cooldownUntil,this.#now()+(error.retryAfterMs ?? backoff));
+            this.#log(`${key.id} cooldown: provider_5xx`);
+          }else if(error.kind==='timeout'){
+            key.lastFailureKind='timeout';
+            const timeoutMaxCooldownMs=15_000;
+            const backoff=Math.min(product.llmBackoffMs*2**Math.min(key.consecutiveErrors-1,10),timeoutMaxCooldownMs);
+            key.cooldownUntil=Math.max(key.cooldownUntil,this.#now()+backoff);
+            this.#log(`${key.id} cooldown: timeout`);
           }else{throw error;}
         }finally{
           if(providerAttempt){

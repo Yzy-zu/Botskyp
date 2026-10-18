@@ -366,3 +366,13 @@ activaciones; conservar rollback y detenerse después del push documental.
 7. Abrir colección solo reutilizando SessionV2, artifacts y jobs existentes.
 8. Regresiones focalizadas, checks, documentación, commit/push y Canary Lab.
 9. Otros chats v1; sin merge, Nuclear/restart reales ni alcance multimedia excluido.
+
+
+WS-PARITY-1 implementado y desplegado `5b1fa2f`: 628 pruebas únicas verificadas por
+tandas focalizadas; checks, auditoría y salud correctos. Colección SessionV2
+conectada a jobs existentes. Lab v1.1/resto v1 confirmados; smoke humano pendiente
+en el informe. No avanzar a WS-MULTIMEDIA, R6 ni merge después de la entrega.
+
+El smoke inicial justificó correcciones acotadas de dictado/fecha, reply OCR→imagen
+y cierre/repetición de colección. Total actualizado: 640 pruebas únicas; sin cambios
+de permisos ni subsistemas nuevos. Revalidación humana del segundo deploy pendiente.

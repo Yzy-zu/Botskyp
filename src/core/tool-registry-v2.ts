@@ -48,14 +48,14 @@ export const backendOnlyFields = [
   'confirmationHash','path','filePath','role','roles','dueAt','timezone','sourceMessageId',
 ] as const;
 const descriptions: Partial<Record<BusinessToolName, string>> = {
-  'notes.create': 'Crear una nota compartida del chat por petición explícita de nota. Guardar memoria personal corresponde a memory.remember.',
+  'notes.create': 'Crear una nota compartida del chat por petición explícita de nota. Conserva literal el contenido solicitado; no lo estilices. Guardar memoria personal corresponde a memory.remember.',
   'notes.list': 'Consultar notas del chat. Para listar todas omite query; úsalo solo si el usuario pidió buscar un tema concreto, nunca la palabra genérica notas.',
   'media.process': 'Crear o procesar archivos. Para crear un código QR llama esta función con operation=qr_create y text con el contenido exacto, sin artifactRef. Para leer QR usa qr_read y el archivo. Para sticker usa sticker. No presentes archivos como creados antes del resultado del worker.',
   'media.collect': 'Reunir fotos en un PDF (images_pdf) o unir varios PDF (pdf_merge). Inicia una colección del usuario en este chat; puede mandar archivos sucesivos y terminar o cancelar. No procesa ni entrega hasta que termine la colección.',
   'notes.edit': 'Editar o corregir una nota existente del chat por su noteRef en REFERENCE_DATA.notes.',
-  'memory.remember': 'Guardar memoria personal solo por petición explícita: guarda en tu memoria, acuérdate de que o recuerda que. Nunca crear una nota compartida para esa petición.',
+  'memory.remember': 'Guardar memoria personal solo por petición explícita: guarda en tu memoria, acuérdate de que o recuerda que. Una petición de aviso a una hora futura, incluso guarda un recuerdo para las ocho peeme, corresponde a reminders.create. Nunca crear una nota compartida para esa petición.',
   'memory.forget': 'Borrar una memoria personal por referencia o contenido, o todas (all), con confirmación.',
-  'reminders.create': 'Crear un recordatorio personal. Omitir body o time si faltan; el backend pide aclaración y resuelve fecha y zona. No inventar horas ni periodos.',
+  'reminders.create': 'Crear un recordatorio personal o aviso futuro. Conserva literal el contenido solicitado; no lo estilices. Guarda un recuerdo para las ocho peeme es un recordatorio, no memoria personal; peeme significa pm. Omitir body o time si faltan; el backend pide aclaración y resuelve fecha y zona. No inventar horas ni periodos.',
   'reminders.edit': 'Editar un recordatorio propio. Omite body si no cambia el texto. Si solo cambia la hora del mismo día, usa kind=date con la fecha de dueLocal del recordatorio, nunca supongas today. El backend conserva campos omitidos.',
   'games.blackjack': `Jugar blackjack con la apuesta exacta solicitada. Mínimo ${product.gameMinBet} XP: si pide menos, explica el mínimo y pregunta cuánto quiere apostar; nunca aumentes su apuesta ni ejecutes el mínimo automáticamente.`,
   'games.roulette': `Jugar ruleta con la apuesta exacta solicitada. Mínimo ${product.gameMinBet} XP; si pide menos, explica el mínimo, sin aumentar ni ejecutar otra apuesta.`,

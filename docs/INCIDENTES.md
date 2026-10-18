@@ -222,3 +222,24 @@ Historial operativo de fallos, causas, impacto y soluciones aplicadas en producc
 - **Cierre:** sin A observados; no rollback activado. Canary se mantiene sólo Lab,
   main intacto y rollback v1 disponible. Dueño cierra con pendientes documentados;
   sin ampliación de pruebas ni arreglo de puentes.
+
+## 18-10-2026 — WS-PARITY-1: continuaciones observadas en Canary
+
+Solo Lab, después del primer deploy 5b1fa2f. Sin crash ni efecto remoto
+privilegiado; los archivos originales permanecen retenidos.
+
+- Reply de sticker al resultado textual de OCR: REF_NOT_FOUND. El selector
+  reconocía entregas binarias, pero no el enlace outbox → job → input retenido.
+  Se añade únicamente esa procedencia exacta, propia, del mismo chat, enviada
+  y con backing vivo; no se permite fallback a otro archivo.
+- «Ya son todas» no cerraba la colección. Gemini repetía media.collect y
+  reemplazaba la sesión con otra vacía. Se amplía la gramática de cierre completo
+  y repetir la misma colección conserva refs y vencimiento; otra operación pide
+  terminar/cancelar primero. No se borraron bytes ni se generó un PDF ficticio.
+- «Guarda un recuerdo para las ocho peeme» se dirigió a memoria y fue denegado.
+  Registry distingue aviso futuro y memoria; el reloj reconoce la variante
+  dictada y el programa pide fecha aunque el modelo proponga una fecha absoluta
+  no expresada. La prueba Gemini aislada posterior pidió día, conservó mañana
+  a las 20:00 y canceló el recordatorio.
+
+Regresiones y límites del nuevo deploy se registran en v1.1/WS-PARITY-1.md.

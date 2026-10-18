@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { product } from '../../config/product.js';
 import { artifactsForTurn } from './chat-artifacts.js';
 import { artifactCompatible } from './artifact-resolution-v2.js';
-import { openCollectionSessionV2, decideSessionV2, type SessionV2 } from './sessions-v2.js';
+import { openCollectionSessionV2, readSessionV2, decideSessionV2, type SessionV2 } from './sessions-v2.js';
 import { SafeRefs } from './safe-refs.js';
 import { executeToolV2 } from './policy-v2/executor.js';
 import { executionTransaction } from './execution-transaction-v2.js';
@@ -21,6 +21,15 @@ export async function beginCollectionV2(ctx: ExecutionContextV2, decision: Polic
   const operation=z.enum(['images_pdf','pdf_merge']).parse(decision.resolvedArgs.operation);
   const files=await currentFiles(ctx.legacy,operation);
   if(ctx.legacy.msg.attachments.length && !files.length)return fail(operation==='images_pdf'?'Envíame fotos para hacer el PDF.':'Envíame archivos PDF para unirlos.');
+  const active=await readSessionV2(ctx.legacy.c,ctx.actorId,ctx.chatId);
+  if(active?.kind==='media_collect' && active.expires_at>ctx.now){
+    const state=collection.parse(active.partial_args);
+    if(state.operation!==operation)return fail('Ya estoy reuniendo otros archivos. Termina o cancela esa colección primero.');
+    const ids=[...new Set([...state.artifactIds,...files.map(a=>a.id)])];
+    if(ids.length>product.mediaMaxFiles)return fail(`Ya llegaste al máximo de ${product.mediaMaxFiles} archivos. Dime «terminar».`);
+    await ctx.legacy.c.query('UPDATE sessions_v2 SET partial_args=$2,version=version+1 WHERE id=$1 AND status=\'active\'',[active.id,JSON.stringify({...state,artifactIds:ids})]);
+    return ok(`La colección sigue abierta con ${ids.length} archivos. Dime «terminar» para hacer el PDF.`);
+  }
   await openCollectionSessionV2(ctx.legacy.c,ctx.actorId,ctx.chatId,operation,files.map(a=>a.id),ctx.now);
   return ok(`Voy a reunir ${operation==='images_pdf'?'tus fotos en un PDF':'tus PDF'}. Envía los que faltan y dime «terminar». Máximo ${product.mediaMaxFiles} archivos; vence en ${product.sessionMinutes} minutos.`);
 }
@@ -40,7 +49,7 @@ export async function continueCollectionV2(ctx: ToolCtx, session: SessionV2): Pr
       const ids=[...new Set([...state.artifactIds,...files.map(a=>a.id)])];
       if(ids.length>product.mediaMaxFiles)return `Ya llegaste al máximo de ${product.mediaMaxFiles} archivos. Dime «terminar».`;
       await c.query(`UPDATE sessions_v2 SET partial_args=$2,version=version+1 WHERE id=$1`,[session.id,JSON.stringify({...state,artifactIds:ids})]);
-      return `Llevo ${ids.length} ${state.operation==='images_pdf'?'fotos':'PDF'}. Dime «terminar» cuando estén todos.`;
+      return `Llevo ${ids.length} ${state.operation==='images_pdf'?(ids.length===1?'foto':'fotos'):'PDF'}. Dime «terminar» cuando estén todos.`;
     }
     if(!state.artifactIds.length)return 'Todavía no tengo archivos para esa colección. Envíalos primero.';
     if(state.operation==='pdf_merge' && state.artifactIds.length<2)return 'Necesito al menos dos PDF para unirlos. Envía otro.';

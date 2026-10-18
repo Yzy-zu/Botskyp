@@ -53,7 +53,11 @@ export function legacyArguments(ctx: ExecutionContextV2, tool: Tool, input: Reco
       if (!parsed.success) return { status: 'denied', code: 'INVALID_TIME' };
       const clock=tool.name.startsWith('reminders.')?explicitClock(ctx.legacy.msg.text):undefined;
       const value=parsed.data.kind!=='relative' && clock?{...parsed.data,...clock}:parsed.data.kind!=='relative' && ctx.callOrigin!=='session' && ambiguousTime(ctx.legacy.msg.text)?{...parsed.data,meridiem:undefined}:parsed.data;
-      if(tool.name==='reminders.create' && ctx.callOrigin!=='session' && value.kind==='today' && clock && !/\b(?:hoy|mañana|pasado|lunes|martes|miércoles|miercoles|jueves|viernes|sábado|sabado|domingo)\b|\d{4}-\d{2}-\d{2}/iu.test(ctx.legacy.msg.text))return {status:'needs_clarification',code:'MISSING_DATE'};
+      const sourceText=ctx.legacy.msg.text.toLocaleLowerCase('es-MX');
+      const calendarDate=value.kind==='date'?DateTime.fromISO(value.date).setLocale('es-MX'):undefined;
+      const explicitDay=/\b(?:hoy|ma[ñn]ana|pasado|lunes|martes|miércoles|miercoles|jueves|viernes|sábado|sabado|domingo|esta noche|esta tarde|el \d{1,2})\b|\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}/iu.test(sourceText)
+        || Boolean(calendarDate?.isValid && [calendarDate.toFormat("d 'de' LLLL"),calendarDate.toFormat('d LLLL')].some(date=>sourceText.includes(date)));
+      if(tool.name==='reminders.create' && ctx.callOrigin!=='session' && (value.kind==='today' || value.kind==='date') && (clock || value.meridiem || value.hour===0 || value.hour>12) && !explicitDay)return {status:'needs_clarification',code:'MISSING_DATE'};
       const time = resolveSemanticTime(value, ctx.now);
       if (time.status !== 'ok') return { status: time.status === 'needs_clarification' ? 'needs_clarification' : 'denied', code: time.code.toUpperCase() };
       // Preserve absolute semantics through confirmation; never rebase a relative date on turn B.

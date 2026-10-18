@@ -17,13 +17,14 @@ export type SemanticTimeInput = z.input<typeof semanticTimeSchema>;
 export type ExplicitClock = { hour: number; minute: number; meridiem?: 'am' | 'pm' | '24h' };
 /** Small clock grammar for authenticated text, never a general intent router. */
 export function explicitClock(text: string): ExplicitClock | undefined {
-  const match = /(?<![\p{L}\d])(\d{1,2})(?::(\d{2}))?\s*(?:([ap])\.?\s*m\.?|(?:de|por|en) la (ma[ñn]ana|noche|tarde))(?![\p{L}])/iu.exec(text);
+  const clockText=text.replace(/\bocho\b/giu,'8').replace(/\bpeeme\b/giu,'pm');
+  const match = /(?<![\p{L}\d])(\d{1,2})(?::(\d{2}))?\s*(?:([ap])\.?\s*m\.?|(?:de|por|en) la (ma[ñn]ana|noche|tarde))(?![\p{L}])/iu.exec(clockText);
   if(match){
     const hour=Number(match[1]), minute=Number(match[2] ?? 0);
     if(hour>23 || minute>59)return;
     return {hour,minute,meridiem:match[3]?.toLowerCase()==='a' || /^ma[ñn]ana$/iu.test(match[4] ?? '')?'am':'pm'};
   }
-  const clock=/(?<![\p{L}\d])(\d{1,2}):(\d{2})(?!\d)/u.exec(text);
+  const clock=/(?<![\p{L}\d])(\d{1,2}):(\d{2})(?!\d)/u.exec(clockText);
   if(clock && Number(clock[1])<=23 && Number(clock[2])<=59)return {hour:Number(clock[1]),minute:Number(clock[2]),meridiem:'24h'};
   return;
 }

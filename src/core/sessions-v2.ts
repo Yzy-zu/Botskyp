@@ -27,7 +27,7 @@ export function decideSessionV2(session: SessionV2 | undefined, text: string, no
   const confirmation = confirmationInputV2(text);
   if (confirmation === 'cancel') return { kind: 'cancel' };
   if (session.kind === 'confirm') return { kind: confirmation };
-  if (session.kind === 'media_collect') return { kind: /^(?:ya|termina|terminar|hazlo|haz el pdf|listo)$/u.test(sessionTextV2(text))?'finish_collection':hasAttachment?'collect':'not_consumed' };
+  if (session.kind === 'media_collect') return { kind: /^(?:(?:que|pues) )?(?:ya(?: (?:son|estan) tod[oa]s)?|(?:esas )?son tod[oa]s|termina|terminar|hazlo|haz el pdf|listo)(?:[, ]+entiende)?$/u.test(sessionTextV2(text))?'finish_collection':hasAttachment?'collect':'not_consumed' };
   const temporal=reminderSlotUpdateV2(session,text,now);
   if(temporal)return {kind:temporal.ready?'continue':'update',slots:temporal.args,...(!temporal.ready?{missingSlots:temporal.missingSlots}:{})};
   // Multiple missing slots cannot be filled by guessing which one a fragment addresses.

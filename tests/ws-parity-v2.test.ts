@@ -8,6 +8,7 @@ import { beforeAll,beforeEach,afterAll,afterEach,it,expect,vi } from 'vitest';
 import { db,config,owner,member,chat,initialize,reset,context,backing,png,pdf,count } from './r4-harness.js';
 import { route } from '../src/core/router.js';
 import { Gemini,type Llm,type LlmReply,type LlmInput } from '../src/core/llm.js';
+import { artifactsForTurn } from '../src/core/chat-artifacts.js';
 import { buildTurnContextV2 } from '../src/core/context-v2.js';
 import { rememberContextResultV2 } from '../src/core/context-results-v2.js';
 import { confirmationInputV2 } from '../src/core/session-input-v2.js';
@@ -166,7 +167,7 @@ async function addFile(mime='image/png',bytes=png,id=randomUUID()){
   return turn('',scripted(),ctx=>backing(ctx,{mime,bytes}).then(()=>undefined),{id,attachments:[{kind:mime.startsWith('image/')?'image':'document',ref:`${id}:file`,mime}]});
 }
 it.each(['ya','termina','hazlo'])('media.collect: two images → %s → one job, with scoped retained inputs',async finish=>{
-  expect((await startCollection()).text).toContain('Voy a reunir');expect((await addFile()).text).toContain('1 fotos');expect((await addFile()).text).toContain('2 fotos');
+  expect((await startCollection()).text).toContain('Voy a reunir');expect((await addFile()).text).toContain('1 foto');expect((await addFile()).text).toContain('2 fotos');
   await turn(finish);expect(await count('jobs')).toBe(1);
   const job=(await db.query('SELECT payload FROM jobs')).rows[0]!.payload;expect(job.operation).toBe('images_pdf');expect(job.sources).toHaveLength(2);expect(new Set(job.sources.map((s:{storedId:string})=>s.storedId)).size).toBe(2);
   expect((await db.query('SELECT status FROM sessions_v2')).rows[0]?.status).toBe('done');
@@ -249,4 +250,49 @@ it('reordering a collected set is a different action and cannot reuse a success 
   });
   const result=await turn('botsky haz un PDF con esas fotos',llm);expect(result.text).toContain('Solo puedo preparar un archivo por mensaje');
   expect(await count('jobs')).toBe(1);expect((await db.query('SELECT status FROM tool_executions ORDER BY created_at')).rows).toEqual([{status:'queued'},{status:'denied'}]);
+});
+it.each(['ya son todas','ya están todas','que ya son todas botsky entiende'])('Canary collection closes naturally with %s',async text=>{
+  await startCollection();await addFile();await addFile();await turn(text);
+  expect((await db.query('SELECT payload FROM jobs')).rows[0]?.payload.sources).toHaveLength(2);
+});
+it('repeated media.collect keeps the foreground files and original expiry',async()=>{
+  await startCollection();await addFile();await addFile();
+  const before=(await db.query('SELECT id,partial_args,expires_at FROM sessions_v2')).rows[0]!;
+  await turn('botsky sigue reuniendo esas fotos',scripted(call('media.collect',{operation:'images_pdf'})));
+  const after=(await db.query('SELECT id,partial_args,expires_at FROM sessions_v2')).rows[0]!;
+  expect(after).toEqual(before);expect(await count('sessions_v2')).toBe(1);
+  await turn('terminar');expect((await db.query('SELECT payload FROM jobs')).rows[0]?.payload.sources).toHaveLength(2);
+});
+it.each(['today','date'] as const)('a scheduled recuerdo with a spoken PM period asks the day for %s and preserves tomorrow',async kind=>{
+  const llm=scripted(input=>{expect(input.tools.find(t=>t.name==='reminders_create')?.description).toContain('peeme');return call('reminders.create',{body:'estoy tonto',time:{kind,hour:8,meridiem:'pm',...(kind==='date'?{date:DateTime.now().setZone('America/Mexico_City').toISODate()!}:{})}});});
+  expect((await turn('botsky guarda un recuerdo para las ocho peeme di q estoy tonto',llm)).text).toContain('hoy o mañana');
+  await turn('mañana');expect((await turn('cancelalo')).text).toContain('cancelé');
+});
+async function quotedOcrFixture(){
+  const artifact=await context({},ctx=>backing(ctx,{mime:'image/png',bytes:png}));const provider=randomUUID();
+  const job=(await db.query(`INSERT INTO jobs(kind,chat_id,owner_id,status,payload) VALUES('media',$1,$2,'done',$3) RETURNING id`,[chat,owner,JSON.stringify({operation:'ocr',sources:[{storedId:artifact.media_attachment_id}]})])).rows[0]!;
+  await db.query(`INSERT INTO outbox(chat_id,kind,status,provider_msg_id,payload,dedupe_key) VALUES($1,'media_text','sent',$2,$3,$4)`,[chat,provider,JSON.stringify({text:'Texto leído',jobId:job.id}),randomUUID()]);
+  return {provider,artifact};
+}
+it('Canary sticker reply to sent OCR text resolves its exact image without copying semantic text',async()=>{
+  const {provider,artifact}=await quotedOcrFixture();
+  await turn('hazla Sticker',scripted(call('media.process',{operation:'sticker',artifactRef:'A_REPLY'})),undefined,{quoted:{id:provider,fromBot:false}});
+  const job=(await db.query("SELECT payload FROM jobs WHERE payload->>'operation'='sticker'")).rows[0]!;
+  expect(job.payload.sources).toEqual([{storedId:artifact.media_attachment_id}]);
+});
+it.each(['actor','chat','unsent','backing'] as const)('text-result source resolution respects %s provenance',async change=>{
+  const {provider}=await quotedOcrFixture();
+  if(change==='unsent')await db.query("UPDATE outbox SET status='queued'");
+  if(change==='backing')await db.query('UPDATE media_attachments SET data=NULL');
+  const result=await turn('botsky haz sticker de eso',scripted(call('media.process',{operation:'sticker',artifactRef:'A_REPLY'})),undefined,{quoted:{id:provider,fromBot:true},...(change==='actor'?{senderId:member}:change==='chat'?{chatId:'400@g.us'}:{})});
+  if(change==='chat'){
+    expect(result.text).toContain('apagada');
+    await context({chatId:'400@g.us'},async ctx=>expect((await artifactsForTurn(ctx.c,{chatId:ctx.chat.id,actorId:ctx.actor.id,sourceMessageId:ctx.msg.id,quotedMessageId:provider,now:ctx.now,resolveTextResultSource:true})).reply).toEqual([]));
+  }else expect(result.text).toContain('No tengo ese archivo');
+  expect((await db.query("SELECT count(*)::int n FROM jobs WHERE payload->>'operation'='sticker'")).rows[0]?.n).toBe(0);
+});
+it('an explicit Spanish calendar date keeps its day without asking again',async()=>{
+  const day=DateTime.now().setZone('America/Mexico_City').plus({days:2});
+  const text=`botsky recuérdame estudiar el ${day.setLocale('es-MX').toFormat("d 'de' LLLL")} a las 8pm`;
+  expect((await turn(text,scripted(call('reminders.create',{body:'estudiar',time:{kind:'date',date:day.toISODate()!,hour:8,meridiem:'pm'}})))).text).toContain('recordaré');
 });

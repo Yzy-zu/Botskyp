@@ -487,3 +487,14 @@ recordatorio sigue pending hoy 20:00 CDMX porque cancelación está cerrada; inf
 Main 0c1a19e sin merge y snapshot v1 privado disponible; rollback del selector
 probado, sin reversión real de producción. Fuente desplegada e09863f; el commit de
 cierre siguiente modifica sólo documentación. Detenerse tras push a la misma rama.
+
+
+### WS-PARITY-1 — 18-10-2026
+
+Desplegado `5b1fa2f` por `scripts/deploy.sh` con respaldo previo verificado
+`botsky-20261018T004425-349253.dump`; sin migraciones nuevas. Health HTTP 200,
+PostgreSQL/Evolution conectados y app/worker/SearXNG saludables a las 00:45 UTC.
+Selector confirmado dentro de la nueva app: Lab v1.1, allowlist de un chat,
+default y demás chats v1. Mensajería masiva de Lab permanece apagada.
+Sin cambios a Evolution, facturación, llaves/gateway Minecraft ni merge a main.
+Evidencia y estado del smoke en [WS-PARITY-1](v1.1/WS-PARITY-1.md).

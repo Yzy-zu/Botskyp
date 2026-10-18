@@ -79,7 +79,7 @@ Comandos de cierre:
 
 ```text
 npm test -- tests/ws-parity-v2.test.ts tests/tool-exposure.test.ts tests/natural-router-v2.test.ts tests/policy-v2.test.ts tests/artifacts-v2.test.ts tests/minecraft.test.ts tests/economy.test.ts tests/media-jobs.test.ts tests/media-security.test.ts tests/media-process.test.ts tests/reminder-time.test.ts tests/search-context.test.ts tests/tool-registry-v2.test.ts tests/router-canary.test.ts
-npm test -- tests/context-v2.test.ts tests/sessions-v2.test.ts tests/semantic-time.test.ts
+npm test -- tests/ws-parity-v2.test.ts tests/tool-exposure.test.ts tests/context-v2.test.ts tests/sessions-v2.test.ts tests/semantic-time.test.ts
 npm test -- tests/context-v2.test.ts
 npm test -- tests/ws-parity-v2.test.ts -t 'capability truth|capability discovery|bounds capability|does not recover|real web failure|reordering|old image/OCR|exact Canary reminder|inbox activates'
 npm test -- tests/policy-v2.test.ts tests/artifacts-v2.test.ts -t 'offers 91|runs DOCX'
@@ -123,3 +123,49 @@ Canary: preparado para despliegue por scripts/deploy.sh. Selector validado en en
 default v1 y únicamente Lab en v1.1. Health previo HTTP 200 con BD/Evolution sanos.
 Smoke WhatsApp todavía pendiente de mensajes del dueño; no se sustituye por pruebas
 mock ni mensajes entrantes fabricados.
+
+
+### Despliegue confirmado
+
+Código desplegado: `5b1fa2fc07a7a2d807f41218b06ae917e9e44561`, push a la rama
+autorizada y despliegue exclusivamente por `scripts/deploy.sh`. Respaldo previo
+verificado: `botsky-20261018T004425-349253.dump`. Sin migraciones nuevas. App/worker,
+PostgreSQL y SearXNG saludables. `/health` HTTP 200: database/evolution true y
+transport evolution, verificado a las 00:45 UTC. No se tocó Evolution ni main.
+
+Selector comprobado dentro del contenedor nuevo: default `v1`, allowlist con un
+solo chat, Lab `v1_1`, un chat ajeno `v1`. No se reactivó mensajería masiva.
+Escaneo adicional de 19 logs/artefactos locales de evidencia: cero coincidencias
+de claves configuradas, credenciales de BD o identificadores privados del entorno.
+Observación WhatsApp iniciada a las 00:45:40 UTC; el dueño confirmó disponibilidad
+para enviar los mensajes reales. Resultado del smoke aún pendiente.
+
+### Correcciones del smoke humano
+
+Primera ventana desde 00:45:40 UTC: Minecraft status/players, daily y web/search
+confirmados con entrega real, XP sin menciones de la imagen anterior. OCR sobre la
+imagen nueva terminó y su texto fue enviado. Se encontraron tres variantes:
+
+- Dictado «guarda un recuerdo para las ocho peeme»: dirigido a memoria y denegado.
+  Registry distingue aviso futuro; el reloj entiende «ocho peeme» y la fecha faltante
+  se pregunta aunque Gemini haya propuesto kind=date. Gemini real aislado posterior:
+  pidió hoy/mañana, creó mañana 20:00 y canceló, sin escribir en producción.
+- «Hazla Sticker» citaba un media_text/OCR enviado. Se añade resolución operativa
+  hacia el input exacto de ese job, solo propio/mismo chat, con entrega y backing
+  vivos. Se activa al resolver una operación; no carga automáticamente su imagen
+  como semántica en el contexto. No recae en A_LAST si esa procedencia no existe.
+- «Ya son todas» y «que ya son todas botsky entiende»: ahora cierran la colección.
+  Repetir media.collect conserva refs y TTL; no reemplaza la colección con otra vacía.
+  Los bytes originales de la primera prueba permanecieron retenidos.
+
+Doce pruebas nuevas elevan el total a 640 únicas (93 en WS-PARITY). Cierre: 24/24
+focalizadas de recordatorios/procedencia; 86/86 artifacts/sesiones/tiempo. Las de
+colecciones quedaron verificadas en la tanda anterior; las dos discrepancias de
+esa tanda fueron reloj dictado ya corregido y fixture de otro chat cuya conversación
+está deshabilitada, reforzado con consulta directa de la procedencia cruzada.
+La repetición final de procedencia pasó 7/7. Se añadió además la comprobación de fecha española explícita, para no preguntar de nuevo cuando el día sí fue indicado.
+
+Cierre del ajuste: fecha española explícita y dictado 3/3; typecheck/lint/build
+correctos nuevamente, sin ampliar la suite. Total final: **640 pruebas únicas**
+por tandas focalizadas, **93 escenarios WS-PARITY**. Los fallos intermedios se
+cerraron con pruebas de la causa; las repeticiones no aumentan ese total.

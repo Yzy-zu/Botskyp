@@ -13,7 +13,7 @@ export function artifactCompatible(operation: ArtifactOperation, artifact: Pick<
 }
 /** Current/reply are explicit: incompatible input cannot silently select another file. */
 export async function resolveArtifactForOperation(operation: ArtifactOperation, context: ArtifactScopeV2, explicitRef?: string): Promise<ArtifactResolution> {
-  const candidates = await artifactsForTurn(context.c, context);
+  const candidates = await artifactsForTurn(context.c, {...context,resolveTextResultSource:true});
   for (const [ref, files] of [['A_CURRENT', candidates.current], ['A_REPLY', candidates.reply]] as const) {
     if (files.length) {
       const compatible = files.filter(a => artifactCompatible(operation, a));

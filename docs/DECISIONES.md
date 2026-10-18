@@ -1472,3 +1472,10 @@ y queda para WS-MULTIMEDIA, junto con timeout LibreOffice y selección media.sea
 Evidencias y límites en docs/v1.1/WS-PARITY-1.md y paridad priorizada en
 [legacy/PARITY-ROADMAP.md](legacy/PARITY-ROADMAP.md). Nuclear y escrituras Minecraft
 no se prueban remotamente. Mensajería masiva de Lab permanece apagada.
+
+El smoke de DEC-066 amplía dos continuaciones ya autorizadas: un reply de resultado
+textual enviado puede resolver exclusivamente el input retenido del job propio en
+ese chat; no hereda archivos ajenos. Repetir media.collect conserva la colección
+vigente y su TTL. «Ya son todas» cierra la colección sin una nueva selección del
+modelo. El día faltante se pregunta incluso cuando Gemini inventa una fecha
+absoluta; se conserva la distinción de memoria frente a avisos futuros dictados.

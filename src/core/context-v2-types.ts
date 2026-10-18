@@ -9,7 +9,17 @@ export type SafeConversationSnapshotV2 = {
   nowLocal: string;
   actor: { ref: 'SELF'; displayName: string; role: string };
   chat: { type: 'group' | 'private'; availableModules: string[] };
-  activeSession?: { kind: SessionV2['kind']; prompt: string; missingSlots: string[]; expiresLocal: string; collection?: {operation:'images_pdf'|'pdf_merge';files:number}; preview?: { description: string; text?: string; count?: number } };
+  activeSession?: {
+    kind: SessionV2['kind'];
+    pendingTool: string;
+    partialArgs: Record<string, unknown>;
+    missingSlots: string[];
+    lastQuestion: string;
+    prompt: string;
+    expiresLocal: string;
+    collection?: { operation: 'images_pdf' | 'pdf_merge'; files: number };
+    preview?: { description: string; text?: string; count?: number };
+  };
   currentAttachment?: { kind: string; mime?: string };
   currentArtifact?: SafeArtifactV2;
   visionArtifact?: SafeArtifactV2;

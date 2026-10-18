@@ -14,7 +14,7 @@ export function capabilityTruthTargets(text: string, exposure: ToolExposure): st
     if (/\b(?:alguien|quien|jugando|jugadores)\b/u.test(value)) targets.push('minecraft.players');
     else if (/\b(?:prendido|activo|estado|anda|encendido|online)\b/u.test(value)) targets.push('minecraft.status','minecraft.resources');
   }
-  if (/\b(?:xp|puntos|saldo|ando pobre)\b/u.test(value) && /\b(?:cuant[ao]s?|tengo|traigo|saldo|ando pobre)\b/u.test(value)) targets.push('xp.balance');
+  if (/\b(?:xp|puntos|saldo)\b/u.test(value) && /\b(?:cuant[ao]s?|tengo|traigo|saldo)\b/u.test(value)) targets.push('xp.balance');
   return targets.filter(name => exposure.toolNames.includes(name));
 }
 export function shouldRetryCapabilityTruth(text: string, answer: string, exposure: ToolExposure): boolean {
@@ -23,7 +23,15 @@ export function shouldRetryCapabilityTruth(text: string, answer: string, exposur
 }
 export function capabilityContextV2(exposure: ToolExposure): string {
   const hints = ['El Registry define las capacidades reales. Cumple la utilidad solicitada antes del humor.'];
-  if (exposure.toolNames.includes('minecraft.status')) hints.push('Botsky tiene un servidor Minecraft Bedrock configurado. Maicra, maincra, mine, mc, server y servidor pueden referirse a él. Usa las funciones Minecraft disponibles para sus consultas o acciones. No pidas host/IP salvo que la herramienta reporte configuración faltante.');
-  if (exposure.toolNames.includes('web.search')) hints.push('Si el usuario pide explícitamente buscar en web/internet, usa web_search antes de responder; una broma no sustituye la búsqueda. No infieras datos personales del usuario a partir de páginas sobre otras personas: sin evidencia suficiente, dilo. Incluye enlaces de las fuentes devueltas. Buscar videos o música corresponde a multimedia.');
+  if (exposure.availableDomains.length) {
+    const summary = exposure.availableDomains.map(d => `${d}: ${exposure.capabilityDirectory[d] ?? d}`).join(' | ');
+    hints.push(`Directorio de dominios disponibles en este chat (usa core_load_capability({domain}) si necesitas una herramienta de un dominio no expuesto): ${summary}`);
+  }
+  if (exposure.availableDomains.includes('minecraft') || exposure.toolNames.includes('minecraft.status')) {
+    hints.push('Botsky tiene un servidor Minecraft Bedrock configurado (dominio minecraft). Si el usuario pregunta por el servidor con cualquier variante o typo, usa las funciones minecraft_* expuestas o carga el dominio minecraft con core_load_capability. No pidas host/IP salvo que la herramienta reporte configuración faltante.');
+  }
+  if (exposure.availableDomains.includes('web') || exposure.toolNames.includes('web.search')) {
+    hints.push('Si el usuario pide explícitamente buscar en web/internet, usa web_search antes de responder; una broma no sustituye la búsqueda. No infieras datos personales del usuario a partir de páginas sobre otras personas: sin evidencia suficiente, dilo. Incluye enlaces de las fuentes devueltas. Buscar videos o música corresponde a multimedia.');
+  }
   return hints.join('\n');
 }

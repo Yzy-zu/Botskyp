@@ -380,3 +380,15 @@ de permisos ni subsistemas nuevos. Revalidación humana del segundo deploy pendi
 Cierre del segundo smoke: slots con prefijo/dictado y collect action=finish para que Gemini pueda cerrar una colección en lenguaje libre. Doce regresiones adicionales: 652 únicas acumuladas y 105 de WS-PARITY; 29/29 del último alcance, checks correctos. Tercer deploy y comprobación de entrega humana a continuación.
 
 Revisión de recibos del primer smoke: cancelación con mejor al final, plural recordatorios y guard de anulación falsa corregidos. 51/51 focalizadas y Gemini real aislado confirman cancelación persistida/listado real. Total acumulado 656 pruebas únicas, 109 de WS-PARITY. Registro histórico pendiente informado, sin cancelación administrativa oculta.
+
+Código final desplegado `0cdaab3`, health y selector correctos. Smoke humano parcial confirmado; la repetición de los casos corregidos sigue pendiente del dueño, ya avisado. No se acredita una cancelación ni entrega por texto del modelo. Trabajo autorizado de implementación/checks/deploy cerrado; no iniciar otro workstream ni merge.
+
+## 20. Replanteo Arquitectónico: Base AI-First / Natural-First (18-10-2026)
+
+1. **Principio restablecido:** "Gemini entiende. Tools hacen. Backend valida." Prohibidos los regexes semánticos y listas de homófonos/modismos en el código.
+2. **Reversión de parches provisionales:** Eliminados `normalizeClockText()`, `ocho -> 8`, `piem/peeme -> pm` y listas léxicas de confirmación/negación. Preservadas las capacidades legítimas de Phase 1 shortcuts y WS-PARITY-1.
+3. **SessionV2 como coordinador puro:** Zero-NLU en el backend. Toda entrada humana se envía a Gemini junto a una proyección segura de `activeSession` (sin JIDs, UUIDs ni hashes).
+4. **Continuación, corrección y escape natural:** `mergeClarificationArgsV2` combina slots preservando datos previos. Cambios de intención (`xp.balance`) se ejecutan sin secuestrar ni descartar la sesión pendiente.
+5. **Meta-tools `core.session_confirm` y `core.session_cancel`:** Confirmación y cancelación estructurada por el modelo, pasando por revalidación estricta de Policy R3 (`callOrigin: 'session'`).
+6. **Verificación en verde:** 6 smoke tests contra Gemini real (`gemini-3.5-flash-lite`) pasando al 100%. Typecheck y lint limpios. Sin deploy ni merge a main.
+

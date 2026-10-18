@@ -1,7 +1,7 @@
 import { DateTime } from 'luxon';
 import type { Tool } from '../tools.js';
-import { resolveSemanticTime, semanticTimeSchema, explicitClock } from '../../modules/reminders/semantic-time.js';
-import { ambiguousTime, recurrenceMatchesDue, validateDue } from '../../modules/reminders/time.js';
+import { resolveSemanticTime, semanticTimeSchema } from '../../modules/reminders/semantic-time.js';
+import { recurrenceMatchesDue, validateDue } from '../../modules/reminders/time.js';
 import type { ExecutionContextV2 } from './types.js';
 
 /** Deliberately bounded adapters. Unknown contracts fail closed instead of guessing backend arguments. */
@@ -55,14 +55,7 @@ export function legacyArguments(ctx: ExecutionContextV2, tool: Tool, input: Reco
     else {
       const parsed = semanticTimeSchema.safeParse(args.time);
       if (!parsed.success) return { status: 'denied', code: 'INVALID_TIME' };
-      const clock=tool.name.startsWith('reminders.')?explicitClock(ctx.legacy.msg.text):undefined;
-      const value=parsed.data.kind!=='relative' && clock?{...parsed.data,...clock}:parsed.data.kind!=='relative' && ctx.callOrigin!=='session' && ambiguousTime(ctx.legacy.msg.text)?{...parsed.data,meridiem:undefined}:parsed.data;
-      const sourceText=ctx.legacy.msg.text.toLocaleLowerCase('es-MX');
-      const calendarDate=value.kind==='date'?DateTime.fromISO(value.date).setLocale('es-MX'):undefined;
-      const explicitDay=/\b(?:hoy|ma[ñn]ana|pasado|lunes|martes|miércoles|miercoles|jueves|viernes|sábado|sabado|domingo|esta noche|esta tarde|el \d{1,2})\b|\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}/iu.test(sourceText)
-        || Boolean(calendarDate?.isValid && [calendarDate.toFormat("d 'de' LLLL"),calendarDate.toFormat('d LLLL')].some(date=>sourceText.includes(date)));
-      if(tool.name==='reminders.create' && ctx.callOrigin!=='session' && (value.kind==='today' || value.kind==='date') && (clock || value.meridiem || value.hour===0 || value.hour>12) && !explicitDay)return {status:'needs_clarification',code:'MISSING_DATE'};
-      const time = resolveSemanticTime(value, ctx.now);
+      const time = resolveSemanticTime(parsed.data, ctx.now);
       if (time.status !== 'ok') return { status: time.status === 'needs_clarification' ? 'needs_clarification' : 'denied', code: time.code.toUpperCase() };
       // Preserve absolute semantics through confirmation; never rebase a relative date on turn B.
       args.dueAt = DateTime.fromJSDate(time.dueAt, { zone: time.timezone }).toISO();

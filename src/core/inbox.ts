@@ -1,6 +1,5 @@
 import { readSessionV2, decideSessionV2 } from './sessions-v2.js';
 import { recentReminderV2 } from './recent-followup-v2.js';
-import { confirmationInputV2 } from './session-input-v2.js';
 import { sanitizeOutputV2 } from './output-sanitizer-v2.js';
 import { registerIncomingArtifactsV2 } from './artifact-registration-v2.js';
 import { modules } from './control-tools.js';
@@ -86,9 +85,9 @@ export async function processNext(db: Db, baseConfig: Config):Promise<boolean> {
         const text=commandText(msg.text);
         const v2Session=config.ROUTER_MODE==='v1_1'?await readSessionV2(c,actor.id,msg.chatId):undefined;
         const v2Decision=decideSessionV2(v2Session,msg.text,new Date(),msg.attachments.length>0);
-        // An actor's live foreground/game interaction keeps activation while a new intent escapes interception.
-        const recentCancellation=config.ROUTER_MODE==='v1_1' && !v2Session && confirmationInputV2(msg.text)==='cancel' && Boolean(await recentReminderV2(c,msg.chatId,actor.id,new Date()));
-        const accepts=config.ROUTER_MODE==='v1_1'? recentCancellation || !['not_consumed','expired'].includes(v2Decision.kind) || Boolean(v2Session && v2Session.expires_at>new Date()) || session?.kind==='game':sessionAccepts(session,text,msg.attachments.length>0);
+        // An actor's live foreground/game interaction or recent reminder follow-up keeps activation while Gemini decides the intent.
+        const recentFollowup=config.ROUTER_MODE==='v1_1' && !v2Session && Boolean(await recentReminderV2(c,msg.chatId,actor.id,new Date()));
+        const accepts=config.ROUTER_MODE==='v1_1'? recentFollowup || !['not_consumed','expired'].includes(v2Decision.kind) || Boolean(v2Session && v2Session.expires_at>new Date()) || session?.kind==='game':sessionAccepts(session,text,msg.attachments.length>0);
         if(allowed && msg.isGroup){if(config.ROUTER_MODE==='v1_1')await c.query("SELECT pg_advisory_xact_lock(hashtext('botsky-v2-execution-admission'))");await chatLock(c,msg.chatId);await lockChatWallets(c,msg.chatId,actor.id);}
         const xpCtx={turnId:row.turn_id,actor,chat:{id:msg.chatId,isGroup:msg.isGroup,enabled:allowed,settings:saved?.settings ?? {}},msg,db,c,config,now:new Date(),search:async()=>''};
         if(allowed && !maintenance)await activity(xpCtx);

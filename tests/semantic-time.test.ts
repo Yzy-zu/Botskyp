@@ -16,8 +16,11 @@ it('resolves mañana a las 8 pm and de la noche to 20:00, and accepts consistent
     expect(local({ kind: 'tomorrow', hour: 21, meridiem })).toBe('2026-10-18 21:00');
   }
 });
-it('mañana a las 8 requires clarification; explicit 24h is accepted', () => {
+it('mañana a las 8 requires clarification; explicit 24h is accepted; clock-only requires missing_date', () => {
   expect(resolveSemanticTime({ kind: 'tomorrow', hour: 8 }, now)).toEqual({ status: 'needs_clarification', code: 'ambiguous_hour' });
+  expect(resolveSemanticTime({ kind: 'clock', hour: 8, meridiem: 'pm' }, now)).toEqual({ status: 'needs_clarification', code: 'missing_date' });
+  expect(resolveSemanticTime({ kind: 'clock', hour: 20 }, now)).toEqual({ status: 'needs_clarification', code: 'missing_date' });
+  expect(resolveSemanticTime({ kind: 'clock', hour: 8 }, now)).toEqual({ status: 'needs_clarification', code: 'missing_date' });
   expect(local({ kind: 'tomorrow', hour: 8, meridiem: '24h' })).toBe('2026-10-18 08:00');
 });
 it('distinguishes 12 am and 12 pm', () => {

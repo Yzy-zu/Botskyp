@@ -4,6 +4,8 @@ Fecha: 18-10-2026. Base verificada: f2be96d16fe8bdcc1502e54cee6d88a9f7cc6862,
 feat/v1.1-natural-router, árbol limpio y remoto idéntico (0/0 tras fetch).
 Un constructor, sin delegación, sin merge a main ni rediseño Legacy.
 
+Estado de cierre: código `0cdaab3d1de770775ab1bfa7669d8aa8cf73b869` desplegado y sano. **656 pruebas únicas** por tandas focalizadas, **109 escenarios WS-PARITY**; typecheck/lint/build y auditoría correctos. Lab v1.1/resto v1 confirmados. Smoke real parcial; repetición de recordatorio, sticker y entrega PDF todavía pendiente del dueño. La evidencia cronológica inferior distingue ejecución, cola y entrega.
+
 ## Implementación
 
 - Minecraft: exposición por minecraft/maicra/maincra/mine/mc/bedrock/server/servidor,
@@ -193,3 +195,36 @@ Las dos fotos sí permanecieron retenidas, pero «kon esas hazlo» volvió a ini
 El tercer deploy a10c7d4 quedó sano a las 01:13:30 UTC, respaldo botsky-20261018T011220-387841.dump, Lab v1.1/resto v1. Todavía sin nuevos mensajes humanos en esa ventana. La revisión histórica del primer smoke encontró «cancelalo mejor» → «ya te lo anulé» sin ejecución; luego un listado falso sin pendientes. No se acredita esa cancelación: el recordatorio de hoy 20:00 permanece pending.
 
 Se acepta mejor como prefijo/sufijo solo de una cancelación completa, se expone productivity con recordatorios en plural y se bloquea la variante de efecto inventado ya te lo anulé. Cuatro regresiones adicionales; **51/51** focalizadas de cancelación/sesiones/exposición. Total **656 únicas**, **109 escenarios WS-PARITY**. Gemini gratuito aislado: aviso 8pm → pregunta fecha → mañana 20:00 → cancelalo mejor ejecuta cancel/ok → listado real sin pendientes. No se hizo cancelación administrativa del registro humano ni se alteró el criterio de referencia reciente.
+
+### Despliegue final y límites del smoke
+
+`0cdaab3d1de770775ab1bfa7669d8aa8cf73b869` enviado a la rama autorizada y desplegado por `scripts/deploy.sh`, respaldo verificado `botsky-20261018T011646-395152.dump`. Health HTTP 200 con database/evolution true; app, worker, PostgreSQL y SearXNG sanos. Selector verificado dentro de la nueva app: default v1, allowlist de un chat, Lab v1_1, chat externo v1. Mensajería masiva de Lab sigue apagada; cero Nuclear/escrituras Minecraft en las ventanas observadas. Main permanece 0c1a19e.
+
+Ventana final abierta a las 01:17:54 UTC. Dueño avisado del despliegue y de la necesidad de repetir recordatorio → mañana → cancelación, sticker por reply textual y dos fotos → PDF. No se fabrican mensajes entrantes ni se acredita entrega sin outbox sent. El recordatorio histórico de hoy 20:00 sigue pendiente según la última lectura; se informó la afirmación falsa y se indicó listado/selección segura para cancelarlo.
+
+Verificación adicional local: 47 logs/archivos de evidencia comprobados sin coincidencias de claves configuradas, credenciales de BD ni identificadores privados del entorno; permisos locales restringidos. La auditoría versionada final no encontró secretos. Los datos privados de WhatsApp no se incorporan al repositorio.
+
+## Corrección Arquitectónica: Base AI-First / Natural-First (18-10-2026)
+
+### Principio "Gemini entiende. Tools hacen. Backend valida."
+
+Se eliminaron del backend todos los intentos de aprendizaje o normalización lingüística en TypeScript (`normalizeClockText()`, `ocho -> 8`, `piem/peeme -> pm`, diccionarios de afirmaciones/negaciones como `confirmationInputV2`). Se retiró SessionV2 del camino de NLU previo a Gemini, restableciéndolo como coordinador puro de estado sin NLU.
+
+### Cambios Arquitectónicos Implementados
+
+1. **SessionV2 Zero-NLU:** `decideSessionV2` no consume lenguaje humano. Solo procesa expiraciones por TTL y recolección de adjuntos (`collect`). Todo lenguaje humano se envía a Gemini.
+2. **Proyección Segura de Contexto (`activeSession`):** El Context Builder proyecta `kind`, `pendingTool`, `partialArgs` seguros para el modelo, `missingSlots`, `prompt` y `expiresLocal`. Cero filtración de JIDs, UUIDs internos, hashes o paths de sistema de archivos.
+3. **Continuación y Corrección de Slots:** `mergeClarificationArgsV2` combina de forma estructurada los slots proporcionados por Gemini con los argumentos parciales de la sesión, actualizando la sesión in-place mediante `openClarificationV2` sin generar filas redundantes.
+4. **Escape de Intención:** Las sesiones activas no capturan el turno; intenciones distintas (ej. `xp.balance`) son seleccionadas directamente por Gemini mientras la sesión previa permanece intacta.
+5. **Meta-tools Estructuradas:** `core.session_confirm` y `core.session_cancel` exponen al modelo interfaces explícitas sin argumentos sensibles, coordinadas a través de revalidación completa de Policy R3 (`callOrigin: 'session'`).
+6. **SemanticTime Estructurado:** Gemini produce `kind: 'clock'` cuando falta fecha o cuando la hora 1..12 es ambigua. El backend valida schemas Zod y aplica políticas sin re-evaluar el texto en crudo con regexes lingüísticos.
+
+### Evidencia de Smoke Tests con Gemini Real (`gemini-3.5-flash-lite`)
+
+Ejecutados en `tests/smoke-gemini.test.ts` con API Key real (sin filtrar secretos):
+- **Escenario 1 (Prompt deforme sin fecha):** `"botsky guarda un rekor para las 8piem y di q estoy tontiks"` → Gemini llama `reminders.create` con `time.kind = 'clock'`, `hour = 20`, `meridiem = 'pm'`. Backend detecta falta de fecha y abre clarificación: *"¿Para hoy o mañana?"*.
+- **Escenario 2 (Continuación con homófono):** `"para joi komo alas ocho piem"` → SessionV2 proyecta sesión activa; Gemini interpreta `joi` como hoy y llama `reminders.create` con `time.kind = 'today'`, `hour = 20`. Recordatorio creado exitosamente.
+- **Escenario 3 (Corrección de slot):** Sesión con mañana 20:00 + `"nel mejor el viernes como a las nueve"` → Gemini actualiza el slot a viernes 21:00 conservando el mensaje.
+- **Escenario 4 (Escape de intención):** Sesión de recordatorio activa + `"cuanto xp tengo we"` → Gemini llama `xp.balance` (retorna *"Tienes 500 XP"*); la sesión de recordatorio permanece activa.
+- **Escenario 5 (Confirmación natural):** Confirmación pendiente de Minecraft + `"si botsky"` → Gemini llama `core.session_confirm({})`; Policy R3 revalida y encola `minecraft.restart`, marcando la sesión como `done`.
+- **Escenario 6 (Cancelación natural):** Confirmación pendiente de Minecraft + `"nel ya estuvo"` → Gemini llama `core.session_cancel({})`; la sesión se marca como `cancelled` y Botsky confirma la cancelación sin cambios.

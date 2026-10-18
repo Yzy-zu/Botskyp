@@ -2,9 +2,6 @@ import { z } from 'zod';
 import type { PoolClient } from 'pg';
 import type { Config } from '../config.js';
 import { product } from '../../config/product.js';
-import { confirmationInputV2 } from './session-input-v2.js';
-import { sessionTextV2 } from './session-input-v2.js';
-import { reminderSlotUpdateV2, mergeSessionSlotsV2 } from './reminder-slots-v2.js';
 
 export const missingSlotV2 = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('am_pm'), hour: z.number().int().min(1).max(12) }),
@@ -19,29 +16,15 @@ export const sessionV2Schema = z.object({
 });
 export type SessionV2 = z.infer<typeof sessionV2Schema>;
 export type SessionDecisionV2 = { kind: 'not_consumed' | 'expired' | 'cancel' | 'confirm' }
-  | { kind: 'continue' | 'update'; slots: Record<string, unknown>; missingSlots?:SessionV2['missing_slots'] }
+  | { kind: 'continue' | 'update'; slots: Record<string, unknown>; missingSlots?: SessionV2['missing_slots'] }
   | { kind: 'collect' | 'finish_collection' };
+
+/** Pure state check: never parses human language. Only checks expiry and non-linguistic attachment uploads. */
 export function decideSessionV2(session: SessionV2 | undefined, text: string, now: Date, hasAttachment = false): SessionDecisionV2 {
   if (!session || session.status !== 'active') return { kind: 'not_consumed' };
   if (session.expires_at <= now) return { kind: 'expired' };
-  const confirmation = confirmationInputV2(text);
-  if (confirmation === 'cancel') return { kind: 'cancel' };
-  if (session.kind === 'confirm') return { kind: confirmation };
-  if (session.kind === 'media_collect') return { kind: /^(?:(?:que|pues) )?(?:ya(?: (?:son|estan) tod[oa]s)?|(?:esas )?son tod[oa]s|termina|terminar|hazlo|haz el pdf|listo)(?:[, ]+entiende)?$/u.test(sessionTextV2(text))?'finish_collection':hasAttachment?'collect':'not_consumed' };
-  const temporal=reminderSlotUpdateV2(session,text,now);
-  if(temporal)return {kind:temporal.ready?'continue':'update',slots:temporal.args,...(!temporal.ready?{missingSlots:temporal.missingSlots}:{})};
-  // Multiple missing slots cannot be filled by guessing which one a fragment addresses.
-  if (session.missing_slots.length !== 1) return { kind: 'not_consumed' };
-  const slot = session.missing_slots[0]!;
-  const normalized = sessionTextV2(text).replaceAll('.', '');
-  if (slot.kind === 'choice') {
-    const choices = slot.choices.filter(choice => sessionTextV2(choice) === normalized);
-    return choices.length === 1 ? { kind: 'continue', slots: { [slot.field]: choices[0]! } } : { kind: 'not_consumed' };
-  }
-  const match = /^(?:(\d{1,2})\s*)?(am|pm|(?:de|en|por) la (?:manana|noche|tarde))$/u.exec(normalized);
-  if (!match || (match[1] && Number(match[1]) !== slot.hour)) return { kind: 'not_consumed' };
-  const period = /^(?:am|.*manana)$/u.test(match[2]!) ? 'am' : 'pm';
-  return { kind: 'continue', slots: { period, hour24: slot.hour % 12 + (period === 'pm' ? 12 : 0) } };
+  if (session.kind === 'media_collect' && hasAttachment && !text.trim()) return { kind: 'collect' };
+  return { kind: 'not_consumed' };
 }
 export async function readSessionV2(c: PoolClient, actorId: string, chatId: string): Promise<SessionV2 | undefined> {
   const row = (await c.query(`SELECT * FROM sessions_v2 WHERE actor_id=$1 AND chat_id=$2 AND status='active' ORDER BY created_at DESC LIMIT 1`, [actorId, chatId])).rows[0];
@@ -67,10 +50,21 @@ export async function openClarificationV2(c: PoolClient, mode: Config['ROUTER_MO
 }): Promise<SessionV2 | undefined> {
   if (mode !== 'v1_1') return undefined;
   const slots = z.array(missingSlotV2).min(1).parse(input.missingSlots);
+  await c.query("SELECT pg_advisory_xact_lock(hashtext('botsky-v2-execution-admission'))");
+  await c.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`session-v2:${input.chatId}:${input.actorId}`]);
+  const existing = await readSessionV2(c, input.actorId, input.chatId);
+  const code = input.code ?? 'CLARIFICATION';
+  if (existing && existing.kind === 'clarify' && existing.pending_tool === input.pendingTool) {
+    const updated = (await c.query(`UPDATE sessions_v2 SET partial_args=$1,missing_slots=$2,prompt=$3,code=$4,
+      expires_at=$5,version=version+1 WHERE id=$6 RETURNING *`,
+      [JSON.stringify(input.partialArgs), JSON.stringify(slots), input.prompt, code,
+       new Date(input.now.getTime() + product.sessionMinutes * 60_000), existing.id])).rows[0];
+    return sessionV2Schema.parse(updated);
+  }
   await replaceForeground(c, input.actorId, input.chatId);
   const row = (await c.query(`INSERT INTO sessions_v2(actor_id,chat_id,kind,pending_tool,partial_args,missing_slots,prompt,code,expires_at)
     VALUES($1,$2,'clarify',$3,$4,$5,$6,$7,$8) RETURNING *`, [input.actorId, input.chatId, input.pendingTool,
-    JSON.stringify(input.partialArgs), JSON.stringify(slots), input.prompt, input.code, new Date(input.now.getTime() + product.sessionMinutes * 60_000)])).rows[0];
+    JSON.stringify(input.partialArgs), JSON.stringify(slots), input.prompt, code, new Date(input.now.getTime() + product.sessionMinutes * 60_000)])).rows[0];
   return sessionV2Schema.parse(row);
 }
 export async function bindConfirmationSessionV2(c: PoolClient, mode: Config['ROUTER_MODE'], confirmationId: string, prompt: string): Promise<void> {
@@ -82,7 +76,21 @@ export async function bindConfirmationSessionV2(c: PoolClient, mode: Config['ROU
     SELECT actor_id,chat_id,'confirm',tool_name,$2,'CONFIRM_ACTION',args_hash,logical_action_id,execution_id,id,expires_at
     FROM tool_confirmations_v2 WHERE id=$1 ON CONFLICT(confirmation_id) DO NOTHING`, [confirmationId, pending.tool_name === 'bulk.nuclear' ? prompt : '¿Confirmas la operación pendiente?']);
 }
-/** Mutates only continuation state; never invokes a handler or consumes a confirmation. */
+export async function cancelSessionV2(c: PoolClient, mode: Config['ROUTER_MODE'], actorId: string, chatId: string, now: Date): Promise<'cancelled' | 'expired' | 'not_found'> {
+  if (mode !== 'v1_1') return 'not_found';
+  await c.query("SELECT pg_advisory_xact_lock(hashtext('botsky-v2-execution-admission'))");
+  await c.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`session-v2:${chatId}:${actorId}`]);
+  const live = (await c.query("SELECT * FROM sessions_v2 WHERE actor_id=$1 AND chat_id=$2 AND status='active' ORDER BY created_at DESC LIMIT 1 FOR UPDATE", [actorId, chatId])).rows[0];
+  if (!live) return 'not_found';
+  const current = sessionV2Schema.parse(live);
+  const status = current.expires_at <= now ? 'expired' : 'cancelled';
+  await c.query("UPDATE sessions_v2 SET status=$2,version=version+1 WHERE id=$1 AND version=$3 AND status='active'", [current.id, status, current.version]);
+  if (current.confirmation_id) {
+    await c.query('UPDATE tool_confirmations_v2 SET invalidated=true WHERE id=$1 AND consumed_execution_id IS NULL', [current.confirmation_id]);
+  }
+  return status;
+}
+/** Mutates only expiry/lifecycle state; never parses natural language or invokes a handler. */
 export async function coordinateSessionV2(c: PoolClient, mode: Config['ROUTER_MODE'], session: SessionV2, text: string, now: Date): Promise<SessionDecisionV2> {
   if (mode !== 'v1_1') return { kind: 'not_consumed' };
   await c.query("SELECT pg_advisory_xact_lock(hashtext('botsky-v2-execution-admission'))");
@@ -90,18 +98,8 @@ export async function coordinateSessionV2(c: PoolClient, mode: Config['ROUTER_MO
   if (!live) return { kind: 'not_consumed' };
   const current = sessionV2Schema.parse(live);
   const decision = decideSessionV2(current, text, now);
-  if(decision.kind==='update'){
-    const args=mergeSessionSlotsV2(current.partial_args,decision.slots);
-    const time=args.time as {hour:number};
-    await c.query(`UPDATE sessions_v2 SET partial_args=$2,missing_slots=$3,prompt=$4,version=version+1 WHERE id=$1 AND version=$5 AND status='active'`,
-      [session.id,JSON.stringify(args),JSON.stringify(decision.missingSlots ?? [{kind:'am_pm',hour:time.hour}]),decision.missingSlots?.some(s=>s.kind==='choice' && s.field==='date')?'¿Para hoy o mañana?':`¿A las ${time.hour} de la mañana o de la noche?`,current.version]);
-  }
-  const status = decision.kind === 'expired' ? 'expired' : decision.kind === 'cancel' ? 'cancelled' : decision.kind === 'continue' ? 'done' : undefined;
-  if (status) {
-    await c.query(`UPDATE sessions_v2 SET status=$2,version=version+1,
-      partial_args=CASE WHEN $4::jsonb IS NULL THEN partial_args ELSE partial_args||jsonb_build_object('continuation',$4::jsonb) END,
-      missing_slots=CASE WHEN $4::jsonb IS NULL THEN missing_slots ELSE '[]'::jsonb END
-      WHERE id=$1 AND version=$3 AND status='active'`, [session.id, status, current.version, decision.kind==='continue'?JSON.stringify(decision.slots):null]);
+  if (decision.kind === 'expired') {
+    await c.query("UPDATE sessions_v2 SET status='expired',version=version+1 WHERE id=$1 AND version=$2 AND status='active'", [session.id, current.version]);
     if (current.confirmation_id) await c.query('UPDATE tool_confirmations_v2 SET invalidated=true WHERE id=$1 AND consumed_execution_id IS NULL', [current.confirmation_id]);
   }
   return decision;

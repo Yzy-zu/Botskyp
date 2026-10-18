@@ -1,42 +1,42 @@
-import { DateTime } from 'luxon';
-import { explicitClock, semanticTimeSchema, normalizeClockText } from '../modules/reminders/semantic-time.js';
-import { sessionTextV2 } from './session-input-v2.js';
-import type { SessionV2 } from './sessions-v2.js';
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return Boolean(v && typeof v === 'object' && !Array.isArray(v));
+}
 
 export function mergeSessionSlotsV2(args: Record<string, unknown>, slots: Record<string, unknown>): Record<string, unknown> {
-  const time=args.time;
-  if(time && typeof time==='object' && 'period' in slots)return {...args,time:{...time,meridiem:slots.period}};
-  return {...args,...slots};
+  const time = args.time;
+  if (isRecord(time) && 'period' in slots) return { ...args, time: { ...time, meridiem: slots.period } };
+  return { ...args, ...slots };
 }
-/** Accept only complete temporal fragments; unrelated intents always escape. */
-export function reminderSlotUpdateV2(session: SessionV2, text: string, now: Date): {args: Record<string,unknown>; ready: boolean; missingSlots:SessionV2['missing_slots']} | undefined {
-  if(!session.pending_tool.startsWith('reminders.'))return;
-  const original=semanticTimeSchema.safeParse(session.partial_args.time);
-  if(!original.success || original.data.kind==='relative')return;
-  let value=normalizeClockText(sessionTextV2(text)).replace(/^si\s*[,;]?\s*pero\s+/u,'').replace(/^mejor\s+/u,'');
-  const datePending=session.missing_slots.some(s=>s.kind==='choice' && s.field==='date');
-  const prefixed=/^(?:(?:que|pues)\s+)?para\s+/u.test(value);
-  value=value.replace(/^(?:(?:que|pues)\s+)?para\s+/u,'');
-  // Only the pending today/tomorrow choice admits this dictated homophone.
-  if(datePending && prefixed)value=value.replace(/^o+i+(?=[,\s]|$)/u,'hoy');
-  const weekdays=['lunes','martes','miercoles','jueves','viernes','sabado','domingo'];
-  const date=/^(hoy|manana|pasado manana|(?:el )?(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo))(?:[,;]?\s+|$)/u.exec(value);
-  let remainder=date?value.slice(date[0].length).trim():value;
-  remainder=remainder.replace(/^(?:a|para) las?\s+/u,'');
-  let clock=explicitClock(remainder);
-  if(/^(?:[ap]\.?\s*m\.?|(?:de|por|en) la (?:manana|noche|tarde))$/u.test(remainder))clock=explicitClock(`${original.data.hour} ${remainder}`);
-  if(!clock && /^\d{1,2}$/u.test(remainder) && Number(remainder)<=23)clock={hour:Number(remainder),minute:0};
-  if(remainder && !/^(?:\d{1,2}(?::\d{2})?\s*(?:[ap]\.?\s*m\.?|(?:de|por|en) la (?:manana|noche|tarde))?|\d{1,2}:\d{2}|[ap]\.?\s*m\.?|(?:de|por|en) la (?:manana|noche|tarde))$/u.test(remainder))return;
-  if(!date && !clock)return;
-  const time={...original.data,...clock};
-  const missingSlots:SessionV2['missing_slots']=[];
-  if(!date && session.missing_slots.some(s=>s.kind==='choice' && s.field==='date'))missingSlots.push({kind:'choice',field:'date',choices:['hoy','mañana']});
-  if(!time.meridiem && time.hour>=1 && time.hour<=12)missingSlots.push({kind:'am_pm',hour:time.hour});
-  if(date){
-    const label=date[1]!.replace(/^el /u,''),base=DateTime.fromJSDate(now,{zone:'America/Mexico_City'});
-    const day=label==='hoy'?base:label==='manana'?base.plus({days:1}):label==='pasado manana'?base.plus({days:2}):base.plus({days:(weekdays.indexOf(label)+1-base.weekday+7)%7 || 7});
-    const updated={kind:'date' as const,date:day.toISODate()!,hour:time.hour,minute:time.minute,...(time.meridiem?{meridiem:time.meridiem}:{})};
-    return {args:{time:updated},ready:!missingSlots.length,missingSlots};
+
+/** Merge structured partial_args with structured modelArgs during an active clarification session. Zero text regex. */
+export function mergeClarificationArgsV2(partialArgs: Record<string, unknown>, modelArgs: unknown): unknown {
+  if (!isRecord(modelArgs)) return modelArgs;
+  const allowed = ['body', 'time', 'recurrence'] as const;
+  const base = Object.fromEntries(allowed.filter(k => partialArgs[k] !== undefined).map(k => [k, partialArgs[k]]));
+  const merged: Record<string, unknown> = { ...base, ...modelArgs };
+  if (isRecord(partialArgs.time) && isRecord(modelArgs.time)) {
+    const prev = partialArgs.time, next = modelArgs.time;
+    if (next.kind === 'relative') {
+      merged.time = next;
+    } else {
+      const prevHour = typeof prev.hour === 'number' ? prev.hour : undefined;
+      const nextHour = typeof next.hour === 'number' ? next.hour : prevHour;
+      const same12h = prevHour !== undefined && nextHour !== undefined && (prevHour % 12) === (nextHour % 12);
+      const meridiem = next.meridiem ?? (same12h ? prev.meridiem : undefined);
+      const baseTime = next.kind === 'clock' && prev.kind === 'date' && typeof prev.date === 'string'
+        ? { ...next, kind: 'date', date: prev.date }
+        : next.kind === 'clock' && typeof prev.kind === 'string' && ['today', 'tomorrow', 'day_after_tomorrow'].includes(prev.kind)
+          ? { ...next, kind: prev.kind }
+          : { ...next };
+      merged.time = {
+        ...baseTime,
+        ...(nextHour !== undefined ? { hour: nextHour } : {}),
+        minute: typeof next.minute === 'number' ? next.minute : (typeof prev.minute === 'number' ? prev.minute : 0),
+        ...(meridiem !== undefined ? { meridiem } : {}),
+      };
+    }
+  } else if (!isRecord(partialArgs.time) && isRecord(modelArgs.time) && modelArgs.time.kind === 'clock' && typeof partialArgs.day === 'string' && ['today', 'tomorrow', 'day_after_tomorrow'].includes(partialArgs.day)) {
+    merged.time = { ...modelArgs.time, kind: partialArgs.day };
   }
-  return {args:{time},ready:!missingSlots.length,missingSlots};
+  return merged;
 }

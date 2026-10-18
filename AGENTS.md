@@ -114,6 +114,7 @@ Una fase está terminada cuando:
 10. **Nada de éxitos falsos.**
 11. **Los datos exactos no se estilizan.**
 12. **No fuerces plataformas externas.** Si una fuente multimedia, API o proveedor deja de funcionar, se marca no disponible y se documenta; no se improvisa una evasión peligrosa con credenciales personales.
+13. **IA-First para lenguaje humano (v1.1).** Gemini entiende significado humano, modismos, slang y typos; las tools ejecutan efectos; el backend valida esquemas, tipos técnicos, políticas y permisos. Prohibido añadir expresiones regulares semánticas, listas de sinónimos, homófonos o diccionarios ad-hoc de lenguaje humano en el código de TypeScript para intentar entender al usuario. Formato al código, significado a Gemini.
 
 ## 8. Cuándo detenerse y preguntar al dueño
 

@@ -11,11 +11,9 @@ import { Gemini,type Llm,type LlmReply,type LlmInput } from '../src/core/llm.js'
 import { artifactsForTurn } from '../src/core/chat-artifacts.js';
 import { buildTurnContextV2 } from '../src/core/context-v2.js';
 import { rememberContextResultV2 } from '../src/core/context-results-v2.js';
-import { confirmationInputV2 } from '../src/core/session-input-v2.js';
 import { openClarificationV2,readSessionV2 } from '../src/core/sessions-v2.js';
 import { transaction } from '../src/db/client.js';
-import { explicitClock,resolveSemanticTime } from '../src/modules/reminders/semantic-time.js';
-import { ambiguousTime } from '../src/modules/reminders/time.js';
+import { resolveSemanticTime } from '../src/modules/reminders/semantic-time.js';
 import { receive,processNext } from '../src/core/inbox.js';
 import { explicitWebRequest } from '../src/core/capability-truth-v2.js';
 import { parityConversation } from './fixtures/v1.1/ws-parity-1.js';
@@ -25,6 +23,7 @@ import type { Msg } from '../src/wa/types.js';
 const call=(name:string,args:unknown={}):LlmReply=>({text:'',calls:[],content:{role:'model',parts:[{functionCall:{name:name.replaceAll('.','_'),args}}]}});
 const say=(text:string):LlmReply=>({text:'',calls:[],content:{role:'model',parts:[{text:JSON.stringify({outcome:'conversation',text,effects:[]})}]}});
 function scripted(...outputs:(LlmReply|((input:LlmInput)=>LlmReply))[]){return {generate:vi.fn<Llm['generate']>(async input=>{const value=outputs.shift();if(!value)throw new Error('Unexpected provider call');return typeof value==='function'?value(input):value;})};}
+const refEnvelope=(input:LlmInput)=>JSON.parse((input.contents[0] as {parts:{text:string}[]}).parts[0]!.text).REFERENCE_DATA as {reminders:{ref:string}[];activeSession?:{kind:string;pendingTool:string;partialArgs:Record<string,unknown>;missingSlots?:string[];lastQuestion?:string;collection?:{operation:string;files:number}}};
 async function turn(text:string,llm:Llm=scripted(),setup?:(ctx:ToolCtx)=>Promise<void>,input:Partial<Msg>={}){
   return context({text,...input},async ctx=>{await setup?.(ctx);return {text:await route(ctx,llm),turnId:ctx.turnId};});
 }
@@ -35,8 +34,12 @@ beforeEach(async()=>{
   vi.spyOn(minecraft,'callMinecraft').mockImplementation(async(request,id)=>({v:1,id:id ?? 'mock',ok:true,action:request.action,code:'ok',data:{online:true,running:true,players:2,maxPlayers:10,names:['Alex','Steve'],cpuPercent:5,memoryBytes:1000}}));
 });
 afterEach(()=>vi.restoreAllMocks());afterAll(()=>db.end());
-it.each(parityConversation)('Canary fixture: $text → $tool through Policy',async fixture=>{
-  const llm=scripted(input=>{expect(input.tools.map(t=>t.name)).toContain(fixture.tool.replaceAll('.','_'));return call(fixture.tool,fixture.args);});
+it.each(parityConversation)('Canary fixture: $text → $tool through Policy (with capability discovery when needed)',async fixture=>{
+  const target=fixture.tool.replaceAll('.','_');
+  const llm=scripted(
+    input=>input.tools.some(t=>t.name===target)?call(fixture.tool,fixture.args):call('core.load_capability',{domain:fixture.tool.split('.')[0]}),
+    input=>{expect(input.tools.map(t=>t.name)).toContain(target);return call(fixture.tool,fixture.args);},
+  );
   const output=await turn(fixture.text,llm);
   expect(output.text).not.toMatch(/p[aá]same.*IP|no.*permisos|no la tengo conectada/iu);
   expect((await db.query('SELECT tool_name,status FROM tool_executions WHERE turn_id=$1',[output.turnId])).rows).toEqual([{tool_name:fixture.tool,status:'ok'}]);
@@ -77,40 +80,68 @@ it('explicit web search overrules a joke and calls the real search tool',async()
 });
 it.each(['búscalo en internet','investígalo en internet','busca esto','checa en la web'])('recognizes explicit search: %s',text=>expect(explicitWebRequest(text)).toBe(true));
 it.each(['busca videos de gatos','busca música de Mozart','cuánto es 2+2'])('does not force web for %s',text=>expect(explicitWebRequest(text)).toBe(false));
-it.each(['8pm','8 pm','20:00','8 de la noche'])('explicit clock %s resolves to 20:00 without AM/PM clarification',text=>{
-  const clock=explicitClock(text)!;expect(clock).toBeDefined();
-  const result=resolveSemanticTime({kind:'tomorrow',...clock},new Date('2026-10-17T18:00:00Z'));
-  expect(result.status).toBe('ok');if(result.status==='ok')expect(DateTime.fromJSDate(result.dueAt,{zone:'America/Mexico_City'}).hour).toBe(20);
-  expect(ambiguousTime(`a las ${text}`)).toBe(false);
-});
-it('exact Canary reminder: 8pm → mañana → cancelalo preserves tomorrow and cancels the newly created reminder',async()=>{
-  const initial=await turn('guarda un recordatorio para las 8pm, di q estoy tonto',scripted(call('reminders.create',{body:'estoy tonto',time:{kind:'today',hour:8}})));
-  expect(initial.text).toContain('hoy o mañana');expect(initial.text).not.toContain('mañana o de la noche');expect(await count('reminders')).toBe(0);
-  const second=await turn('mañana');expect(second.text).toContain('recordaré');
-  const row=(await db.query<{due_at:Date;status:string}>('SELECT due_at,status FROM reminders')).rows[0]!;
-  expect(DateTime.fromJSDate(row.due_at,{zone:'America/Mexico_City'}).toFormat('yyyy-MM-dd HH:mm')).toBe(DateTime.now().setZone('America/Mexico_City').plus({days:1}).toFormat('yyyy-MM-dd')+' 20:00');
-  expect((await turn('cancelalo')).text).toContain('cancelé');expect((await db.query('SELECT status FROM reminders')).rows[0]?.status).toBe('cancelled');
-});
-it('partial slots accept tomorrow before the requested period and keep it after de la noche',async()=>{
-  await turn('guarda un recordatorio a las 8',scripted(call('reminders.create',{body:'estudiar',time:{kind:'today',hour:8}})));
-  expect((await turn('mañana')).text).toContain('mañana o de la noche');expect(await count('reminders')).toBe(0);
-  expect((await turn('De la noche')).text).toContain('recordaré');
-  expect((await db.query("SELECT to_char(due_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') due FROM reminders")).rows[0]?.due).toBe(DateTime.now().setZone('America/Mexico_City').plus({days:1}).toFormat('yyyy-MM-dd')+' 20:00');
-});
-it.each(['mañana','el viernes','a las 9','mejor a las 10','sí pero mejor a las 9'])('merges unambiguous temporal fragment %s without consuming a new intent',async text=>{
-  await turn('recuérdame mañana a las 8',scripted(call('reminders.create',{body:'estudiar',time:{kind:'tomorrow',hour:8}})));
-  const result=await turn(text);expect(result.text).toBeTruthy();expect(result.text).not.toContain('No pude procesar');
-  if(text.includes('9') || text.includes('10')){
-    const s=await context({},ctx=>readSessionV2(ctx.c,owner,chat));expect((s?.partial_args.time as {hour:number}).hour).toBe(text.includes('10')?10:9);
+it('structured SemanticTimeInput resolves 20:00 without re-inspecting raw text and requires missing_date for kind=clock',()=>{
+  expect(resolveSemanticTime({kind:'clock',hour:8,meridiem:'pm'},new Date('2026-10-17T18:00:00Z'))).toEqual({status:'needs_clarification',code:'missing_date'});
+  for(const clock of [{hour:8,meridiem:'pm' as const},{hour:20},{hour:8,meridiem:'night' as const}]){
+    const result=resolveSemanticTime({kind:'tomorrow',...clock},new Date('2026-10-17T18:00:00Z'));
+    expect(result.status).toBe('ok');if(result.status==='ok')expect(DateTime.fromJSDate(result.dueAt,{zone:'America/Mexico_City'}).hour).toBe(20);
   }
 });
-it('a new XP intent escapes a pending reminder slot',async()=>{
-  await turn('recuérdame mañana a las 8',scripted(call('reminders.create',{body:'estudiar',time:{kind:'tomorrow',hour:8}})));
-  expect((await turn('cuánto xp tengo?',scripted(call('xp.balance')))).text).toContain('XP');expect(await count('reminders')).toBe(0);
+it('exact Canary reminder: clock 8pm → mañana via Gemini activeSession → cancelalo via reminders.cancel',async()=>{
+  const initial=await turn('guarda un recordatorio para las 8pm, di q estoy tonto',scripted(call('reminders.create',{body:'estoy tonto',time:{kind:'clock',hour:8,meridiem:'pm'}})));
+  expect(initial.text).toContain('hoy o mañana');expect(initial.text).not.toContain('mañana o de la noche');expect(await count('reminders')).toBe(0);
+  const second=await turn('mañana',scripted(input=>{
+    expect(refEnvelope(input).activeSession).toMatchObject({kind:'clarify',pendingTool:'reminders.create',partialArgs:{body:'estoy tonto',time:{kind:'clock',hour:20,minute:0,meridiem:'pm'}},missingSlots:['date'],lastQuestion:'¿Para hoy o mañana?'});
+    return call('reminders.create',{time:{kind:'tomorrow',hour:20,minute:0,meridiem:'pm'}});
+  }));
+  expect(second.text).toContain('recordaré');
+  const row=(await db.query<{due_at:Date;status:string;body:string}>('SELECT due_at,status,body FROM reminders')).rows[0]!;
+  expect(row.body).toBe('estoy tonto');
+  expect(DateTime.fromJSDate(row.due_at,{zone:'America/Mexico_City'}).toFormat('yyyy-MM-dd HH:mm')).toBe(DateTime.now().setZone('America/Mexico_City').plus({days:1}).toFormat('yyyy-MM-dd')+' 20:00');
+  const cancelTurn=scripted(input=>{
+    expect(input.tools.map(t=>t.name)).toContain('reminders_cancel');
+    return call('reminders.cancel',{reminderRef:refEnvelope(input).reminders[0]!.ref});
+  });
+  expect((await turn('cancelalo',cancelTurn)).text).toContain('cancelé');
+  expect((await db.query('SELECT status FROM reminders')).rows[0]?.status).toBe('cancelled');
 });
-it.each(['cancela','cancelalo','cancélalo','nel','mejor no','ya no','olvídalo','déjalo'])('cancels a pending session with %s',async text=>{
+it('partial slots accept tomorrow before the requested period and keep it after de la noche via Gemini',async()=>{
+  await turn('guarda un recordatorio a las 8',scripted(call('reminders.create',{body:'estudiar',time:{kind:'clock',hour:8}})));
+  expect((await turn('mañana',scripted(call('reminders.create',{time:{kind:'tomorrow',hour:8}})))).text).toContain('mañana o de la noche');
+  expect(await count('reminders')).toBe(0);
+  expect((await turn('De la noche',scripted(call('reminders.create',{time:{kind:'tomorrow',hour:8,meridiem:'pm'}})))).text).toContain('recordaré');
+  expect((await db.query("SELECT body,to_char(due_at AT TIME ZONE 'America/Mexico_City','YYYY-MM-DD HH24:MI') due FROM reminders")).rows[0]).toEqual({
+    body:'estudiar',
+    due:DateTime.now().setZone('America/Mexico_City').plus({days:1}).toFormat('yyyy-MM-dd')+' 20:00',
+  });
+});
+it('slot correction: Gemini updates tomorrow 20:00 to Friday 21:00 while preserving original body without manual parser',async()=>{
+  await transaction(db,c=>openClarificationV2(c,'v1_1',{actorId:owner,chatId:chat,pendingTool:'reminders.create',partialArgs:{body:'estudiar',time:{kind:'tomorrow',hour:20,minute:0,meridiem:'pm'}},missingSlots:[{kind:'choice',field:'date',choices:['today','tomorrow']}],prompt:'¿Confirmas mañana a las 8pm?',code:'MISSING_DATE',now:new Date()}));
+  const llm=scripted(input=>{
+    expect(refEnvelope(input).activeSession?.partialArgs).toEqual({body:'estudiar',time:{kind:'tomorrow',hour:20,minute:0,meridiem:'pm'}});
+    return call('reminders.create',{time:{kind:'weekday',weekday:5,hour:9,meridiem:'pm'}});
+  });
+  const result=await turn('nel mejor el viernes como a las nueve',llm);
+  expect(result.text).toContain('recordaré');
+  const saved=(await db.query<{body:string;clock:string;isodow:number}>("SELECT body,to_char(due_at AT TIME ZONE 'America/Mexico_City','HH24:MI') clock,EXTRACT(ISODOW FROM due_at AT TIME ZONE 'America/Mexico_City')::int isodow FROM reminders")).rows[0]!;
+  expect(saved).toEqual({body:'estudiar',clock:'21:00',isodow:5});
+  expect((await db.query('SELECT status FROM sessions_v2')).rows[0]?.status).toBe('done');
+});
+it('a new XP intent escapes a pending reminder slot while keeping the reminder session active and intact',async()=>{
   await turn('recuérdame mañana a las 8',scripted(call('reminders.create',{body:'estudiar',time:{kind:'tomorrow',hour:8}})));
-  expect((await turn(text)).text).toContain('cancelado');expect((await db.query('SELECT status FROM sessions_v2')).rows[0]?.status).toBe('cancelled');expect(await count('reminders')).toBe(0);
+  expect((await turn('cuanto xp tengo we',scripted(call('xp.balance')))).text).toContain('XP');
+  expect(await count('reminders')).toBe(0);
+  expect((await db.query('SELECT status,pending_tool FROM sessions_v2')).rows[0]).toEqual({status:'active',pending_tool:'reminders.create'});
+});
+it.each(['cancela','cancelalo','nel','ni madres','mejor no','ya estuvo','olvídalo'])('cancels a pending session via core.session_cancel with %s',async text=>{
+  await turn('recuérdame mañana a las 8',scripted(call('reminders.create',{body:'estudiar',time:{kind:'tomorrow',hour:8}})));
+  const llm=scripted(input=>{
+    expect(input.tools.map(t=>t.name)).toContain('core_session_cancel');
+    return call('core.session_cancel');
+  });
+  expect((await turn(text,llm)).text).toContain('cancelado');
+  expect((await db.query('SELECT status FROM sessions_v2')).rows[0]?.status).toBe('cancelled');
+  expect(await count('reminders')).toBe(0);
 });
 it('recent cancellation is actor/chat scoped and needs a recent receipt',async()=>{
   await turn('recuérdame en una hora estudiar',scripted(call('reminders.create',{body:'estudiar',time:{kind:'relative',amount:1,unit:'hour'}})));
@@ -120,20 +151,23 @@ it('recent cancellation is actor/chat scoped and needs a recent receipt',async()
 });
 it('inbox activates tomorrow and immediate cancellation without callword, with dedupe',async()=>{
   const enabled={...config,GEMINI_API_KEY:'mock-key',GEMINI_FREE_TIER_CONFIRMED:true};
-  vi.spyOn(Gemini.prototype,'generate').mockResolvedValue(call('reminders.create',{body:'estudiar',time:{kind:'today',hour:8}}));
+  const generate=vi.spyOn(Gemini.prototype,'generate')
+    .mockResolvedValueOnce(call('reminders.create',{body:'estudiar',time:{kind:'clock',hour:8,meridiem:'pm'}}))
+    .mockResolvedValueOnce(call('reminders.create',{time:{kind:'tomorrow',hour:20,minute:0,meridiem:'pm'}}))
+    .mockImplementationOnce(async input=>call('reminders.cancel',{reminderRef:refEnvelope(input).reminders[0]!.ref}));
   for(const text of ['botsky guarda un recordatorio para las 8pm, di estudiar','mañana','cancelalo']){
     const msg:Msg={id:randomUUID(),chatId:chat,senderId:owner,isGroup:true,fromMe:false,ts:new Date(),text,mentions:[],attachments:[]};
     await receive(db,enabled,msg);await processNext(db,enabled);
     expect(await receive(db,enabled,msg)).toBe('duplicate');
   }
-  expect((await db.query('SELECT status FROM reminders')).rows).toEqual([{status:'cancelled'}]);expect(Gemini.prototype.generate).toHaveBeenCalledOnce();
+  expect((await db.query('SELECT status FROM reminders')).rows).toEqual([{status:'cancelled'}]);
+  expect(generate).toHaveBeenCalledTimes(3);
 });
-it('si botsky confirms the existing preview once; changed permissions still prevent Nuclear',async()=>{
-  expect(confirmationInputV2('si botsky')).toBe('confirm');expect(confirmationInputV2('sí pero mejor a las 9')).toBe('not_consumed');
+it('si botsky confirms the existing preview via core.session_confirm; changed permissions still prevent Nuclear',async()=>{
   await turn('activa la nuclear botsky',scripted(call('bulk.nuclear',{text:'hola'})));
   expect(await count('bulk_ops')).toBe(0);
   await db.query(`UPDATE chats SET settings='{"modules":{"messaging":false}}' WHERE id=$1`,[chat]);
-  expect((await turn('si botsky')).text).toContain('apagado');expect(await count('bulk_ops')).toBe(0);
+  expect((await turn('si botsky',scripted(call('core.session_confirm')))).text).toContain('apagado');expect(await count('bulk_ops')).toBe(0);
   expect(await count('tool_confirmations_v2')).toBe(1);
 });
 it.each(['hazla sticker botsky','oye cuanta xp tengo botsky','el server del maicra esta activo botsky?'])('old image/OCR semantics never bleed into %s; A_LAST survives',async text=>{
@@ -153,11 +187,11 @@ it('clear image follow-up still reads the last image and explicit semantic resul
 });
 it('media follow-up reports only the relevant failed PDF even after newer unrelated jobs',async()=>{
   await db.query(`INSERT INTO jobs(kind,chat_id,owner_id,status,payload,error) VALUES('media',$1,$2,'failed','{"operation":"office_pdf"}','process_timeout'),('media',$1,$2,'done','{"operation":"sticker"}',NULL)`,[chat,owner]);
-  const result=await turn('no me enviaste mi pdf botsky');expect(result.text).toContain('conversión a PDF falló');expect(result.text).toContain('tardó demasiado');expect(result.text).not.toMatch(/Archivo [1-5]|sticker|confirmado/iu);
+  const result=await turn('no me enviaste mi pdf botsky',scripted(call('media.status')));expect(result.text).toContain('conversión a PDF falló');expect(result.text).toContain('tardó demasiado');expect(result.text).not.toMatch(/Archivo [1-5]|sticker|confirmado/iu);
 });
 it('media history lists multiple operations only on explicit request and never claims an unconfirmed delivery',async()=>{
   await db.query(`INSERT INTO jobs(kind,chat_id,owner_id,status,payload) VALUES('media',$1,$2,'done','{"operation":"office_pdf"}'),('media',$1,$2,'running','{"operation":"sticker"}')`,[chat,owner]);
-  const one=await turn('no me llegó botsky');expect(one.text?.split('\n')).toHaveLength(1);
+  const one=await turn('no me llegó botsky',scripted(call('media.status')));expect(one.text?.split('\n')).toHaveLength(1);
   const history=await turn('mis trabajos botsky',scripted(call('media.status')));expect(history.text?.split('\n')).toHaveLength(2);expect(history.text).toContain('envío sigue pendiente');
 });
 async function startCollection(operation:'images_pdf'|'pdf_merge'='images_pdf'){
@@ -168,7 +202,7 @@ async function addFile(mime='image/png',bytes=png,id=randomUUID()){
 }
 it.each(['ya','termina','hazlo'])('media.collect: two images → %s → one job, with scoped retained inputs',async finish=>{
   expect((await startCollection()).text).toContain('Voy a reunir');expect((await addFile()).text).toContain('1 foto');expect((await addFile()).text).toContain('2 fotos');
-  await turn(finish);expect(await count('jobs')).toBe(1);
+  await turn(finish,scripted(call('media.collect',{operation:'images_pdf',action:'finish'})));expect(await count('jobs')).toBe(1);
   const job=(await db.query('SELECT payload FROM jobs')).rows[0]!.payload;expect(job.operation).toBe('images_pdf');expect(job.sources).toHaveLength(2);expect(new Set(job.sources.map((s:{storedId:string})=>s.storedId)).size).toBe(2);
   expect((await db.query('SELECT status FROM sessions_v2')).rows[0]?.status).toBe('done');
 });
@@ -176,37 +210,38 @@ it('media.collect dedupes repeated input, rejects incompatible files and permits
   await startCollection();const id=randomUUID();await addFile('image/png',png,id);await turn('',scripted(),undefined,{id,attachments:[{kind:'image',ref:`${id}:file`,mime:'image/png'}]});
   expect((await addFile('application/pdf',pdf)).text).toContain('no es una foto');
   expect((await turn('cuánto XP tengo?',scripted(call('xp.balance')))).text).toContain('XP');
-  await turn('terminar');expect((await db.query('SELECT payload FROM jobs')).rows[0]?.payload.sources).toHaveLength(1);
+  await turn('terminar',scripted(call('media.collect',{operation:'images_pdf',action:'finish'})));expect((await db.query('SELECT payload FROM jobs')).rows[0]?.payload.sources).toHaveLength(1);
 });
 it('media.collect merges two PDFs using the same jobs',async()=>{
-  await startCollection('pdf_merge');await addFile('application/pdf',pdf);expect((await turn('terminar')).text).toContain('al menos dos');await addFile('application/pdf',pdf);await turn('terminar');
+  await startCollection('pdf_merge');await addFile('application/pdf',pdf);expect((await turn('terminar',scripted(call('media.collect',{operation:'pdf_merge',action:'finish'})))).text).toContain('al menos dos');await addFile('application/pdf',pdf);await turn('terminar',scripted(call('media.collect',{operation:'pdf_merge',action:'finish'})));
   expect((await db.query('SELECT payload FROM jobs')).rows[0]?.payload).toMatchObject({operation:'pdf_merge',sources:[expect.any(Object),expect.any(Object)]});
 });
 it.each(['cancel','expire','module','actor','chat','backing'] as const)('media.collect preserves %s boundaries',async change=>{
   await startCollection();await addFile();
-  if(change==='cancel')await turn('mejor no');
+  if(change==='cancel')await turn('mejor no',scripted(call('core.session_cancel')));
   if(change==='expire')await db.query("UPDATE sessions_v2 SET created_at=clock_timestamp()-interval '10 minutes',expires_at=clock_timestamp()-interval '1 second'");
   if(change==='module')await db.query(`UPDATE chats SET settings='{"modules":{"media":false}}' WHERE id=$1`,[chat]);
   if(change==='backing')await db.query('UPDATE media_attachments SET data=NULL');
-  await turn('terminar',scripted(say('No hay colección disponible.')),undefined,change==='actor'?{senderId:member}:change==='chat'?{chatId:'400@g.us'}:{});
+  await turn('terminar',scripted(change==='cancel'||change==='expire'||change==='actor'||change==='chat'?say('No hay colección disponible.'):call('media.collect',{operation:'images_pdf',action:'finish'})),undefined,change==='actor'?{senderId:member}:change==='chat'?{chatId:'400@g.us'}:{});
   expect(await count('jobs')).toBe(0);
 });
-it('a pending reminder still updates slots across a transaction without creating another session',async()=>{
-  await transaction(db,c=>openClarificationV2(c,'v1_1',{actorId:owner,chatId:chat,pendingTool:'reminders.create',partialArgs:{body:'estudiar',time:{kind:'date',date:'2026-10-20',hour:8}},missingSlots:[{kind:'am_pm',hour:8}],prompt:'¿Mañana o noche?',code:'AMBIGUOUS_HOUR',now:new Date()}));
-  await turn('el viernes');await turn('mejor a las 10');
+it('a pending reminder updates partial_args in the same session when still incomplete',async()=>{
+  await transaction(db,c=>openClarificationV2(c,'v1_1',{actorId:owner,chatId:chat,pendingTool:'reminders.create',partialArgs:{body:'estudiar',time:{kind:'clock',hour:8}},missingSlots:[{kind:'choice',field:'date',choices:['today','tomorrow']},{kind:'am_pm',hour:8}],prompt:'¿Para hoy o mañana, y a las 8 de la mañana o de la noche?',code:'MISSING_DATE',now:new Date()}));
+  await turn('el viernes',scripted(call('reminders.create',{time:{kind:'weekday',weekday:5,hour:8}})));
+  await turn('mejor a las 10',scripted(call('reminders.create',{time:{kind:'weekday',weekday:5,hour:10}})));
   await context({},async ctx=>{const s=await readSessionV2(ctx.c,owner,chat);expect((s?.partial_args.time as {hour:number}).hour).toBe(10);const snapshot=await buildTurnContextV2(ctx);expect(snapshot.envelope.REFERENCE_DATA.activeSession).toBeDefined();});
   expect(await count('sessions_v2')).toBe(1);
 });
 it('changing the hour while date is missing preserves the missing date slot',async()=>{
-  await turn('guarda un recordatorio para las 8pm, di estudiar',scripted(call('reminders.create',{body:'estudiar',time:{kind:'today',hour:8}})));
-  expect((await turn('sí pero mejor a las 9')).text).toContain('hoy o mañana');expect(await count('reminders')).toBe(0);
-  await turn('mañana');expect((await db.query("SELECT to_char(due_at AT TIME ZONE 'America/Mexico_City','HH24:MI') clock FROM reminders")).rows[0]?.clock).toBe('21:00');
+  await turn('guarda un recordatorio para las 8pm, di estudiar',scripted(call('reminders.create',{body:'estudiar',time:{kind:'clock',hour:8,meridiem:'pm'}})));
+  expect((await turn('sí pero mejor a las 9',scripted(call('reminders.create',{time:{kind:'clock',hour:9,meridiem:'pm'}})))).text).toContain('hoy o mañana');expect(await count('reminders')).toBe(0);
+  await turn('mañana',scripted(call('reminders.create',{time:{kind:'tomorrow',hour:9,meridiem:'pm'}})));
+  expect((await db.query("SELECT to_char(due_at AT TIME ZONE 'America/Mexico_City','HH24:MI') clock FROM reminders")).rows[0]?.clock).toBe('21:00');
 });
-it('a model-supplied period cannot bypass ambiguity in the authenticated user message',async()=>{
-  const result=await turn('recuérdame mañana a las 8',scripted(call('reminders.create',{body:'estudiar',time:{kind:'tomorrow',hour:8,meridiem:'pm'}})));
-  expect(result.text).toContain('mañana o de la noche');expect(await count('reminders')).toBe(0);
-  expect((await turn('de la mañana')).text).toContain('recordaré');
-  expect((await db.query("SELECT to_char(due_at AT TIME ZONE 'America/Mexico_City','HH24:MI') clock FROM reminders")).rows[0]?.clock).toBe('08:00');
+it('resolves model-supplied SemanticTimeInput without re-inspecting raw user text',async()=>{
+  const result=await turn('recuérdame mañana a las 8piem estudiar',scripted(call('reminders.create',{body:'estudiar',time:{kind:'tomorrow',hour:8,meridiem:'pm'}})));
+  expect(result.text).toContain('recordaré');expect(await count('reminders')).toBe(1);
+  expect((await db.query("SELECT to_char(due_at AT TIME ZONE 'America/Mexico_City','HH24:MI') clock FROM reminders")).rows[0]?.clock).toBe('20:00');
 });
 it('a completed unrelated tool prevents implicit cancellation of an older reminder',async()=>{
   await turn('recuérdame en una hora estudiar',scripted(call('reminders.create',{body:'estudiar',time:{kind:'relative',amount:1,unit:'hour'}})));
@@ -218,7 +253,7 @@ it('collection inputs keep their order through the existing worker and produce o
   await startCollection();await addFile();await addFile();
   const ids=(await db.query('SELECT partial_args FROM sessions_v2')).rows[0]?.partial_args.artifactIds as string[];
   const sources=[];for(const id of ids)sources.push({storedId:(await db.query('SELECT media_attachment_id FROM chat_artifacts WHERE id=$1',[id])).rows[0]?.media_attachment_id});
-  await turn('terminar');const job=await claimMedia(db);expect(job).toBeDefined();expect((job?.payload as {sources:unknown[]}).sources).toEqual(sources);
+  await turn('terminar',scripted(call('media.collect',{operation:'images_pdf',action:'finish'})));const job=await claimMedia(db);expect(job).toBeDefined();expect((job?.payload as {sources:unknown[]}).sources).toEqual(sources);
   const root=await mkdtemp(join(tmpdir(),'botsky-parity-worker-'));
   try{
     await processMedia(db,config,job!,{root,download:async()=>{throw new Error('unexpected download');},attachment:async()=>{throw new Error('unexpected recapture');},process:async(cwd,input)=>{expect(input.operation).toBe('images_pdf');expect(input.inputs).toHaveLength(2);await writeFile(join(cwd,'result.pdf'),pdf);return {files:['result.pdf']};}});
@@ -252,7 +287,7 @@ it('reordering a collected set is a different action and cannot reuse a success 
   expect(await count('jobs')).toBe(1);expect((await db.query('SELECT status FROM tool_executions ORDER BY created_at')).rows).toEqual([{status:'queued'},{status:'denied'}]);
 });
 it.each(['ya son todas','ya están todas','que ya son todas botsky entiende'])('Canary collection closes naturally with %s',async text=>{
-  await startCollection();await addFile();await addFile();await turn(text);
+  await startCollection();await addFile();await addFile();await turn(text,scripted(call('media.collect',{operation:'images_pdf',action:'finish'})));
   expect((await db.query('SELECT payload FROM jobs')).rows[0]?.payload.sources).toHaveLength(2);
 });
 it('repeated media.collect keeps the foreground files and original expiry',async()=>{
@@ -261,12 +296,15 @@ it('repeated media.collect keeps the foreground files and original expiry',async
   await turn('botsky sigue reuniendo esas fotos',scripted(call('media.collect',{operation:'images_pdf'})));
   const after=(await db.query('SELECT id,partial_args,expires_at FROM sessions_v2')).rows[0]!;
   expect(after).toEqual(before);expect(await count('sessions_v2')).toBe(1);
-  await turn('terminar');expect((await db.query('SELECT payload FROM jobs')).rows[0]?.payload.sources).toHaveLength(2);
+  await turn('terminar',scripted(call('media.collect',{operation:'images_pdf',action:'finish'})));expect((await db.query('SELECT payload FROM jobs')).rows[0]?.payload.sources).toHaveLength(2);
 });
-it.each(['today','date'] as const)('a scheduled recuerdo with a spoken PM period asks the day for %s and preserves tomorrow',async kind=>{
-  const llm=scripted(input=>{expect(input.tools.find(t=>t.name==='reminders_create')?.description).toContain('peeme');return call('reminders.create',{body:'estoy tonto',time:{kind,hour:8,meridiem:'pm',...(kind==='date'?{date:DateTime.now().setZone('America/Mexico_City').toISODate()!}:{})}});});
+it('a scheduled recuerdo with a spoken PM period asks the day and preserves tomorrow',async()=>{
+  const llm=scripted(input=>{expect(input.tools.find(t=>t.name==='reminders_create')?.description).toContain('clock');return call('reminders.create',{body:'estoy tonto',time:{kind:'clock',hour:8,meridiem:'pm'}});});
   expect((await turn('botsky guarda un recuerdo para las ocho peeme di q estoy tonto',llm)).text).toContain('hoy o mañana');
-  await turn('mañana');expect((await turn('cancelalo')).text).toContain('cancelé');
+  const second=scripted(()=>call('reminders.create',{time:{kind:'tomorrow',hour:20,minute:0,meridiem:'pm'}}));
+  await turn('mañana',second);
+  const cancelTurn=scripted(input=>call('reminders.cancel',{reminderRef:refEnvelope(input).reminders[0]!.ref}));
+  expect((await turn('cancelalo',cancelTurn)).text).toContain('cancelé');
 });
 async function quotedOcrFixture(){
   const artifact=await context({},ctx=>backing(ctx,{mime:'image/png',bytes:png}));const provider=randomUUID();
@@ -296,9 +334,13 @@ it('an explicit Spanish calendar date keeps its day without asking again',async(
   const text=`botsky recuérdame estudiar el ${day.setLocale('es-MX').toFormat("d 'de' LLLL")} a las 8pm`;
   expect((await turn(text,scripted(call('reminders.create',{body:'estudiar',time:{kind:'date',date:day.toISODate()!,hour:8,meridiem:'pm'}})))).text).toContain('recordaré');
 });
-it.each(['para hoy','para mañana','para oí, para las 8 piem','QUE PARA OOIII'])('Canary pending date consumes %s and preserves the reminder body',async answer=>{
-  await turn('botsky guarda un rekor para las 8piem y di q estoy tontiks',scripted(call('reminders.create',{body:'estoy tontiks',time:{kind:'today',hour:8}})));
-  const noGemini=scripted(),result=await turn(answer,noGemini);expect(noGemini.generate).not.toHaveBeenCalled();
+it.each(['para hoy','para mañana','para oí, para las 8 piem','QUE PARA OOIII'])('Canary pending date receives activeSession and completes via Gemini for %s',async answer=>{
+  await turn('botsky guarda un rekor para las 8piem y di q estoy tontiks',scripted(call('reminders.create',{body:'estoy tontiks',time:{kind:'clock',hour:8,meridiem:'pm'}})));
+  const cont=scripted(input=>{
+    expect(refEnvelope(input).activeSession).toMatchObject({kind:'clarify',pendingTool:'reminders.create',partialArgs:{body:'estoy tontiks',time:{kind:'clock',hour:20,minute:0,meridiem:'pm'}}});
+    return call('reminders.create',{time:{kind:answer.includes('mañana')?'tomorrow':'today',hour:20,minute:0,meridiem:'pm'}});
+  });
+  const result=await turn(answer,cont);
   if(!answer.includes('mañana') && DateTime.now().setZone('America/Mexico_City').hour>=20){
     expect(result.text).not.toContain('recordaré');expect(await count('reminders')).toBe(0);return;
   }
@@ -306,7 +348,8 @@ it.each(['para hoy','para mañana','para oí, para las 8 piem','QUE PARA OOIII']
   const r=(await db.query('SELECT body,due_at FROM reminders')).rows[0]!;expect(r.body).toBe('estoy tontiks');
   const local=DateTime.fromJSDate(r.due_at,{zone:'America/Mexico_City'});expect(local.hour).toBe(20);
   expect(local.toISODate()).toBe(DateTime.now().setZone('America/Mexico_City').plus({days:answer.includes('mañana')?1:0}).toISODate());
-  expect((await turn('cancelalo')).text).toContain('cancelé');
+  const cancelTurn=scripted(input=>call('reminders.cancel',{reminderRef:refEnvelope(input).reminders[0]!.ref}));
+  expect((await turn('cancelalo',cancelTurn)).text).toContain('cancelé');
 });
 it('an unrelated oí reply still escapes a reminder period slot',async()=>{
   await turn('recuérdame mañana a las 8',scripted(call('reminders.create',{body:'estudiar',time:{kind:'tomorrow',hour:8}})));
@@ -334,9 +377,13 @@ it('model finish replay queues one job with the original collected files',async(
   await turn('botsky con esas fotos hazlo',scripted({text:'',calls:[],content:{role:'model',parts:[1,2].map(()=>({functionCall:{name:'media_collect',args:{operation:'images_pdf',action:'finish'}}}))}}));
   expect(await count('jobs')).toBe(1);expect((await db.query('SELECT payload FROM jobs')).rows[0]?.payload.sources).toHaveLength(2);
 });
-it('Canary cancelalo mejor cancels the recent reminder and never fabricates an annulment',async()=>{
+it('Canary cancelalo mejor cancels the recent reminder via reminders.cancel and never fabricates an annulment',async()=>{
   await turn('botsky recuérdame en una hora estudiar',scripted(call('reminders.create',{body:'estudiar',time:{kind:'relative',amount:1,unit:'hour'}})));
-  const noGemini=scripted();expect((await turn('cancelalo mejor',noGemini)).text).toContain('cancelé');expect(noGemini.generate).not.toHaveBeenCalled();
+  const cancelTurn=scripted(input=>{
+    expect(input.tools.map(t=>t.name)).toContain('reminders_cancel');
+    return call('reminders.cancel',{reminderRef:refEnvelope(input).reminders[0]!.ref});
+  });
+  expect((await turn('cancelalo mejor',cancelTurn)).text).toContain('cancelé');
   expect((await db.query('SELECT status FROM reminders')).rows).toEqual([{status:'cancelled'}]);
 });
 it('Canary plural recordatorios exposes the actual list tool',async()=>{

@@ -60,6 +60,7 @@ export function localPresenterV2(result: ToolResult): string {
   if(name==='notes.edit')return 'Listo, actualicé la nota.';
   if(name==='notes.delete')return 'Listo, borré esa nota.';
   if(name==='reminders.cancel')return 'Listo, cancelé ese recordatorio.';
+  if(name==='core.session_cancel')return 'Va, cancelado. No hice esa operación.';
   if(name==='polls.vote')return `Va, tu voto quedó registrado${typeof data.label==='string'?` por ${data.label}`:''}.`;
   if(name==='notes.list' || name==='memory.list'){
     const items=(name==='notes.list'?data.notes:data.memories);

@@ -12,6 +12,9 @@ import { buildTurnContextV2, serializeContextV2 } from './context-v2.js';
 import type { ToolExposureTurn } from './tool-exposure.js';
 import { geminiContentSchema, geminiToolContext, geminiFunctionResult } from './provider-tool-context.js';
 import { executeToolV2, evaluateToolV2 } from './policy-v2/executor.js';
+import { continueConfirmationV2 } from './session-confirmation-v2.js';
+import { cancelSessionV2 } from './sessions-v2.js';
+import { executionTransaction } from './execution-transaction-v2.js';
 import type { ToolResult } from './tool-result.js';
 import { localPresenterV2, visibleToolResultV2, conversationTextV2, conversationalOutcomeV2 } from './composer-v2.js';
 import { capabilityTruthTargets, shouldRetryCapabilityTruth } from './capability-truth-v2.js';
@@ -21,6 +24,7 @@ const retryInstruction='El usuario pidió una acción. Selecciona una tool dispo
 const log=pino({level:'info'});
 const synthesisSchema=z.toJSONSchema(conversationalOutcomeV2);
 delete synthesisSchema.$schema;
+const emptyArgsSchema=z.strictObject({});
 function backendAttempts(args:unknown):number{
   if(!args || typeof args!=='object')return 0;
   return Object.entries(args).reduce((sum,[k,v])=>sum+((backendOnlyFields as readonly string[]).some(f=>f.toLowerCase()===k.toLowerCase())?1:0)+backendAttempts(v),0);
@@ -91,6 +95,25 @@ export async function naturalToolLoopV2(ctx:ToolCtx,llm:Llm,catalog:readonly Too
           if(expansion.status!=='ok')results.push({toolName:'core.load_capability',domain:'core',status:'denied',code:'DENIED_CAPABILITY_EXPANSION',data:{}});
           responses.push(geminiFunctionResult(call,{status:expansion.status,message:expansion.status==='ok'?'Capacidad disponible para continuar.':'No puedo ampliar esa capacidad en este turno.',...(expansion.status==='ok'?{context:JSON.parse(serializeContextV2(context)) as unknown}:{})}));
           continue;
+        }
+        if(call.name==='core_session_confirm' || call.name==='core.session_confirm'){
+          if(!exposure.exposure.toolNames.includes('core.session_confirm') || !emptyArgsSchema.safeParse(call.args ?? {}).success){
+            const denied:ToolResult={toolName:'core.session_confirm',domain:'core',status:'denied',code:!emptyArgsSchema.safeParse(call.args ?? {}).success?'INVALID_MODEL_ARGUMENTS':'DENIED_TOOL_NOT_EXPOSED',data:{}};
+            results.push(denied);responses.push(geminiFunctionResult(call,visibleToolResultV2(denied)));continue;
+          }
+          const confirmed=await continueConfirmationV2(ctx,context.safeRefMap);
+          const res:ToolResult='toolName' in confirmed?await currentResultV2(ctx,confirmed):{toolName:'core.session_confirm',domain:'core',status:'denied',code:confirmed.status==='expired'?'DENIED_CONFIRMATION_EXPIRED':'SESSION_NOT_FOUND',data:{}};
+          results.push(res);responses.push(geminiFunctionResult(call,visibleToolResultV2(res)));continue;
+        }
+        if(call.name==='core_session_cancel' || call.name==='core.session_cancel'){
+          if(!exposure.exposure.toolNames.includes('core.session_cancel') || !emptyArgsSchema.safeParse(call.args ?? {}).success){
+            const denied:ToolResult={toolName:'core.session_cancel',domain:'core',status:'denied',code:!emptyArgsSchema.safeParse(call.args ?? {}).success?'INVALID_MODEL_ARGUMENTS':'DENIED_TOOL_NOT_EXPOSED',data:{}};
+            results.push(denied);responses.push(geminiFunctionResult(call,visibleToolResultV2(denied)));continue;
+          }
+          const status=await executionTransaction(ctx,c=>cancelSessionV2(c,ctx.config.ROUTER_MODE,context.runtime.actor.id,context.runtime.chat.id,ctx.now));
+          const res:ToolResult=status==='cancelled'?{toolName:'core.session_cancel',domain:'core',status:'ok',code:'SESSION_CANCELLED',data:{}}:
+            {toolName:'core.session_cancel',domain:'core',status:'denied',code:status==='expired'?'DENIED_CONFIRMATION_EXPIRED':'SESSION_NOT_FOUND',data:{}};
+          results.push(res);responses.push(geminiFunctionResult(call,visibleToolResultV2(res)));continue;
         }
         const tool=catalog.find(t=>t.llmVisible && (t.name===call.name || modelDeclaration(t).name===call.name));
         const exposed=tool && exposure.exposure.toolNames.includes(tool.name);

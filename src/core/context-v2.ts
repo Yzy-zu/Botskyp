@@ -26,6 +26,19 @@ const summaries: Readonly<Record<string, string>> = {
   'notes.list': 'El usuario consultó notas.', 'reminders.create': 'El usuario creó un recordatorio.',
   'memory.remember': 'El usuario guardó un recuerdo personal.', 'web.search': 'El usuario consultó información en la web.',
 };
+const safeSessionFields = new Set(['body', 'message', 'time', 'recurrence', 'operation', 'subject', 'title', 'text', 'count', 'kind', 'date', 'weekday', 'hour', 'minute', 'meridiem', 'amount', 'unit', 'weekdays', 'day']);
+function safePartialArgsV2(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const out: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (!safeSessionFields.has(key)) continue;
+    if (typeof entry === 'string') out[key] = contextData(entry);
+    else if (typeof entry === 'number' || typeof entry === 'boolean') out[key] = entry;
+    else if (Array.isArray(entry)) out[key] = entry.filter(v => typeof v === 'number' || typeof v === 'string').map(v => typeof v === 'string' ? contextData(v) : v);
+    else if (entry && typeof entry === 'object') out[key] = safePartialArgsV2(entry);
+  }
+  return out;
+}
 /** Authenticated, bounded, SELECT-only snapshot. Dialogue is reference data, never provider call history. */
 export async function buildTurnContextV2(ctx: ToolCtx, domains: readonly string[] = []): Promise<TurnContextV2> {
   const backend = await loadExecutionContext(ctx, { callOrigin: 'internal', safeRefMap: new SafeRefs([]) });
@@ -111,7 +124,17 @@ export async function buildTurnContextV2(ctx: ToolCtx, domains: readonly string[
   const snapshot: SafeConversationSnapshotV2 = {
     nowLocal: local(now), actor: { ref: 'SELF', displayName: contextData(members.find(m => m.id === actorId)?.display_name ?? 'Usuario'), role: actor.role },
     chat: { type: chat.isGroup ? 'group' : 'private', availableModules: enabledModules },
-    ...(session && session.expires_at > now ? { activeSession: { kind: session.kind, prompt: contextData(session.prompt), missingSlots: session.missing_slots.map(s => s.kind), expiresLocal: local(session.expires_at), ...(session.kind==='media_collect' && ['images_pdf','pdf_merge'].includes(String(session.partial_args.operation))?{collection:{operation:session.partial_args.operation as 'images_pdf'|'pdf_merge',files:Array.isArray(session.partial_args.artifactIds)?session.partial_args.artifactIds.length:0}}:{}), ...(preview?{preview}:{}) } } : {}),
+    ...(session && session.expires_at > now ? { activeSession: {
+      kind: session.kind,
+      pendingTool: contextData(session.pending_tool),
+      partialArgs: safePartialArgsV2(session.partial_args),
+      missingSlots: session.missing_slots.map(s => s.kind === 'choice' ? s.field : s.kind),
+      lastQuestion: contextData(session.prompt),
+      prompt: contextData(session.prompt),
+      expiresLocal: local(session.expires_at),
+      ...(session.kind==='media_collect' && ['images_pdf','pdf_merge'].includes(String(session.partial_args.operation))?{collection:{operation:session.partial_args.operation as 'images_pdf'|'pdf_merge',files:Array.isArray(session.partial_args.artifactIds)?session.partial_args.artifactIds.length:0}}:{}),
+      ...(preview?{preview}:{}),
+    } } : {}),
     ...(msg.attachments[0] ? { currentAttachment: { kind: contextData(msg.attachments[0].kind), ...(msg.attachments[0].mime ? { mime: contextData(msg.attachments[0].mime) } : {}) } } : {}),
     ...(files.current[0] ? { currentArtifact: safeFile(files.current[0], 'A_CURRENT') } : {}),
     ...(msg.quoted ? { quotedMessage: { ...(msg.quoted.text ? { text: contextData(msg.quoted.text) } : {}), ...(authorRef ? { authorRef } : {}),

@@ -254,7 +254,7 @@ it.each(['actor','input','origin','expiry','module','emergency','maintenance','p
   const id = confirmationId(await execute(await context(), 'minecraft.restart'));
   let actor = owner, text = 'sí';
   if (change === 'actor') actor = member;
-  if (change === 'input') text = 'no';
+  if (change === 'input') text = '   ';
   if (change === 'expiry') await db.query("UPDATE tool_confirmations_v2 SET expires_at=now()-interval '1 minute'");
   if (change === 'module') await db.query('UPDATE chats SET settings=\'{"modules":{"minecraft":false}}\' WHERE id=$1', [chat]);
   if (change === 'emergency' || change === 'maintenance') await db.query('INSERT INTO system_flags(key,value) VALUES($1,\'true\')', [change]);

@@ -504,3 +504,5 @@ Ajuste de continuaciones del mismo WS desplegado `79336fb`, respaldo verificado
 nuevamente a las 01:02 UTC. Sin nuevas migraciones ni cambios a Evolution.
 
 Tercer ajuste desplegado `a10c7d41e1c98060577992acbd160d5b8ba1bac4`, respaldo verificado `botsky-20261018T011220-387841.dump`. Health y todos los servicios sanos; selector Lab v1.1/resto v1 comprobado a las 01:13:30 UTC.
+
+Último código WS-PARITY-1: `0cdaab3`, desplegado por script oficial, respaldo verificado `botsky-20261018T011646-395152.dump`. Health/servicios y aislamiento de un chat confirmados a las 01:17 UTC. Main y Evolution sin cambios. Evidencia final/pendientes humanos en el informe del workstream.

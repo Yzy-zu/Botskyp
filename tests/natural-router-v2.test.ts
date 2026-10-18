@@ -26,7 +26,7 @@ const clean=(text:string)=>expect(text).not.toMatch(/@s\.whatsapp\.net|@g\.us|[a
 const reply=(calls:{name:string;args?:unknown;id?:string}[]):LlmReply=>({text:'',calls,content:{role:'model',extra:'keep',parts:[{thought:true,text:'hidden',thoughtSignature:'opaque-before'},...calls.map(functionCall=>({functionCall,thoughtSignature:'opaque-call',custom:{keep:true}}))]}});
 const say=(text:string,structured=true):LlmReply=>{const out=structured?JSON.stringify({outcome:'conversation',text,effects:[]}):text;return {text:out,calls:[],content:{role:'model',parts:[{text:out}]}};};
 function scripted(...outputs:(LlmReply|((input:LlmInput)=>LlmReply))[]){return {generate:vi.fn<Llm['generate']>(async input=>{const next=outputs.shift();if(!next)throw new Error('Unexpected provider call');return typeof next==='function'?next(input):next;})};}
-const envelope=(input:LlmInput)=>JSON.parse((input.contents[0] as {parts:{text:string}[]}).parts[0]!.text) as {REFERENCE_DATA:{nowLocal:string;poll?:{pollRef:string};notes:{ref:string}[];reminders:{ref:string}[]}};
+const envelope=(input:LlmInput)=>JSON.parse((input.contents[0] as {parts:{text:string}[]}).parts[0]!.text) as {REFERENCE_DATA:{nowLocal:string;poll?:{pollRef:string};notes:{ref:string}[];reminders:{ref:string}[];activeSession?:Record<string,unknown>}};
 async function turn(text:string,llm:Llm,setup?:(ctx:ToolCtx)=>Promise<void>,input:Partial<Msg>={}){
   return context({text,...input},async ctx=>{await setup?.(ctx);const result=await route(ctx,llm);if(result)clean(result);return {text:result,turnId:ctx.turnId};});
 }
@@ -99,19 +99,23 @@ it('admin cannot use owner-only infrastructure',async()=>{
   await db.query('UPDATE group_memberships SET is_admin=true WHERE user_id=$1',[member]);
   expect((await turn('reinicia minecraft',scripted(reply([{name:'minecraft_restart',args:{}}])),undefined,{senderId:member})).text).toContain('dueño');
 });
-it('owner confirmation is SessionV2 + reevaluated Policy, with no real Minecraft restart',async()=>{
+it('owner confirmation is SessionV2 + core.session_confirm + reevaluated Policy, with no real Minecraft restart',async()=>{
   const initial=await turn('reinicia minecraft',scripted(reply([{name:'minecraft_restart',args:{}}])));
   expect(initial.text).toContain('¿Seguro que reinicio');expect(await count('minecraft_operations')).toBe(0);
-  const llm=scripted();expect((await turn('sí',llm)).text).toContain('Todavía no está confirmado');
-  expect(llm.generate).not.toHaveBeenCalled();expect(await count('minecraft_operations')).toBe(1);
+  const llm=scripted(input=>{
+    expect(input.tools.map(t=>t.name)).toContain('core_session_confirm');
+    return reply([{name:'core_session_confirm',args:{}}]);
+  });
+  expect((await turn('sí',llm)).text).toContain('Todavía no está confirmado');
+  expect(llm.generate).toHaveBeenCalledOnce();expect(await count('minecraft_operations')).toBe(1);
   expect(minecraft.callMinecraft).not.toHaveBeenCalled();
   expect((await db.query('SELECT count(DISTINCT turn_id)::int n FROM tool_executions')).rows[0]?.n).toBe(2);
 });
-it('notes confirmation describes the note, then really deletes through Policy',async()=>{
+it('notes confirmation describes the note, then really deletes through Policy via core.session_confirm',async()=>{
   await db.query('INSERT INTO notes(chat_id,author_id,body) VALUES($1,$2,\'comprar tortillas\')',[chat,owner]);
   const llm=scripted(input=>reply([{name:'notes_delete',args:{noteRef:envelope(input).REFERENCE_DATA.notes[0]!.ref}}]));
   expect((await turn('borra la nota',llm)).text).toContain('nota «comprar tortillas»');
-  expect((await turn('sí',scripted())).text).toContain('borré');
+  expect((await turn('sí',scripted(reply([{name:'core_session_confirm',args:{}}])))).text).toContain('borré');
   expect((await db.query('SELECT deleted_at FROM notes')).rows[0]?.deleted_at).toBeTruthy();
 });
 it('one capability expansion loads library, preserves the same turn and executes cooperacha.open',async()=>{
@@ -163,11 +167,15 @@ it('P0 regression: world cup, dollar and XP execute only their current calls',as
     expect((llm.generate.mock.calls[0]![0].contents)).toHaveLength(1);
   }
 });
-it('reminder AM/PM continuation creates 20:00 without Gemini and a new intent escapes',async()=>{
+it('reminder AM/PM continuation goes through Gemini with activeSession and a new intent escapes',async()=>{
   const request=()=>scripted(reply([{name:'reminders_create',args:{body:'estudiar',time:{kind:'tomorrow',hour:8}}}]));
   expect((await turn('recuérdame mañana a las 8',request())).text).toContain('mañana o de la noche');
   expect(await count('reminders')).toBe(0);
-  const noGemini=scripted();expect((await turn('de la noche',noGemini)).text?.toLowerCase()).toContain('recordaré');expect(noGemini.generate).not.toHaveBeenCalled();
+  const cont=scripted(input=>{
+    expect(envelope(input).REFERENCE_DATA.activeSession).toMatchObject({kind:'clarify',pendingTool:'reminders.create',missingSlots:['am_pm']});
+    return reply([{name:'reminders_create',args:{time:{kind:'tomorrow',hour:8,meridiem:'pm'}}}]);
+  });
+  expect((await turn('de la noche',cont)).text?.toLowerCase()).toContain('recordaré');expect(cont.generate).toHaveBeenCalledOnce();
   expect((await db.query("SELECT to_char(due_at AT TIME ZONE 'America/Mexico_City','HH24:MI') clock FROM reminders")).rows[0]?.clock).toBe('20:00');
   await turn('recuérdame mañana a las 8',request());
   const escape=scripted(reply([{name:'xp_balance',args:{}}]));
@@ -332,17 +340,20 @@ it('group member can ask about an explicitly quoted peer image without transferr
   expect((await db.query('SELECT DISTINCT actor_id FROM chat_artifacts')).rows).toEqual([{actor_id:member}]);
 });
 it('inbox activation preserves AM/PM continuation and intent escape without another wake word',async()=>{
-  const generate=vi.spyOn(Gemini.prototype,'generate').mockResolvedValue(reply([{name:'reminders_create',args:{body:'estudiar',time:{kind:'tomorrow',hour:8}}}]));
+  const generate=vi.spyOn(Gemini.prototype,'generate')
+    .mockResolvedValueOnce(reply([{name:'reminders_create',args:{body:'estudiar',time:{kind:'tomorrow',hour:8}}}]))
+    .mockResolvedValueOnce(reply([{name:'reminders_create',args:{time:{kind:'tomorrow',hour:8,meridiem:'pm'}}}]))
+    .mockResolvedValueOnce(reply([{name:'reminders_create',args:{body:'estudiar',time:{kind:'tomorrow',hour:8}}}]))
+    .mockResolvedValueOnce(reply([{name:'xp_balance',args:{}}]));
   const enabled={...config,GEMINI_API_KEY:'mock-key',GEMINI_FREE_TIER_CONFIRMED:true};
   const accept=async(text:string)=>{
     const msg:Msg={id:randomUUID(),chatId:chat,senderId:owner,isGroup:true,fromMe:false,ts:new Date(),text,mentions:[],attachments:[]};
     await receive(db,enabled,msg);await processNext(db,enabled);return msg;
   };
-  await accept('botsky recuérdame mañana a las 8');expect(generate).toHaveBeenCalledOnce();
-  await accept('de la noche');expect(generate).toHaveBeenCalledOnce();expect(await count('reminders')).toBe(1);
-  await accept('botsky recuérdame mañana a las 8');
-  generate.mockResolvedValue(reply([{name:'xp_balance',args:{}}]));
-  const escape=await accept('mejor cuánto xp tengo?');expect(generate).toHaveBeenCalledTimes(3);
+  await accept('botsky recuérdame mañana a las 8');expect(generate).toHaveBeenCalledTimes(1);
+  await accept('de la noche');expect(generate).toHaveBeenCalledTimes(2);expect(await count('reminders')).toBe(1);
+  await accept('botsky recuérdame mañana a las 8');expect(generate).toHaveBeenCalledTimes(3);
+  const escape=await accept('mejor cuánto xp tengo?');expect(generate).toHaveBeenCalledTimes(4);
   expect((await db.query("SELECT payload->>'text' text FROM outbox WHERE payload->>'sourceId'=$1",[escape.id])).rows[0]?.text).toContain('XP');
 });
 it('rollback after a shared inbox execution removes both the effect and its receipt',async()=>{

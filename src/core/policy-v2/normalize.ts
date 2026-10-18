@@ -70,6 +70,7 @@ export async function normalizeLegacyResult(ctx: ExecutionContextV2, tool: ToolM
   if (tool.name === 'minecraft.status') return { ...base, status: 'ok', code, data: { observed: true, adapter: 'legacy_status' } };
   if (tool.name === 'web.search') return {...base,status:'ok',code,data:{searchResults:result.reply.split('\n\n').slice(0,product.searchResults).map(block=>{const lines=block.split('\n');return {title:lines[0],snippet:lines.slice(1,-1).join(' '),url:lines.at(-1)};})},requiresLlmSynthesis:true};
   if (tool.name === 'media.process') return {...base,status:result.facts.jobId || result.facts.deliveryRequested?'queued':'ok',code,data:result.facts};
+  if (tool.name === 'media.collect' && result.facts.jobId) return {...base,status:'queued',code,data:result.facts};
   if (tool.domain === 'minecraft' && ['start','stop','restart','backup','config-set','console'].includes(tool.name.slice('minecraft.'.length)) && !['minecraft.operations'].includes(tool.name)) {
     const op = (await c.query<{ id: string; status: string }>('SELECT id,status FROM minecraft_operations WHERE chat_id=$1 AND actor_id=$2 AND source_id=$3', [ctx.chatId, ctx.actorId, ctx.sourceMessageId])).rows[0];
     if (!op) return { ...base, status: 'uncertain', code: 'MINECRAFT_UNCERTAIN', data: {} };

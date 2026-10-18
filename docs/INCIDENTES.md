@@ -243,3 +243,5 @@ privilegiado; los archivos originales permanecen retenidos.
   a las 20:00 y canceló el recordatorio.
 
 Regresiones y límites del nuevo deploy se registran en v1.1/WS-PARITY-1.md.
+
+Segunda ventana, código 79336fb desde 01:02:32 UTC: «para oí, para las 8 piem» y «QUE PARA OOIII» no completaron la fecha; se normaliza el reloj dictado y el fragmento para-fecha solo dentro del slot pendiente. «Kon esas hazlo» volvió a llamar collect/start, aunque conservó las dos imágenes: faltaba una acción finish en el contrato del modelo. Se agrega en v1.1 y se reutiliza el cierre existente, sin otro sistema de jobs. Gemini real aislado ya interpretó el cierre natural y dejó una única conversión en cola; entrega real se verificará después del tercer despliegue.

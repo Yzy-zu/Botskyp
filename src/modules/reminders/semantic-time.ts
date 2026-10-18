@@ -15,9 +15,12 @@ export const semanticTimeSchema = z.discriminatedUnion('kind', [
 ]);
 export type SemanticTimeInput = z.input<typeof semanticTimeSchema>;
 export type ExplicitClock = { hour: number; minute: number; meridiem?: 'am' | 'pm' | '24h' };
+export function normalizeClockText(text: string): string {
+  return text.replace(/\bocho\b/giu,'8').replace(/(?<![\p{L}])(?:peeme|piem)(?![\p{L}])/giu,'pm');
+}
 /** Small clock grammar for authenticated text, never a general intent router. */
 export function explicitClock(text: string): ExplicitClock | undefined {
-  const clockText=text.replace(/\bocho\b/giu,'8').replace(/\bpeeme\b/giu,'pm');
+  const clockText=normalizeClockText(text);
   const match = /(?<![\p{L}\d])(\d{1,2})(?::(\d{2}))?\s*(?:([ap])\.?\s*m\.?|(?:de|por|en) la (ma[ñn]ana|noche|tarde))(?![\p{L}])/iu.exec(clockText);
   if(match){
     const hour=Number(match[1]), minute=Number(match[2] ?? 0);

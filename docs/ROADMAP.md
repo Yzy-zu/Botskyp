@@ -376,3 +376,5 @@ en el informe. No avanzar a WS-MULTIMEDIA, R6 ni merge después de la entrega.
 El smoke inicial justificó correcciones acotadas de dictado/fecha, reply OCR→imagen
 y cierre/repetición de colección. Total actualizado: 640 pruebas únicas; sin cambios
 de permisos ni subsistemas nuevos. Revalidación humana del segundo deploy pendiente.
+
+Cierre del segundo smoke: slots con prefijo/dictado y collect action=finish para que Gemini pueda cerrar una colección en lenguaje libre. Doce regresiones adicionales: 652 únicas acumuladas y 105 de WS-PARITY; 29/29 del último alcance, checks correctos. Tercer deploy y comprobación de entrega humana a continuación.

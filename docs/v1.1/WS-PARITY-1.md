@@ -169,3 +169,21 @@ Cierre del ajuste: fecha española explícita y dictado 3/3; typecheck/lint/buil
 correctos nuevamente, sin ampliar la suite. Total final: **640 pruebas únicas**
 por tandas focalizadas, **93 escenarios WS-PARITY**. Los fallos intermedios se
 cerraron con pruebas de la causa; las repeticiones no aumentan ese total.
+
+
+### Segundo despliegue
+
+`79336fb` enviado a la misma rama y desplegado por el script oficial con respaldo
+verificado `botsky-20261018T010126-372701.dump`. Health HTTP 200, BD/Evolution
+conectados y selector dentro de la app: Lab v1.1, allowlist de uno, resto/default v1.
+Observación de la repetición iniciada a las **01:02:32 UTC**. Se pidió repetir solo
+recordatorio, sticker por reply al resultado de lectura y colección con dos fotos.
+Los resultados de esta repetición se incorporan al cerrar la ventana humana.
+
+### Cierre natural de la segunda repetición
+
+El dictado de fecha con prefijo («para oí, para las 8 piem», «QUE PARA OOIII») quedó sin consumir. Ahora para hoy/mañana conserva cuerpo/reloj; la variante homófona se limita a la elección de fecha pendiente. «Oí» sin ese contexto conserva escape de intención. La validación de hora pasada sigue vigente.
+
+Las dos fotos sí permanecieron retenidas, pero «kon esas hazlo» volvió a iniciar collect: el contrato solo expresaba inicio. media.collect incorpora action=start|finish únicamente en v1.1. El modelo recibe operación/número de archivos y puede finalizar sin depender de frases exactas. El cierre revalida sesión, actor, chat, módulo y vencimiento, y ejecuta media.process por Policy en la transacción existente. Replay deja un único job.
+
+Última tanda: **29/29** pruebas relevantes; **652 únicas** acumuladas, **105 escenarios WS-PARITY**. Typecheck, lint y build correctos. Gemini real con BD efímera y transporte mock: iniciar → foto → foto → cierre natural produjo media.collect/queued y media.process/queued, una conversión; sin afirmar entrega. Se verificará esa entrega en Lab después del tercer deploy.

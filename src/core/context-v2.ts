@@ -111,7 +111,7 @@ export async function buildTurnContextV2(ctx: ToolCtx, domains: readonly string[
   const snapshot: SafeConversationSnapshotV2 = {
     nowLocal: local(now), actor: { ref: 'SELF', displayName: contextData(members.find(m => m.id === actorId)?.display_name ?? 'Usuario'), role: actor.role },
     chat: { type: chat.isGroup ? 'group' : 'private', availableModules: enabledModules },
-    ...(session && session.expires_at > now ? { activeSession: { kind: session.kind, prompt: contextData(session.prompt), missingSlots: session.missing_slots.map(s => s.kind), expiresLocal: local(session.expires_at), ...(preview?{preview}:{}) } } : {}),
+    ...(session && session.expires_at > now ? { activeSession: { kind: session.kind, prompt: contextData(session.prompt), missingSlots: session.missing_slots.map(s => s.kind), expiresLocal: local(session.expires_at), ...(session.kind==='media_collect' && ['images_pdf','pdf_merge'].includes(String(session.partial_args.operation))?{collection:{operation:session.partial_args.operation as 'images_pdf'|'pdf_merge',files:Array.isArray(session.partial_args.artifactIds)?session.partial_args.artifactIds.length:0}}:{}), ...(preview?{preview}:{}) } } : {}),
     ...(msg.attachments[0] ? { currentAttachment: { kind: contextData(msg.attachments[0].kind), ...(msg.attachments[0].mime ? { mime: contextData(msg.attachments[0].mime) } : {}) } } : {}),
     ...(files.current[0] ? { currentArtifact: safeFile(files.current[0], 'A_CURRENT') } : {}),
     ...(msg.quoted ? { quotedMessage: { ...(msg.quoted.text ? { text: contextData(msg.quoted.text) } : {}), ...(authorRef ? { authorRef } : {}),

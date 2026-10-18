@@ -498,3 +498,7 @@ Selector confirmado dentro de la nueva app: Lab v1.1, allowlist de un chat,
 default y demás chats v1. Mensajería masiva de Lab permanece apagada.
 Sin cambios a Evolution, facturación, llaves/gateway Minecraft ni merge a main.
 Evidencia y estado del smoke en [WS-PARITY-1](v1.1/WS-PARITY-1.md).
+
+Ajuste de continuaciones del mismo WS desplegado `79336fb`, respaldo verificado
+`botsky-20261018T010126-372701.dump`. Health y aislamiento Lab/resto confirmados
+nuevamente a las 01:02 UTC. Sin nuevas migraciones ni cambios a Evolution.

@@ -77,7 +77,7 @@ export const modelArgsSchemas = {
     start: integer(product.mediaPdfPages).optional(), end: integer(product.mediaPdfPages).optional(), summary: bool.optional(),
   }),
   'media.search': object({ query: text.max(product.searchQueryChars), type: z.enum(['audio','video']) }),
-  'media.collect': object({ operation: z.enum(['images_pdf', 'pdf_merge']) }),
+  'media.collect': object({ operation: z.enum(['images_pdf', 'pdf_merge']), action:z.enum(['start','finish']).optional() }),
   'media.status': empty,
   'minecraft.status': empty,
   'minecraft.players': empty,

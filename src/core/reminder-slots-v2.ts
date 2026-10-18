@@ -1,5 +1,5 @@
 import { DateTime } from 'luxon';
-import { explicitClock, semanticTimeSchema } from '../modules/reminders/semantic-time.js';
+import { explicitClock, semanticTimeSchema, normalizeClockText } from '../modules/reminders/semantic-time.js';
 import { sessionTextV2 } from './session-input-v2.js';
 import type { SessionV2 } from './sessions-v2.js';
 
@@ -13,11 +13,16 @@ export function reminderSlotUpdateV2(session: SessionV2, text: string, now: Date
   if(!session.pending_tool.startsWith('reminders.'))return;
   const original=semanticTimeSchema.safeParse(session.partial_args.time);
   if(!original.success || original.data.kind==='relative')return;
-  const value=sessionTextV2(text).replace(/^si\s*[,;]?\s*pero\s+/u,'').replace(/^mejor\s+/u,'');
+  let value=normalizeClockText(sessionTextV2(text)).replace(/^si\s*[,;]?\s*pero\s+/u,'').replace(/^mejor\s+/u,'');
+  const datePending=session.missing_slots.some(s=>s.kind==='choice' && s.field==='date');
+  const prefixed=/^(?:(?:que|pues)\s+)?para\s+/u.test(value);
+  value=value.replace(/^(?:(?:que|pues)\s+)?para\s+/u,'');
+  // Only the pending today/tomorrow choice admits this dictated homophone.
+  if(datePending && prefixed)value=value.replace(/^o+i+(?=[,\s]|$)/u,'hoy');
   const weekdays=['lunes','martes','miercoles','jueves','viernes','sabado','domingo'];
-  const date=/^(hoy|manana|pasado manana|(?:el )?(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo))(?:\s+|$)/u.exec(value);
+  const date=/^(hoy|manana|pasado manana|(?:el )?(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo))(?:[,;]?\s+|$)/u.exec(value);
   let remainder=date?value.slice(date[0].length).trim():value;
-  remainder=remainder.replace(/^a las?\s+/u,'');
+  remainder=remainder.replace(/^(?:a|para) las?\s+/u,'');
   let clock=explicitClock(remainder);
   if(/^(?:[ap]\.?\s*m\.?|(?:de|por|en) la (?:manana|noche|tarde))$/u.test(remainder))clock=explicitClock(`${original.data.hour} ${remainder}`);
   if(!clock && /^\d{1,2}$/u.test(remainder) && Number(remainder)<=23)clock={hour:Number(remainder),minute:0};

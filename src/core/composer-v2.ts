@@ -40,7 +40,7 @@ export function localPresenterV2(result: ToolResult): string {
   if(result.status==='uncertain')return 'La solicitud quedó pendiente de confirmar. No voy a repetirla automáticamente.';
   if(result.status==='error')return result.presentation || 'No pude completar esa operación. No confirmo ningún cambio.';
   if(result.status==='queued'){
-    if(name==='media.process')return '';
+    if(name==='media.process' || name==='media.collect')return '';
     if(name.startsWith('minecraft.'))return 'Ya solicité la operación de Minecraft. Todavía no está confirmado el cambio.';
     return 'La solicitud está en marcha. Te aviso cuando tenga el resultado.';
   }

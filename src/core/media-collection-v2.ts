@@ -10,6 +10,7 @@ import { prepareArtifactsV2 } from './prepare-artifacts-v2.js';
 import { ok, fail, type ToolCtx } from './tools.js';
 import type { ExecutionContextV2, PolicyDecision } from './policy-v2/types.js';
 import type { ToolResult } from './tool-result.js';
+import { localPresenterV2 } from './composer-v2.js';
 
 const collection=z.strictObject({operation:z.enum(['images_pdf','pdf_merge']),artifactIds:z.array(z.uuid()).max(product.mediaMaxFiles)});
 async function currentFiles(ctx: ToolCtx, operation: 'images_pdf'|'pdf_merge') {
@@ -19,6 +20,15 @@ async function currentFiles(ctx: ToolCtx, operation: 'images_pdf'|'pdf_merge') {
 /** Start only inside executor after the existing chat/module/permission gates. */
 export async function beginCollectionV2(ctx: ExecutionContextV2, decision: PolicyDecision) {
   const operation=z.enum(['images_pdf','pdf_merge']).parse(decision.resolvedArgs.operation);
+  if(decision.resolvedArgs.action==='finish'){
+    const session=await readSessionV2(ctx.legacy.c,ctx.actorId,ctx.chatId);
+    if(!session || session.kind!=='media_collect' || session.expires_at<=ctx.now)return fail('No hay una colección abierta. Pídeme reunir las fotos o PDF primero.');
+    if(collection.parse(session.partial_args).operation!==operation)return fail('La colección abierta es de otro tipo de archivo. Termínala o cancélala primero.');
+    const result=await continueCollectionV2({...ctx.legacy,inboxTransaction:true},session,true);
+    if(typeof result==='string')return fail(result);
+    if(result?.status==='queued')return ok('',result.data as Record<string,unknown>);
+    return fail(result?localPresenterV2(result):'No pude cerrar esa colección.');
+  }
   const files=await currentFiles(ctx.legacy,operation);
   if(ctx.legacy.msg.attachments.length && !files.length)return fail(operation==='images_pdf'?'Envíame fotos para hacer el PDF.':'Envíame archivos PDF para unirlos.');
   const active=await readSessionV2(ctx.legacy.c,ctx.actorId,ctx.chatId);
@@ -34,8 +44,8 @@ export async function beginCollectionV2(ctx: ExecutionContextV2, decision: Polic
   return ok(`Voy a reunir ${operation==='images_pdf'?'tus fotos en un PDF':'tus PDF'}. Envía los que faltan y dime «terminar». Máximo ${product.mediaMaxFiles} archivos; vence en ${product.sessionMinutes} minutos.`);
 }
 /** Session shell only; final work goes back through Policy and the historical media queue. */
-export async function continueCollectionV2(ctx: ToolCtx, session: SessionV2): Promise<ToolResult|string|undefined> {
-  const decision=decideSessionV2(session,ctx.msg.text,ctx.now,ctx.msg.attachments.length>0);
+export async function continueCollectionV2(ctx: ToolCtx, session: SessionV2, modelRequestedFinish=false): Promise<ToolResult|string|undefined> {
+  const decision=modelRequestedFinish?{kind:'finish_collection' as const}:decideSessionV2(session,ctx.msg.text,ctx.now,ctx.msg.attachments.length>0);
   if(!['collect','finish_collection'].includes(decision.kind))return;
   if(decision.kind==='collect')await prepareArtifactsV2(ctx);
   return executionTransaction(ctx,async c=>{

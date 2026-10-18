@@ -1479,3 +1479,5 @@ ese chat; no hereda archivos ajenos. Repetir media.collect conserva la colecció
 vigente y su TTL. «Ya son todas» cierra la colección sin una nueva selección del
 modelo. El día faltante se pregunta incluso cuando Gemini inventa una fecha
 absoluta; se conserva la distinción de memoria frente a avisos futuros dictados.
+
+La segunda repetición expuso un contrato incompleto: media.collect solo admitía iniciar. En v1.1 se añade action=start|finish; Gemini recibe operación y número de archivos de la sesión, sin IDs. Finish valida actor/chat/vencimiento y reutiliza la misma ejecución media.process/Policy. v1 conserva su contrato. No se amplía indefinidamente un diccionario de frases para sustituir la interpretación del modelo. Las correcciones temporales aceptan «para hoy/mañana»; el homófono dictado «oí» solo se admite con prefijo para y una fecha pendiente.

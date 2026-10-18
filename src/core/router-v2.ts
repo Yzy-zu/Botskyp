@@ -78,7 +78,7 @@ export async function routeNaturalV2(ctx:ToolCtx,llm?:Llm):Promise<string|undefi
     const input:ToolExposureInput={text:ctx.msg.text,actorRole:initial.runtime.role,chatType:initial.runtime.chat.isGroup?'group':'private',enabledModules:initial.runtime.enabledModules,
       quotedText:[ctx.msg.quoted?.text ?? '',...(snapshot.recentDialogue ?? []).slice(-2).map(row=>row.text)].join('\n'),...(snapshot.currentAttachment?{currentAttachment:snapshot.currentAttachment}:{}),
       ...(snapshot.currentArtifact?{currentArtifact:snapshot.currentArtifact}:{}),recentArtifactContext:snapshot.recentArtifacts,
-      openPoll:Boolean(snapshot.poll),activeGame:Boolean(snapshot.game),openCooperacha:Boolean(snapshot.cooperacha)};
+      ...(snapshot.activeSession?.kind==='media_collect'?{activeSession:{domain:'media' as const}}:{}),openPoll:Boolean(snapshot.poll),activeGame:Boolean(snapshot.game),openCooperacha:Boolean(snapshot.cooperacha)};
     const exposure=selectToolsForTurn(input);
     const context=await buildTurnContextV2(ctx,exposure.exposure.relevantDomains);
     const vision=await resolveVisionArtifactV2({c:ctx.c,chatId:ctx.chat.id,actorId:ctx.actor.id,sourceMessageId:ctx.msg.id,now:ctx.now,safeRefMap:context.safeRefMap,allowRecentVision:!ctx.msg.attachments.length && allowsPreviousVisionV2(ctx.msg.text),...(ctx.msg.quoted?{quotedMessageId:ctx.msg.quoted.id}:{})});

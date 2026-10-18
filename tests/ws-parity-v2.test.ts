@@ -296,3 +296,41 @@ it('an explicit Spanish calendar date keeps its day without asking again',async(
   const text=`botsky recuérdame estudiar el ${day.setLocale('es-MX').toFormat("d 'de' LLLL")} a las 8pm`;
   expect((await turn(text,scripted(call('reminders.create',{body:'estudiar',time:{kind:'date',date:day.toISODate()!,hour:8,meridiem:'pm'}})))).text).toContain('recordaré');
 });
+it.each(['para hoy','para mañana','para oí, para las 8 piem','QUE PARA OOIII'])('Canary pending date consumes %s and preserves the reminder body',async answer=>{
+  await turn('botsky guarda un rekor para las 8piem y di q estoy tontiks',scripted(call('reminders.create',{body:'estoy tontiks',time:{kind:'today',hour:8}})));
+  const noGemini=scripted(),result=await turn(answer,noGemini);expect(noGemini.generate).not.toHaveBeenCalled();
+  if(!answer.includes('mañana') && DateTime.now().setZone('America/Mexico_City').hour>=20){
+    expect(result.text).not.toContain('recordaré');expect(await count('reminders')).toBe(0);return;
+  }
+  expect(result.text).toContain('recordaré');
+  const r=(await db.query('SELECT body,due_at FROM reminders')).rows[0]!;expect(r.body).toBe('estoy tontiks');
+  const local=DateTime.fromJSDate(r.due_at,{zone:'America/Mexico_City'});expect(local.hour).toBe(20);
+  expect(local.toISODate()).toBe(DateTime.now().setZone('America/Mexico_City').plus({days:answer.includes('mañana')?1:0}).toISODate());
+  expect((await turn('cancelalo')).text).toContain('cancelé');
+});
+it('an unrelated oí reply still escapes a reminder period slot',async()=>{
+  await turn('recuérdame mañana a las 8',scripted(call('reminders.create',{body:'estudiar',time:{kind:'tomorrow',hour:8}})));
+  const llm=scripted(say('Te escucho.'));await turn('oí',llm);expect(llm.generate).toHaveBeenCalledOnce();expect(await count('reminders')).toBe(0);
+});
+it.each(['kon esas hazlo','QUE CON ESAS YA MALDITO'])('model finish closes the scoped collection naturally: %s',async text=>{
+  await startCollection();await addFile();await addFile();
+  const llm=scripted(input=>{
+    const data=JSON.parse((input.contents[0] as {parts:{text:string}[]}).parts[0]!.text).REFERENCE_DATA;
+    expect(data.activeSession.collection).toEqual({operation:'images_pdf',files:2});
+    expect(input.tools.find(t=>t.name==='media_collect')?.description).toContain('action=finish');
+    return call('media.collect',{operation:'images_pdf',action:'finish'});
+  });
+  await turn(text,llm);expect(await count('jobs')).toBe(1);expect((await db.query('SELECT status FROM sessions_v2')).rows[0]?.status).toBe('done');
+  expect((await db.query('SELECT tool_name,status FROM tool_executions ORDER BY created_at')).rows.slice(-2)).toEqual([{tool_name:'media.collect',status:'queued'},{tool_name:'media.process',status:'queued'}]);
+});
+it.each(['actor','chat','module','none'] as const)('model finish respects %s collection scope',async change=>{
+  if(change!=='none'){await startCollection();await addFile();}
+  if(change==='module')await db.query(`UPDATE chats SET settings='{"modules":{"media":false}}' WHERE id=$1`,[chat]);
+  await turn('botsky con esas fotos hazlo',scripted(call('media.collect',{operation:'images_pdf',action:'finish'})),undefined,change==='actor'?{senderId:member}:change==='chat'?{chatId:'400@g.us'}:{});
+  expect(await count('jobs')).toBe(0);
+});
+it('model finish replay queues one job with the original collected files',async()=>{
+  await startCollection();await addFile();await addFile();
+  await turn('botsky con esas fotos hazlo',scripted({text:'',calls:[],content:{role:'model',parts:[1,2].map(()=>({functionCall:{name:'media_collect',args:{operation:'images_pdf',action:'finish'}}}))}}));
+  expect(await count('jobs')).toBe(1);expect((await db.query('SELECT payload FROM jobs')).rows[0]?.payload.sources).toHaveLength(2);
+});

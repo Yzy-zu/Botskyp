@@ -30,6 +30,10 @@ export function adapterAvailable(name: string): boolean { return adapters.has(na
 export function legacyArguments(ctx: ExecutionContextV2, tool: Tool, input: Record<string, unknown>):
   { status: 'ok'; args: Record<string, unknown> } | { status: 'needs_clarification' | 'denied'; code: string } {
   const args = { ...input };
+  if(tool.name==='media.collect'){
+    const operation=tool.args.safeParse({operation:args.operation});
+    return operation.success?{status:'ok',args:{...operation.data as Record<string,unknown>,action:args.action ?? 'start'}}:{status:'denied',code:'INVALID_ARGUMENTS'};
+  }
   if(tool.name==='games.play')args.move=({hit:'carta',stand:'plantarse',double:'doblar'} as Record<string,string>)[String(args.move)] ?? args.move;
   if(tool.name==='media.process'){
     delete args.artifactRef;

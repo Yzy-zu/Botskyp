@@ -392,3 +392,21 @@ Código final desplegado `0cdaab3`, health y selector correctos. Smoke humano pa
 5. **Meta-tools `core.session_confirm` y `core.session_cancel`:** Confirmación y cancelación estructurada por el modelo, pasando por revalidación estricta de Policy R3 (`callOrigin: 'session'`).
 6. **Verificación en verde:** 6 smoke tests contra Gemini real (`gemini-3.5-flash-lite`) pasando al 100%. Typecheck y lint limpios. Sin deploy ni merge a main.
 
+
+## 21. WS-CAPABILITY-MANIFEST (18-10-2026) — plan autorizado
+
+1. Misma rama feat/v1.1-natural-router, baseline f8d6a7e; un constructor.
+2. Metadata compacta junto a las tools del Registry, sin catálogo paralelo de prompt.
+3. Manifest completo generado; operaciones media desde la matriz de conversiones.
+4. Availability derivada de adapters Policy, permisos, módulos y configuración actual.
+5. Artifact State con SafeRefs, CURRENT/REPLIED/RECENT/A_LAST y SessionV2 intacta.
+6. Context Budget conserva manifest/sesión/adjuntos; schemas continúan dinámicos.
+7. Cobertura total, pruebas focalizadas y Gemini real con frases nuevas sin aliases.
+8. Checks, documentación, commit/push y deploy oficial: Lab v1.1/resto v1.
+9. Sin merge, nuevos backends ni reparación de sus faltantes; detenerse al entregar.
+
+WS-CAPABILITY-MANIFEST implementado: 96/96 capabilities públicas, missing=0,
+26 operaciones media; 660 pruebas únicas verificadas por tandas, incluidas 19
+Gemini real y seis inputs nuevos fuera de fixtures. Cuatro archivos reejecutados
+completos: 189/189. Recheck de disponibilidad real 1/1. Typecheck/lint/build/secretos/Compose/diff en verde; deploy en cierre.
+No iniciar backends faltantes, otro workstream ni merge a main.

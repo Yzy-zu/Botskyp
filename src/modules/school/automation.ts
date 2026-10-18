@@ -21,12 +21,12 @@ export async function schoolDestination(c:Pick<PoolClient,'query'>,config:Config
 }
 const base={permission:'school.manage',risk:'write',modelCallable:true} as const;
 export const automationTools:Tool[]=[
-  schoolTool({...base,name:'school.config',risk:'read',permission:'school.write',description:'Ver configuración de Escuela y del resumen del grupo.',examples:['bot escuela configuración'],args:z.strictObject({}),async run(ctx){
+  schoolTool({...base,name:'school.config',capability:{summary:'Consultar configuración escolar.',produces:'configuración'},risk:'read',permission:'school.write',description:'Ver configuración de Escuela y del resumen del grupo.',examples:['bot escuela configuración'],args:z.strictObject({}),async run(ctx){
     const r=(await ctx.c.query<{target_group_id:string;summary_schedule:SummarySchedule|null}>('SELECT target_group_id,summary_schedule FROM school_config WHERE chat_id=$1',[ctx.chat.id])).rows[0];
     const automation=(await ctx.c.query<{enabled:boolean;next_run_at:Date}>("SELECT enabled,next_run_at FROM automations WHERE chat_id=$1 AND kind='school_summary'",[ctx.chat.id])).rows[0];
     return ok(`Zona: ${schoolZone}\nDestino: ${r?.target_group_id ?? ctx.chat.id}\nResumen: ${automation?.enabled && r?.summary_schedule?`${r.summary_schedule.days.map(d=>weekdays[d-1]).join(', ')} a las ${r.summary_schedule.time}; siguiente ${formatDue(automation.next_run_at,schoolZone)}`:'apagado'}`);
   }}),
-  schoolTool({...base,name:'school.summary_configure',description:'Configurar resumen escolar por días (1=lunes a 7=domingo) y hora HH:mm en America/Mexico_City; puede apagarse. Solo owner/admin.',examples:['bot escuela resumen 07:00 lunes,martes,miércoles,jueves,viernes','bot escuela resumen off'],args:z.strictObject({enabled:z.boolean(),schedule:summarySchema.optional()}),async run(ctx,args){
+  schoolTool({...base,name:'school.summary_configure',capability:{summary:'Programar/apagar resumen escolar.',produces:'recibo'},description:'Configurar resumen escolar por días (1=lunes a 7=domingo) y hora HH:mm en America/Mexico_City; puede apagarse. Solo owner/admin.',examples:['bot escuela resumen 07:00 lunes,martes,miércoles,jueves,viernes','bot escuela resumen off'],args:z.strictObject({enabled:z.boolean(),schedule:summarySchema.optional()}),async run(ctx,args){
     await lockSchool(ctx);
     const saved=(await ctx.c.query<{target_group_id:string;summary_schedule:unknown}>('SELECT target_group_id,summary_schedule FROM school_config WHERE chat_id=$1',[ctx.chat.id])).rows[0]!;
     const schedule=summarySchema.safeParse(args.schedule ?? saved.summary_schedule);
@@ -39,7 +39,7 @@ export const automationTools:Tool[]=[
       ON CONFLICT(chat_id,kind) DO UPDATE SET owner_id=excluded.owner_id,enabled=true,config=excluded.config,next_run_at=excluded.next_run_at`,[ctx.chat.id,ctx.actor.id,JSON.stringify(parsed),next]);
     return ok(`Resumen escolar configurado: ${parsed.days.map(d=>weekdays[d-1]).join(', ')} a las ${parsed.time} (${schoolZone}). Siguiente: ${formatDue(next,schoolZone)}. Destino: ${saved.target_group_id}.`);
   }}),
-  schoolTool({...base,name:'school.destination',modelCallable:false,description:'Elegir grupo de destino escolar habilitado, con permisos en ambos grupos.',examples:['bot escuela destino aquí'],args:z.strictObject({targetGroupId:z.string().regex(/^\d+@g\.us$/).optional()}),async run(ctx,args){
+  schoolTool({...base,name:'school.destination',capability:{summary:'Elegir destino escolar autorizado.',produces:'recibo'},modelCallable:false,description:'Elegir grupo de destino escolar habilitado, con permisos en ambos grupos.',examples:['bot escuela destino aquí'],args:z.strictObject({targetGroupId:z.string().regex(/^\d+@g\.us$/).optional()}),async run(ctx,args){
     const target=args.targetGroupId ?? ctx.chat.id;
     if(!await schoolDestination(ctx.c,ctx.config,target,ctx.actor.id))return fail('Destino no autorizado; requiere grupo habilitado, módulo y permisos vigentes.');
     await lockSchool(ctx);

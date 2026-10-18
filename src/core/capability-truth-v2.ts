@@ -22,16 +22,5 @@ export function shouldRetryCapabilityTruth(text: string, answer: string, exposur
   return explicitWebRequest(text) || /\b(?:no (?:puedo|puede|tengo|tiene)|no hay acceso|no (?:esta|tengo).*configur|necesit[ao].*(?:ip|host)|pasame.*(?:ip|host)|dame.*(?:ip|host))\b/u.test(normalized(answer));
 }
 export function capabilityContextV2(exposure: ToolExposure): string {
-  const hints = ['El Registry define las capacidades reales. Cumple la utilidad solicitada antes del humor.'];
-  if (exposure.availableDomains.length) {
-    const summary = exposure.availableDomains.map(d => `${d}: ${exposure.capabilityDirectory[d] ?? d}`).join(' | ');
-    hints.push(`Directorio de dominios disponibles en este chat (usa core_load_capability({domain}) si necesitas una herramienta de un dominio no expuesto): ${summary}`);
-  }
-  if (exposure.availableDomains.includes('minecraft') || exposure.toolNames.includes('minecraft.status')) {
-    hints.push('Botsky tiene un servidor Minecraft Bedrock configurado (dominio minecraft). Si el usuario pregunta por el servidor con cualquier variante o typo, usa las funciones minecraft_* expuestas o carga el dominio minecraft con core_load_capability. No pidas host/IP salvo que la herramienta reporte configuración faltante.');
-  }
-  if (exposure.availableDomains.includes('web') || exposure.toolNames.includes('web.search')) {
-    hints.push('Si el usuario pide explícitamente buscar en web/internet, usa web_search antes de responder; una broma no sustituye la búsqueda. No infieras datos personales del usuario a partir de páginas sobre otras personas: sin evidencia suficiente, dilo. Incluye enlaces de las fuentes devueltas. Buscar videos o música corresponde a multimedia.');
-  }
-  return hints.join('\n');
+  return `Schemas cargados: ${exposure.selectedDomains.join(', ')}. CAPABILITY_MANIFEST es el catálogo completo; core_load_capability carga el dominio que falte. Cumple la utilidad antes del humor.`;
 }

@@ -12,9 +12,18 @@ import type { Declaration } from './llm.js';
 const log=pino({level:'info',redact:['chatId']});
 export type ToolResult={ok:true;facts:Record<string,unknown>;reply:string;stylable?:boolean}|{ok:false;kind:'user'|'transient'|'bug';message:string};
 export type ToolCtx={inboxTransaction?:true;turnId?:string;actor:Actor;chat:Chat;msg:Msg;db:Db;c:PoolClient;config:Config;now:Date;search:(query:string)=>Promise<string>};
+export type CapabilityOperation = { description: string; accepts: string; produces: string };
+export type CapabilityMetadata = {
+  summary?: string;
+  accepts?: string;
+  produces: string;
+  operations?: Readonly<Record<string, CapabilityOperation>>;
+};
 export interface Tool<A extends z.ZodType=z.ZodType> {
   name:string;description:string;examples:string[];args:A;permission:PermissionKey;
   risk:'read'|'write'|'destructive';scope:'group'|'private'|'both';modelCallable:boolean;module:string;
+  /** Required by the v2 catalog for public tools; optional for isolated legacy test doubles. */
+  capability?: CapabilityMetadata;
   run(ctx:ToolCtx,args:z.infer<A>):Promise<ToolResult>;
 }
 export const ok=(reply:string,facts:Record<string,unknown>={}):ToolResult=>({ok:true,reply,facts});

@@ -4,6 +4,7 @@ import type { Actor } from './permissions.js';
 import { capabilityDomains, capabilityDomainSchema, type CapabilityDomain } from './capability-domain.js';
 import { alwaysOnBusinessTools, modelDeclaration, type ToolMetadataV2 } from './tool-registry-v2.js';
 import type { Declaration } from './llm.js';
+import { adapterAvailable } from './policy-v2/arguments.js';
 
 export const MAX_TOOLS_PER_TURN = product.maxToolsPerTurn;
 export const MAX_CAPABILITY_EXPANSIONS_PER_TURN = product.maxCapabilityExpansionsPerTurn;
@@ -34,22 +35,6 @@ export interface ToolExposure {
   readonly semanticHints: readonly ('memory' | 'shared_notes')[];
   readonly approximateSchemaBytes: number;
 }
-export const domainDirectory: Readonly<Record<CapabilityDomain, string>> = {
-  core: 'Ping y ayuda general',
-  productivity: 'Notas compartidas, recordatorios personales y memoria personal',
-  web: 'Búsqueda en internet con fuentes verificables',
-  economy: 'Saldo de XP, puntos, premio/giro diario y hora feliz',
-  polls: 'Encuestas del grupo, votar, resultados y cierre',
-  school: 'Materias, horario de clases y tareas escolares',
-  games: 'Juegos del grupo: blackjack, ruleta y airdrops de XP',
-  media: 'Procesar imágenes, PDF, documentos, stickers, QR, OCR, audio y video, o reunir archivos en PDF',
-  library: 'Biblioteca de packs, compras con XP, cooperachas y lluvia',
-  moderation: 'Advertencias (warns) y moderación del grupo',
-  minecraft: 'Servidor Minecraft Bedrock configurado: estado, jugadores online, recursos, mundos, logs, consola, encendido/apagado/reinicio y backups',
-  drive: 'Búsqueda, descarga y estado de Google Drive',
-  admin: 'Control de módulos, mantenimiento, emergencia y diagnóstico de cuota/errores',
-  messaging: 'Envío de mensajes autorizados, difusión y ráfaga nuclear',
-};
 const signals: Readonly<Partial<Record<CapabilityDomain, RegExp>>> = {
   productivity: /\b(?:memoria|recuerda|recuerdas|recuerdos?|acuerdate|memoriza|nota|notas|anota|recordatorios?|recuerdame)\b/gu,
   web: /\b(?:web|internet|google|noticias)\b/gu,
@@ -88,6 +73,7 @@ function relevantDomains(input: ToolExposureInput): CapabilityDomain[] {
 }
 function eligible(tool: ToolMetadataV2, input: ToolExposureInput): boolean {
   return tool.llmVisible && tool.exposure !== 'internal'
+    && adapterAvailable(tool.name)
     && input.enabledModules.includes(tool.requiredModule)
     && (tool.scope === 'both' || tool.scope === input.chatType)
     // Token optimization only. Other restricted actions remain understandable to members.
@@ -139,7 +125,9 @@ function snapshot(catalog: readonly ToolMetadataV2[], tools: readonly ToolMetada
   if (/\b(?:memoria|acuerdate|recuerda que|memoriza)\b/u.test(text)) semanticHints.push('memory');
   else if (/\b(?:anota en el grupo|crea una nota|guarda una nota)\b/u.test(text)) semanticHints.push('shared_notes');
   const availableDomains = capabilityDomains.filter(domain => domainTools(catalog, domain, input).length > 0);
-  const capabilityDirectory = Object.fromEntries(availableDomains.map(domain => [domain, domainDirectory[domain]])) as Partial<Record<CapabilityDomain, string>>;
+  const capabilityDirectory = Object.fromEntries(availableDomains.map(domain => [domain,
+    `${domain[0]!.toUpperCase()}${domain.slice(1)}: ${domainTools(catalog,domain,input).map(tool=>tool.capability?.summary ?? tool.descriptionForModel).join(' ')}`,
+  ])) as Partial<Record<CapabilityDomain, string>>;
   return Object.freeze({
     toolNames: Object.freeze([...tools.map(tool => tool.name), ...meta.names]),
     schemas: Object.freeze(schemas), selectedDomains: Object.freeze([...new Set<CapabilityDomain>(['core', ...tools.map(tool => tool.domain)])]),
@@ -201,6 +189,15 @@ export class ToolExposureTurn {
     this.current = selectToolExposure(catalog, this.input);
   }
   get exposure(): ToolExposure { return this.current; }
+  /** Fit the actual provider envelope too, retaining meta-tools for discovery and sessions. */
+  fitSchemaBudget(maxChars: number): void {
+    const tools = this.catalog.filter(tool => this.current.toolNames.includes(tool.name))
+      .sort((a,b)=>this.current.toolNames.indexOf(a.name)-this.current.toolNames.indexOf(b.name));
+    while (JSON.stringify(this.current.schemas).length > maxChars && tools.length) {
+      tools.pop();
+      this.current = snapshot(this.catalog, tools, this.current.relevantDomains, this.input);
+    }
+  }
   loadCapability(args: unknown): CapabilityExpansion {
     const parsed = loadCapabilityArgsSchema.safeParse(args);
     if (!parsed.success) return { status: 'invalid_domain', exposure: this.current };
@@ -211,10 +208,11 @@ export class ToolExposureTurn {
     // Do not require a lexical hit: the meta-tool must recover domains missed by lexical selection.
     if (!available.length) return { status: 'not_relevant_or_allowed', exposure: this.current };
     const maxBusiness = MAX_TOOLS_PER_TURN - metaDeclarations(this.input).names.length;
-    const existing = this.catalog.filter(tool => this.current.toolNames.includes(tool.name));
-    const missing = available.filter(tool => !this.current.toolNames.includes(tool.name));
-    if (missing.length && existing.length >= maxBusiness) return { status: 'capacity', exposure: this.current };
-    const tools = [...existing, ...missing.slice(0, maxBusiness - existing.length)];
+    // Discovery must expose the entire requested domain even when lexical/context preloading
+    // filled the window. Rotate unrelated schemas out; preserve signed provider history and refs.
+    if (available.length > maxBusiness) return { status: 'capacity', exposure: this.current };
+    const existing = this.catalog.filter(tool => this.current.toolNames.includes(tool.name) && tool.domain !== domain);
+    const tools = [...available, ...existing.slice(0, maxBusiness - available.length)];
     this.current = snapshot(this.catalog, tools, [...new Set([...this.current.relevantDomains, domain])], this.input);
     this.expansions++;
     return { status: 'ok', exposure: this.current };

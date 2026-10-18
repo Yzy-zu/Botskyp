@@ -17,10 +17,10 @@ export async function tasksFor(ctx:ToolCtx,subject?:string):Promise<TaskRow[]>{
     WHERE t.chat_id=$1 AND t.deleted_at IS NULL AND ($2::text IS NULL OR lower(s.name)=lower($2)) ORDER BY t.due_at NULLS LAST,t.id LIMIT $3`,[ctx.chat.id,subject ?? null,product.schoolResults])).rows;
 }
 export const taskTools:Tool[]=[
-  schoolTool({...base,name:'school.tasks',description:'Listar tareas escolares vigentes del chat, incluidas vencidas y sin fecha; opcionalmente por materia.',examples:['bot tareas','bot tareas de Matemáticas'],args:z.strictObject({subject:subjectName.optional()}),async run(ctx,args){
+  schoolTool({...base,name:'school.tasks',capability:{summary:'Listar tareas por materia.',produces:'tareas'},description:'Listar tareas escolares vigentes del chat, incluidas vencidas y sin fecha; opcionalmente por materia.',examples:['bot tareas','bot tareas de Matemáticas'],args:z.strictObject({subject:subjectName.optional()}),async run(ctx,args){
     const rows=await tasksFor(ctx,args.subject);return ok(rows.map(taskText).join('\n\n') || 'No hay tareas para esa consulta.');
   }}),
-  schoolTool({...base,name:'school.task_create',risk:'write',description:'Registrar UNA tarea atribuida al miembro autenticado. subject debe ser una materia existente. dueAt solo si el usuario dio fecha explícita ISO con zona; omitirlo usa próxima clase o sin fecha. includeAttachment usa el archivo actual/citado/propio reciente sin IDs del modelo.',examples:['bot tarea Matemáticas | ejercicios 1 al 5','bot tarea Matemáticas | proyecto | 2026-11-10T08:00:00-06:00'],args:z.strictObject({subject:subjectName,title,dueAt:z.string().optional(),includeAttachment:z.boolean().optional()}),async run(ctx,args){
+  schoolTool({...base,name:'school.task_create',capability:{summary:'Registrar tarea y adjunto.',produces:'recibo'},risk:'write',description:'Registrar UNA tarea atribuida al miembro autenticado. subject debe ser una materia existente. dueAt solo si el usuario dio fecha explícita ISO con zona; omitirlo usa próxima clase o sin fecha. includeAttachment usa el archivo actual/citado/propio reciente sin IDs del modelo.',examples:['bot tarea Matemáticas | ejercicios 1 al 5','bot tarea Matemáticas | proyecto | 2026-11-10T08:00:00-06:00'],args:z.strictObject({subject:subjectName,title,dueAt:z.string().optional(),includeAttachment:z.boolean().optional()}),async run(ctx,args){
     await lockSchool(ctx);
     const previous=await ctx.c.query<TaskRow>(`SELECT t.*,s.name AS subject FROM school_tasks t JOIN school_subjects s ON s.id=t.subject_id WHERE t.chat_id=$1 AND t.created_by=$2 AND t.source_message_id=$3`,[ctx.chat.id,ctx.actor.id,ctx.msg.id]);
     if(previous.rows[0])return ok(`Esta solicitud ya registró la tarea #${previous.rows[0].id}.`);
@@ -45,7 +45,7 @@ export const taskTools:Tool[]=[
     // The inserted row may be beyond the listing limit; render from validated input instead.
     return ok(`Registré la tarea:\n${taskText(task ?? {id:row.rows[0]!.id,title:args.title,subject:args.subject,due_at:due ?? null,due_source:dueSource,created_by:ctx.actor.id,attachment_ids:attachments,deleted_at:null})}`);
   }}),
-  schoolTool({...base,name:'school.task_edit',risk:'write',description:'Editar título/fecha de una tarea propia. Owner/admin pueden editar cualquiera del grupo. dueAt=null quita la fecha; omitirlo conserva la existente.',examples:['bot tarea edita 1 | ejercicios 1 al 10','bot tarea fecha 1 | 2026-11-10T08:00:00-06:00','bot tarea fecha 1 | sin fecha'],args:z.strictObject({id:schoolId,title:title.optional(),dueAt:z.string().nullable().optional()}),async run(ctx,args){
+  schoolTool({...base,name:'school.task_edit',capability:{summary:'Editar título/fecha de tarea.',produces:'recibo'},risk:'write',description:'Editar título/fecha de una tarea propia. Owner/admin pueden editar cualquiera del grupo. dueAt=null quita la fecha; omitirlo conserva la existente.',examples:['bot tarea edita 1 | ejercicios 1 al 10','bot tarea fecha 1 | 2026-11-10T08:00:00-06:00','bot tarea fecha 1 | sin fecha'],args:z.strictObject({id:schoolId,title:title.optional(),dueAt:z.string().nullable().optional()}),async run(ctx,args){
     if(args.title===undefined && args.dueAt===undefined)return fail('Indica un título o fecha nuevos.');
     await lockSchool(ctx);
     const task=(await ctx.c.query<{created_by:string}>('SELECT created_by FROM school_tasks WHERE chat_id=$1 AND id=$2 AND deleted_at IS NULL FOR UPDATE',[ctx.chat.id,args.id])).rows[0];
@@ -57,11 +57,11 @@ export const taskTools:Tool[]=[
       due_source=CASE WHEN $4 THEN $6 ELSE due_source END,updated_at=now() WHERE chat_id=$1 AND id=$2`,[ctx.chat.id,args.id,args.title ?? null,args.dueAt!==undefined,due,args.dueAt?'explicit':null]);
     return ok(`Actualicé la tarea #${args.id}.`);
   }}),
-  schoolTool({...base,name:'school.task_delete',permission:'school.manage',risk:'destructive',description:'Eliminar una tarea mediante borrado lógico y confirmación; solo owner/admin del grupo.',examples:['bot tarea borra 1'],args:z.strictObject({id:schoolId}),async run(ctx,args){
+  schoolTool({...base,name:'school.task_delete',capability:{summary:'Borrar tarea.',produces:'recibo'},permission:'school.manage',risk:'destructive',description:'Eliminar una tarea mediante borrado lógico y confirmación; solo owner/admin del grupo.',examples:['bot tarea borra 1'],args:z.strictObject({id:schoolId}),async run(ctx,args){
     const r=await ctx.c.query('UPDATE school_tasks SET deleted_at=now(),updated_at=now() WHERE chat_id=$1 AND id=$2 AND deleted_at IS NULL RETURNING id',[ctx.chat.id,args.id]);
     return r.rowCount?ok(`Eliminé la tarea #${args.id}.`):fail('No encontré esa tarea en este chat.');
   }}),
-  schoolTool({...base,name:'school.task_attachment',description:'Solicitar el original adjunto de una tarea de este grupo; disponible siete días. Se entrega por outbox en este mismo chat.',examples:['bot tarea adjunto 1'],args:z.strictObject({id:schoolId}),async run(ctx,args){
+  schoolTool({...base,name:'school.task_attachment',capability:{summary:'Entregar adjunto de tarea.',produces:'archivo'},description:'Solicitar el original adjunto de una tarea de este grupo; disponible siete días. Se entrega por outbox en este mismo chat.',examples:['bot tarea adjunto 1'],args:z.strictObject({id:schoolId}),async run(ctx,args){
     const r=await ctx.c.query<{id:string}>(`SELECT a.id FROM school_tasks t JOIN school_attachments a ON a.chat_id=t.chat_id AND a.id=ANY(t.attachment_ids)
       WHERE t.chat_id=$1 AND t.id=$2 AND t.deleted_at IS NULL AND a.data IS NOT NULL AND a.expires_at>clock_timestamp()`,[ctx.chat.id,args.id]);
     if(!r.rowCount)return fail('Esa tarea no tiene un adjunto disponible; los originales se conservan siete días.');

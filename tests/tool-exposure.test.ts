@@ -119,16 +119,18 @@ it('allows one backend-owned capability expansion per turn and validates domain/
   expect(turn.loadCapability({ domain: 'core' }).status).toBe('expansion_limit');
   expect(new ToolExposureTurn(catalog, input('hola')).loadCapability({ domain: 'core' }).status).toBe('ok');
 });
-it('retains active schemas on expansion, obeys capacity and freezes the original input context', () => {
+it('rotates schemas to expose the whole discovered domain under capacity and freezes input', () => {
   const ctx = input('minecraft');
   const turn = new ToolExposureTurn(catalog, ctx);
   const before = [...turn.exposure.toolNames];
   expect(before).toHaveLength(20);
-  expect(turn.loadCapability({ domain: 'minecraft' }).status).toBe('capacity');
-  expect(turn.exposure.toolNames).toEqual(before);
+  expect(turn.loadCapability({ domain: 'minecraft' }).status).toBe('ok');
+  expect(turn.exposure.toolNames).toContain('minecraft.console');
+  expect(turn.exposure.toolNames).toContain('minecraft.operations');
+  expect(turn.exposure.schemas.length).toBeLessThanOrEqual(20);
   ctx.actorRole = 'owner'; ctx.enabledModules = []; ctx.text = 'cuota';
-  expect(turn.loadCapability({ domain: 'admin' }).status).toBe('not_relevant_or_allowed');
-  expect(turn.exposure.toolNames).toEqual(before);
+  expect(turn.loadCapability({ domain: 'admin' }).status).toBe('expansion_limit');
+  expect(new ToolExposureTurn(catalog,input('hola')).loadCapability({domain:'admin'}).status).toBe('not_relevant_or_allowed');
 });
 
 it('keeps reminder editing available after a QR and an open poll fill the context',()=>{

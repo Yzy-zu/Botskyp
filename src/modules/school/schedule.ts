@@ -39,11 +39,11 @@ async function previewSchedule(ctx:ToolCtx,proposal:Schedule,sourceId?:string){
 }
 const commitArgs=z.strictObject({importId:z.uuid(),previewHash:z.string().regex(/^[a-f0-9]{64}$/)});
 export const scheduleTools:Tool[]=[
-  schoolTool({...manage,name:'school.subjects',risk:'read',permission:'school.write',description:'Consultar materias del grupo escolar.',examples:['bot materias'],args:z.strictObject({}),async run(ctx){
+  schoolTool({...manage,name:'school.subjects',capability:{summary:'Listar materias.',produces:'materias'},risk:'read',permission:'school.write',description:'Consultar materias del grupo escolar.',examples:['bot materias'],args:z.strictObject({}),async run(ctx){
     const r=await ctx.c.query<{id:string;name:string}>('SELECT id,name FROM school_subjects WHERE chat_id=$1 AND active ORDER BY name',[ctx.chat.id]);
     return ok(r.rows.map(s=>`#${s.id}: ${s.name}`).join('\n') || 'No hay materias. Pide a un administrador que las registre.');
   }}),
-  schoolTool({...manage,name:'school.subject_save',description:'Crear una materia o renombrarla por ID; solo administración.',examples:['bot materia agrega Matemáticas','bot materia edita 1 Matemáticas II'],args:z.strictObject({id:schoolId.optional(),name:subjectName}),async run(ctx,args){
+  schoolTool({...manage,name:'school.subject_save',capability:{summary:'Crear/renombrar materia.',produces:'recibo'},description:'Crear una materia o renombrarla por ID; solo administración.',examples:['bot materia agrega Matemáticas','bot materia edita 1 Matemáticas II'],args:z.strictObject({id:schoolId.optional(),name:subjectName}),async run(ctx,args){
     await lockSchool(ctx);
     const collision=await ctx.c.query('SELECT id FROM school_subjects WHERE chat_id=$1 AND lower(name)=lower($2) AND ($3::bigint IS NULL OR id<>$3)',[ctx.chat.id,args.name,args.id ?? null]);
     if(collision.rowCount)return fail('Ya existe una materia con ese nombre.');
@@ -54,7 +54,7 @@ export const scheduleTools:Tool[]=[
     await ctx.c.query('UPDATE school_config SET revision=revision+1 WHERE chat_id=$1',[ctx.chat.id]);
     return ok(`Materia #${r.rows[0]!.id}: ${args.name}.`);
   }}),
-  schoolTool({...manage,name:'school.subject_archive',risk:'destructive',description:'Desactivar una materia sin borrar sus tareas; retira sus clases.',examples:['bot materia desactiva 1'],args:z.strictObject({id:schoolId}),async run(ctx,args){
+  schoolTool({...manage,name:'school.subject_archive',capability:{summary:'Archivar materia y retirar clases.',produces:'recibo'},risk:'destructive',description:'Desactivar una materia sin borrar sus tareas; retira sus clases.',examples:['bot materia desactiva 1'],args:z.strictObject({id:schoolId}),async run(ctx,args){
     await lockSchool(ctx);
     const r=await ctx.c.query('UPDATE school_subjects SET active=false WHERE chat_id=$1 AND id=$2 RETURNING id',[ctx.chat.id,args.id]);
     if(!r.rowCount)return fail('No encontré esa materia en este chat.');
@@ -62,12 +62,12 @@ export const scheduleTools:Tool[]=[
     await ctx.c.query('UPDATE school_config SET revision=revision+1 WHERE chat_id=$1',[ctx.chat.id]);
     return ok(`Materia #${args.id} desactivada; sus tareas se conservan.`);
   }}),
-  schoolTool({...manage,name:'school.schedule',risk:'read',permission:'school.write',description:'Consultar el horario semanal o un día (1=lunes, 7=domingo).',examples:['bot horario','bot horario lunes'],args:z.strictObject({weekday:z.number().int().min(1).max(7).optional()}),async run(ctx,args){
+  schoolTool({...manage,name:'school.schedule',capability:{summary:'Consultar horario semanal/diario.',produces:'horario'},risk:'read',permission:'school.write',description:'Consultar el horario semanal o un día (1=lunes, 7=domingo).',examples:['bot horario','bot horario lunes'],args:z.strictObject({weekday:z.number().int().min(1).max(7).optional()}),async run(ctx,args){
     const schedule=await getSchedule(ctx);if(args.weekday)schedule.lessons=schedule.lessons.filter(l=>l.weekday===args.weekday);
     return ok(schedule.lessons.length?`Horario (${schoolZone}):\n${formatSchedule(schedule)}`:'No hay clases registradas para esa consulta.');
   }}),
-  schoolTool({...manage,name:'school.schedule_propose',description:'Proponer reemplazo completo del horario semanal. Días 1=lunes a 7=domingo, horas HH:mm en CDMX. Siempre muestra preview y exige confirmación; nunca guarda directamente.',examples:['bot horario propone {"lessons":[{"subject":"Matemáticas","weekday":1,"start":"08:00","end":"09:00"}]}'],args:scheduleSchema,run:previewSchedule}),
-  schoolTool({...manage,name:'school.schedule_import',modelCallable:false,description:'Importar una foto del horario con Gemini Vision, validación, preview y confirmación. Adjunta o cita la imagen.',examples:['bot horario importa foto'],args:z.strictObject({}),async run(ctx){
+  schoolTool({...manage,name:'school.schedule_propose',capability:{summary:'Reemplazar horario con preview.',produces:'preview'},description:'Proponer reemplazo completo del horario semanal. Días 1=lunes a 7=domingo, horas HH:mm en CDMX. Siempre muestra preview y exige confirmación; nunca guarda directamente.',examples:['bot horario propone {"lessons":[{"subject":"Matemáticas","weekday":1,"start":"08:00","end":"09:00"}]}'],args:scheduleSchema,run:previewSchedule}),
+  schoolTool({...manage,name:'school.schedule_import',capability:{summary:'Importar horario de foto.',produces:'preview'},modelCallable:false,description:'Importar una foto del horario con Gemini Vision, validación, preview y confirmación. Adjunta o cita la imagen.',examples:['bot horario importa foto'],args:z.strictObject({}),async run(ctx){
     if(!moduleEnabled(ctx.chat,'vision',ctx.config))return fail('La visión está desactivada en este chat.');
     const source=await attachmentSource(ctx);
     if(!source || source.attachments.length!==1 || source.attachments[0]?.kind!=='image')return fail('Adjunta una foto del horario o cita una imagen recibida en este chat.');

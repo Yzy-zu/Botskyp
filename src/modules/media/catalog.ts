@@ -39,27 +39,27 @@ export const outputMime:Record<string,string>={mp3:'audio/mpeg',ogg:'audio/ogg',
 const images=['png','jpg','webp','gif'];
 const audio=['mp3','ogg','wav','m4a'];
 const video=['mp4','webm','ogv'];
-type Policy={inputs:string[];outputs:string[];maxBytes:number;maxSeconds:number;timeoutMs:number};
-function policy(inputs:string[],outputs:string[],maxBytes:number=product.mediaOutputBytes,maxSeconds:number=0):Policy{
-  return {inputs,outputs,maxBytes,maxSeconds,timeoutMs:product.mediaTimeoutMs};
+type Policy={description:string;inputs:string[];outputs:string[];maxBytes:number;maxSeconds:number;timeoutMs:number};
+function policy(description:string,inputs:string[],outputs:string[],maxBytes:number=product.mediaOutputBytes,maxSeconds:number=0):Policy{
+  return {description,inputs,outputs,maxBytes,maxSeconds,timeoutMs:product.mediaTimeoutMs};
 }
 const av=[...audio,...video];
 export const conversions:Record<Operation,Policy>={
-  download:policy([...images,...av],['png','mp3','mp4'],product.mediaOutputBytes,product.mediaDurationSeconds),
-  mp3:policy(av,['mp3'],product.mediaOutputBytes,product.mediaDurationSeconds),
-  ogg:policy(av,['ogg'],product.mediaOutputBytes,product.mediaDurationSeconds),
-  wav:policy(av,['wav'],product.mediaOutputBytes,product.mediaDurationSeconds),
-  bass:policy(av,['mp3'],product.mediaOutputBytes,product.mediaDurationSeconds),
-  fast:policy(av,['mp3'],product.mediaOutputBytes,product.mediaDurationSeconds),
-  slow:policy(av,['mp3'],product.mediaOutputBytes,product.mediaDurationSeconds),
-  transcribe:policy(av,['txt'],product.mediaOutputBytes,product.mediaDurationSeconds),
-  mp4:policy(video,['mp4'],product.mediaVideoBytes,product.mediaVideoSeconds),
-  png:policy(images,['png'],product.mediaImageBytes),jpeg:policy(images,['jpg'],product.mediaImageBytes),
-  webp:policy(images,['webp'],product.mediaImageBytes),sticker:policy(images,['webp'],product.mediaStickerBytes),
-  animated_sticker:policy([...video,'gif'],['webp'],product.mediaAnimatedStickerBytes,product.mediaStickerSeconds),
-  qr_create:policy([],['png'],product.mediaImageBytes),qr_read:policy(images,['txt']),
-  speak:policy([],['ogg'],product.mediaOutputBytes,product.mediaDurationSeconds),
-  read:policy(['pdf','txt'],['txt']),office_pdf:policy(['docx','xlsx','pptx'],['pdf']),ocr:policy([...images,'pdf'],['txt']),
-  pdf_compress:policy(['pdf'],['pdf']),pdf_crop:policy(['pdf'],['pdf']),pdf_merge:policy(['pdf'],['pdf']),
-  pdf_images:policy(['pdf'],['png']),images_pdf:policy(images,['pdf']),
+  download:policy('Descargar URL multimedia directa',[...images,...av],['png','mp3','mp4'],product.mediaOutputBytes,product.mediaDurationSeconds),
+  mp3:policy('Extraer/convertir audio MP3',av,['mp3'],product.mediaOutputBytes,product.mediaDurationSeconds),
+  ogg:policy('Convertir audio OGG',av,['ogg'],product.mediaOutputBytes,product.mediaDurationSeconds),
+  wav:policy('Convertir audio WAV',av,['wav'],product.mediaOutputBytes,product.mediaDurationSeconds),
+  bass:policy('Aumentar graves del audio',av,['mp3'],product.mediaOutputBytes,product.mediaDurationSeconds),
+  fast:policy('Acelerar audio',av,['mp3'],product.mediaOutputBytes,product.mediaDurationSeconds),
+  slow:policy('Ralentizar audio',av,['mp3'],product.mediaOutputBytes,product.mediaDurationSeconds),
+  transcribe:policy('Transcribir voz/audio a texto',av,['txt'],product.mediaOutputBytes,product.mediaDurationSeconds),
+  mp4:policy('Convertir video MP4',video,['mp4'],product.mediaVideoBytes,product.mediaVideoSeconds),
+  png:policy('Convertir imagen PNG',images,['png'],product.mediaImageBytes),jpeg:policy('Convertir imagen JPEG',images,['jpg'],product.mediaImageBytes),
+  webp:policy('Convertir imagen WebP',images,['webp'],product.mediaImageBytes),sticker:policy('Crear sticker estático WhatsApp',images,['webp'],product.mediaStickerBytes),
+  animated_sticker:policy('Crear sticker animado WhatsApp',[...video,'gif'],['webp'],product.mediaAnimatedStickerBytes,product.mediaStickerSeconds),
+  qr_create:policy('Crear código QR del texto',[],['png'],product.mediaImageBytes),qr_read:policy('Leer código QR de imagen',images,['txt']),
+  speak:policy('Leer texto en voz mexicana',[],['ogg'],product.mediaOutputBytes,product.mediaDurationSeconds),
+  read:policy('Leer texto de PDF o TXT',['pdf','txt'],['txt']),office_pdf:policy('Convertir Office a PDF',['docx','xlsx','pptx'],['pdf']),ocr:policy('Extraer texto con OCR',[...images,'pdf'],['txt']),
+  pdf_compress:policy('Comprimir PDF',['pdf'],['pdf']),pdf_crop:policy('Extraer rango de páginas PDF',['pdf'],['pdf']),pdf_merge:policy('Unir varios PDF',['pdf'],['pdf']),
+  pdf_images:policy('Exportar páginas PDF como imágenes',['pdf'],['png']),images_pdf:policy('Reunir imágenes en PDF',images,['pdf']),
 };

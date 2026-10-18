@@ -233,3 +233,15 @@ it.each(['vision','grounding'])('uses the same pool and payload for %s failover'
   expect(http).toHaveBeenCalledTimes(2);expect(http.mock.calls[0]?.[1]?.body).toBe(http.mock.calls[1]?.[1]?.body);
   expect((await db.query('SELECT purpose FROM llm_usage ORDER BY at')).rows).toEqual([{purpose:kind==='vision'?'vision':'web'},{purpose:kind==='vision'?'vision':'web'}]);
 });
+
+it('v1.1 validates native calls against the current schema names while legacy keeps AUTO and retries keep ANY',async()=>{
+  const http=vi.fn<typeof fetch>(async()=>success());
+  const tools=[{name:'core_load_capability',description:'Load domain',parametersJsonSchema:{type:'object',properties:{domain:{type:'string'}},required:['domain']}}];
+  const body=()=>JSON.parse(String(http.mock.lastCall?.[1]?.body)) as {toolConfig?:{functionCallingConfig:{mode:string;allowedFunctionNames?:string[]}}};
+  await new Gemini(db,config,'actor',{used:0},http).generate({...input,tools});
+  expect(body().toolConfig).toBeUndefined();
+  await new Gemini(db,config,'actor',{used:0},http).generate({...input,tools,validateFunctionCalls:true});
+  expect(body().toolConfig?.functionCallingConfig).toEqual({mode:'VALIDATED',allowedFunctionNames:['core_load_capability']});
+  await new Gemini(db,config,'actor',{used:0},http).generate({...input,tools,validateFunctionCalls:true,requireFunctionCall:true});
+  expect(body().toolConfig?.functionCallingConfig.mode).toBe('ANY');
+});

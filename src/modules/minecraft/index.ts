@@ -7,7 +7,7 @@ import { formatResponse } from './messages.js';
 const descriptions:Record<Action,string>={status:'Estado de Bedrock en redspi.',players:'Jugadores actuales de Bedrock.',resources:'Recursos del contenedor (owner).',worlds:'Mundos instalados (owner).',addons:'Inventario de addons (owner).',logs:'Logs recientes con límite (owner).','config-get':'Configuración permitida (owner).','config-set':'Cambiar propiedad permitida; requiere reinicio posterior (owner).',start:'Iniciar Bedrock (owner).',stop:'Detener Bedrock con confirmación (owner).',restart:'Reiniciar Bedrock con confirmación (owner).',backup:'Respaldo verificable de mundos (owner).',console:'Comando Minecraft de allowlist (owner).'};
 export const minecraftTools:Tool[]=Object.entries(schemas).map(([name,args])=>{
   const action=name as Action;
-  return defineTool({name:`minecraft.${action}`,module:'minecraft',
+  return defineTool({name:`minecraft.${action}`,capability:{produces:'estado/recibo de operación'},module:'minecraft',
     description:descriptions[action],examples:[`bot mc ${action}${action==='logs'?' 30':action==='console'?' time query daytime':action==='config-set'?' pvp false':''}`],
     args,permission:['status','players'].includes(action)?'minecraft.read':'infra.minecraft',
     risk:['stop','restart'].includes(action)?'destructive':writeAction(action)?'write':'read',

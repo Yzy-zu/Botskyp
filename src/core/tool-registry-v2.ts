@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { product } from '../../config/product.js';
 import type { PermissionKey } from './permissions.js';
-import type { ToolRegistry } from './tools.js';
+import type { ToolRegistry, CapabilityMetadata } from './tools.js';
 import type { Declaration } from './llm.js';
 import type { CapabilityDomain } from './capability-domain.js';
 import { modelArgsSchemas, type BusinessToolName } from './model-args.js';
@@ -25,13 +25,18 @@ export interface ToolMetadataV2 {
   readonly supportsImmediateExecution: boolean;
   readonly idempotencyStrategy: 'read_only' | 'execution_ledger' | 'durable_job' | 'confirmed_action';
   readonly scope: 'group' | 'private' | 'both';
+  readonly capability?: CapabilityMetadata;
+  readonly hiddenReason?: string;
 }
 
 export const alwaysOnBusinessTools = [
   'core.help', 'notes.create', 'reminders.create', 'memory.remember',
   'web.search', 'xp.balance', 'xp.daily',
 ] as const satisfies readonly BusinessToolName[];
-const internal = new Set<BusinessToolName>(['school.schedule_commit', 'bulk.confirm']);
+const internal: Partial<Record<BusinessToolName, string>> = {
+  'school.schedule_commit': 'Commit de preview autenticado; solo continuación de confirmación.',
+  'bulk.confirm': 'Confirmación vinculada a preview/hash; solo backend de SessionV2.',
+};
 const moduleDomains: Record<string, CapabilityDomain> = {
   core: 'core', notes: 'productivity', reminders: 'productivity', memory: 'productivity',
   web: 'web', xp: 'economy', polls: 'polls', school: 'school', games: 'games', media: 'media',
@@ -50,7 +55,7 @@ export const backendOnlyFields = [
 const descriptions: Partial<Record<BusinessToolName, string>> = {
   'notes.create': 'Crear una nota compartida del chat por petición explícita de nota. Conserva literal el contenido solicitado; no lo estilices. Guardar memoria personal corresponde a memory.remember.',
   'notes.list': 'Consultar notas del chat. Para listar todas omite query; úsalo solo si el usuario pidió buscar un tema concreto, nunca la palabra genérica notas.',
-  'media.process': 'Crear o procesar archivos. Para crear un código QR llama esta función con operation=qr_create y text con el contenido exacto, sin artifactRef. Para leer QR usa qr_read y el archivo. Para sticker usa sticker. No presentes archivos como creados antes del resultado del worker.',
+  'media.process': 'Crear o procesar archivos SOLO si una operación del schema produce exactamente la salida solicitada. Si el formato o conversión pedido no existe, explica la limitación SIN ejecutar una lectura/extracción u otra conversión alternativa; solo puedes ofrecerla. Para crear un código QR llama esta función con operation=qr_create y text con el contenido exacto, sin artifactRef. Para leer QR usa qr_read y el archivo. Para sticker usa sticker. No presentes archivos como creados antes del resultado del worker.',
   'media.collect': 'Reunir fotos en un PDF (images_pdf) o unir varios PDF (pdf_merge). action=start inicia o conserva la colección. Si hay una colección abierta y el usuario dice con esas hazlo, ya están todas, listo o cualquier petición equivalente de finalizar, usa action=finish con la operación de activeSession.collection; nunca vuelvas a start para finalizar. Los archivos los resuelve el programa. No afirmes entrega antes del resultado del worker.',
   'notes.edit': 'Editar o corregir una nota existente del chat por su noteRef en REFERENCE_DATA.notes.',
   'memory.remember': 'Guardar memoria personal solo por petición explícita: guarda en tu memoria, acuérdate de que o recuerda que. Una petición de aviso a una hora futura corresponde a reminders.create. Nunca crear una nota compartida para esa petición.',
@@ -75,6 +80,13 @@ export function createToolRegistryV2(legacy: ToolRegistry): readonly ToolMetadat
   return Object.freeze(tools.map(tool => {
     if (!Object.hasOwn(modelArgsSchemas, tool.name)) throw new Error('Missing v2 tool metadata');
     const name = tool.name as BusinessToolName;
+    if (!internal[name] && (!tool.description.trim() || !tool.capability?.produces.trim())) throw new Error(`Missing public capability metadata: ${name}`);
+    const schema = z.toJSONSchema(modelArgsSchemas[name]);
+    const capability = tool.capability ? Object.freeze({
+      ...tool.capability,
+      summary: tool.capability.summary ?? tool.description,
+      accepts: tool.capability.accepts ?? (Object.keys(schema.properties ?? {}).join(',') || 'sin entrada'),
+    }) : undefined;
     const domain = name.startsWith('control.') || name.startsWith('diag.') ? 'admin' : moduleDomains[tool.module];
     if (!domain) throw new Error('Missing capability domain');
     const risk: ToolRisk = tool.risk === 'destructive' ? 'DESTRUCTIVE'
@@ -85,8 +97,9 @@ export function createToolRegistryV2(legacy: ToolRegistry): readonly ToolMetadat
     const isJob = jobs.has(name) || (domain === 'minecraft' && tool.risk !== 'read');
     return Object.freeze({
       name, domain, descriptionForModel: descriptions[name] ?? tool.description,
-      risk, llmVisible: !internal.has(name),
-      exposure: internal.has(name) ? 'internal' : (alwaysOnBusinessTools as readonly string[]).includes(name) ? 'always' : `dynamic:${domain}`,
+      risk, llmVisible: !internal[name],
+      exposure: internal[name] ? 'internal' : (alwaysOnBusinessTools as readonly string[]).includes(name) ? 'always' : `dynamic:${domain}`,
+      ...(internal[name] ? { hiddenReason: internal[name] } : capability ? { capability } : {}),
       permission: tool.permission, requiredModule: tool.module, confirmationPolicy,
       modelArgsSchema: modelArgsSchemas[name], backendOnlyFields,
       presenter: confirmationPolicy === 'preview' ? 'preview' : isJob ? 'job_status' : 'canonical',

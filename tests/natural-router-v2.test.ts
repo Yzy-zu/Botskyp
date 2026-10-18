@@ -72,9 +72,9 @@ it('retries structured action intent once, then executes a real memory write',as
   const llm=scripted(say(JSON.stringify({outcome:'action_required',text:'Lo haré',effects:[]}),false),reply([{id:'memory-current',name:'memory_remember',args:{body:'estudio sistemas'}}]));
   expect((await turn('oye acuérdate de que estudio sistemas',llm)).text).toContain('guardé');
   expect(await count('user_memories')).toBe(1);
-  expect(JSON.stringify(llm.generate.mock.calls[1]?.[0])).toContain('El usuario pidió una acción.');
+  expect(JSON.stringify(llm.generate.mock.calls[1]?.[0])).toContain('Revisa la intención y la salida solicitada');
   expect(llm.generate.mock.calls[0]?.[0].requireFunctionCall).toBeUndefined();
-  expect(llm.generate.mock.calls[1]?.[0].requireFunctionCall).toBe(true);
+  expect(llm.generate.mock.calls[1]?.[0].requireFunctionCall).toBeUndefined();
 });
 it.each(['hola','cuánto es 2+2','explícame la gravedad','qué opinas de esto'])('allows ordinary conversation without tools: %s',async text=>{
   const llm=scripted(say('Aquí tienes una respuesta útil.'));
@@ -412,7 +412,9 @@ it('two different votes in a message cannot report a vote the historical dedupe 
 });
 it('two task creations cannot claim the first source-bound task as a second one',async()=>{
   await db.query("INSERT INTO school_subjects(chat_id,name) VALUES($1,'Matemáticas')",[chat]);
-  const output=await turn('anota dos tareas de Matemáticas',scripted(reply([{id:'task-one',name:'school_task_create',args:{subject:'Matemáticas',title:'primera tarea'}},{id:'task-two',name:'school_task_create',args:{subject:'Matemáticas',title:'segunda tarea'}}])));
+  const tasks=reply([{id:'task-one',name:'school_task_create',args:{subject:'Matemáticas',title:'primera tarea'}},{id:'task-two',name:'school_task_create',args:{subject:'Matemáticas',title:'segunda tarea'}}]);
+  // The complete manifest may require loading a schema after request-budget rotation.
+  const output=await turn('anota dos tareas de Matemáticas',scripted(input=>input.tools.some(t=>t.name==='school_task_create')?tasks:reply([{name:'core_load_capability',args:{domain:'school'}}]),tasks));
   expect(output.text).toContain('una acción de ese tipo');
   expect((await db.query('SELECT title FROM school_tasks')).rows).toEqual([{title:'primera tarea'}]);
   expect((await db.query('SELECT status FROM tool_executions WHERE turn_id=$1 ORDER BY created_at',[output.turnId])).rows).toEqual([{status:'ok'},{status:'denied'}]);

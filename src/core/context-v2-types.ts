@@ -40,6 +40,14 @@ export type SafeConversationSnapshotV2 = {
 };
 export type ContextEnvelopeV2 = {
   SYSTEM_RULES: readonly string[];
+  CAPABILITY_MANIFEST?: string;
+  ARTIFACT_STATE?: {
+    CURRENT: SafeArtifactV2[];
+    REPLIED: SafeArtifactV2 | null;
+    RECENT: SafeArtifactV2[];
+    A_LAST: SafeArtifactV2 | null;
+    UNRETAINED_CURRENT?: { kind: string; mime?: string; status: 'SOURCE_NOT_RETAINED' }[];
+  };
   REFERENCE_DATA: SafeConversationSnapshotV2;
   CURRENT_USER_TURN: CurrentUserTurnV2;
 };

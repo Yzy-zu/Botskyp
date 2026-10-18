@@ -1496,3 +1496,27 @@ La revisión de recibos del smoke exige distinguir fallo de ejecución y efecto 
   6. **Confirmaciones y cancelaciones como meta-tools estructuradas:** Se exponen `core.session_confirm` y `core.session_cancel` al modelo cuando hay una sesión activa, sin argumentos de identidad ni IDs de sesión. Su invocación se coordina en el backend mediante revalidación estricta de Policy R3 (`callOrigin: 'session'`) garantizando idempotencia, linaje y TTL.
   7. **SemanticTime:** Gemini produce `SemanticTimeInput` estructurado (incluyendo `kind: 'clock'` cuando solo hay hora sin fecha, o cuando la hora 1..12 es ambigua sin meridiano). El backend valida schemas Zod, resuelve fechas con zona horaria (`America/Mexico_City`) y evalúa políticas sin reanalizar el texto raw mediante regexes lingüísticos.
 - **Evidencia:** 6 escenarios ejecutados satisfactoriamente contra la API real de Gemini (`gemini-3.5-flash-lite`): prompt deforme sin fecha (`botsky guarda un rekor para las 8piem y di q estoy tontiks`), continuación con homófono fonético (`para joi komo alas ocho piem`), corrección de slot (`nel mejor el viernes como a las nueve`), escape de intención con saldo XP, confirmación natural (`si botsky`) y cancelación natural (`nel ya estuvo`). Suite completa de 289 pruebas unitarias y de integración pasando en verde.
+
+### DEC-068: Capability Manifest completo generado del Registry (18-10-2026)
+
+Autorizado WS-CAPABILITY-MANIFEST desde f8d6a7e en feat/v1.1-natural-router: solo
+conocimiento completo, artifacts y exposición; sin herramientas/backends nuevos ni
+merge. Metadata compacta junto a las definiciones de tools, copiada al catálogo v2;
+operaciones media desde la matriz de conversiones y elecciones finitas desde los
+contratos model-safe existentes. Cobertura obligatoria 96/96, missing=0; dos
+mecanismos internos con motivo explícito. No catálogo manual paralelo en el prompt.
+
+Availability informativa deriva de adapters Policy, configuración, módulos, scope,
+permisos y flags reales. No equivale a éxito de ejecución. Manifest y Artifact State
+se preservan junto a activeSession/CURRENT_USER_TURN dentro de 16k; límite REST 32k
+sin aumento. Se ajustan schemas al espacio restante y load_capability rota dominios
+ajenos, manteniendo máximo 20 y una expansión. No se duplica manifest tras expansión.
+
+La evaluación real descubrió intentos de invocar capacidades sin schema y formatos
+inventados. Modo oficial Gemini VALIDATED con nombres expuestos exclusivamente en
+v1.1; ANY solo conserva el retry previo de consultas read-only disponibles. El
+retry general permite unavailable sin tool: un outcome action_required incorrecto
+no debe forzar una conversión alternativa después de explicar una limitación.
+Sin aliases nuevos, cambios de permisos, efectos desde texto ni NLU en SessionV2.
+Canary autorizado solo Lab; resto v1. Evidencia y límites en
+[WS-CAPABILITY-MANIFEST](v1.1/WS-CAPABILITY-MANIFEST.md). Detenerse tras entrega.

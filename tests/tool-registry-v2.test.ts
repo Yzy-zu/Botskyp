@@ -20,7 +20,7 @@ it('keeps the complete 98/96/2 business inventory and one separate meta-tool', (
   expect(loadCapabilityMetaTool).not.toHaveProperty('permission');
   expect(loadCapabilityMetaTool).not.toHaveProperty('run');
   for (const tool of catalog) {
-    expect(Object.keys(tool).sort()).toEqual(['name','domain','descriptionForModel','risk','llmVisible','exposure','permission','requiredModule','confirmationPolicy','modelArgsSchema','backendOnlyFields','presenter','requiresResultBeforeReply','supportsImmediateExecution','idempotencyStrategy','scope'].sort());
+    expect(Object.keys(tool).sort()).toEqual(['name','domain','descriptionForModel','risk','llmVisible','exposure','permission','requiredModule','confirmationPolicy','modelArgsSchema','backendOnlyFields','presenter','requiresResultBeforeReply','supportsImmediateExecution','idempotencyStrategy','scope',...(tool.llmVisible?['capability']:['hiddenReason'])].sort());
     expect(capabilityDomains).toContain(tool.domain);
     expect(['READ','USER_WRITE','ECONOMIC','EXTERNAL','PRIVILEGED','DESTRUCTIVE']).toContain(tool.risk);
     expect(tool.requiresResultBeforeReply).toBe(true);

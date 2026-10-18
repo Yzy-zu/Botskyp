@@ -10,7 +10,7 @@ export async function schoolAccess(ctx:ToolCtx,manage=false):Promise<boolean>{
   return Boolean(r.rows[0] && (!manage || (r.rows[0].is_admin && ctx.actor.role==='group_admin')));
 }
 export function schoolTool<A extends z.ZodType>(tool:Omit<Tool<A>,'module'|'scope'>):Tool{
-  return defineTool({...tool,module:'school',scope:'group',async run(ctx,args){
+  return defineTool({capability:{produces:'datos/preview escolar'},...tool,module:'school',scope:'group',async run(ctx,args){
     if(!await schoolAccess(ctx,tool.permission==='school.manage'))return fail('No.');
     return tool.run(ctx,args);
   }});

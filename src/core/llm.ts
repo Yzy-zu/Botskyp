@@ -8,7 +8,7 @@ import { GeminiAttemptError, geminiKeyPool, retryAfterMs } from './gemini-key-po
 export { LlmUnavailable } from './quota.js';
 export type Image={mimeType:string;data:string};
 export type Declaration={name:string;description:string;parametersJsonSchema:Record<string,unknown>};
-export type LlmInput={turnId?:string;system:string;contents:unknown[];tools:Declaration[];images?:Image[];responseJsonSchema?:Record<string,unknown>;requireFunctionCall?:boolean};
+export type LlmInput={turnId?:string;system:string;contents:unknown[];tools:Declaration[];images?:Image[];responseJsonSchema?:Record<string,unknown>;requireFunctionCall?:boolean;validateFunctionCalls?:boolean};
 export type LlmReply={text:string;calls:GeminiFunctionCall[];content:unknown;providerContext?:ProviderToolContext;usage?:{inputTokens:number;outputTokens:number}};
 export type CallBudget={used:number};
 export interface Llm { readonly counters?:Readonly<{calls:number;inputTokens:number;outputTokens:number}>;generate(input:LlmInput):Promise<LlmReply> }
@@ -58,7 +58,7 @@ export class Gemini implements Llm {
           body:JSON.stringify({systemInstruction:{parts:[{text:input.system}]},contents:input.contents,
             safetySettings,
             generationConfig:{maxOutputTokens:product.llmMaxOutputTokens,...(input.responseJsonSchema?{responseMimeType:'application/json',responseJsonSchema:input.responseJsonSchema}:{})},
-            ...(input.requireFunctionCall && input.tools.length && !search?{toolConfig:{functionCallingConfig:{mode:'ANY'}}}:{}),
+            ...((input.requireFunctionCall || input.validateFunctionCalls) && input.tools.length && !search?{toolConfig:{functionCallingConfig:{mode:input.requireFunctionCall?'ANY':'VALIDATED',...(input.validateFunctionCalls?{allowedFunctionNames:input.tools.map(tool=>tool.name)}:{})}}}:{}),
             ...(search?{tools:[{google_search:{}}]}:input.tools.length?{tools:[{functionDeclarations:input.tools}]}:{}),
           }),signal,redirect:'error',
         });

@@ -18,9 +18,10 @@ import { executionTransaction } from './execution-transaction-v2.js';
 import type { ToolResult } from './tool-result.js';
 import { localPresenterV2, visibleToolResultV2, conversationTextV2, conversationalOutcomeV2 } from './composer-v2.js';
 import { capabilityTruthTargets, shouldRetryCapabilityTruth } from './capability-truth-v2.js';
+import { currentFunctionProtocolV2 } from './capability-manifest-v2.js';
 
 export type RouterMetricsV2={callsPerTurn:number;inputTokens:number;outputTokens:number;toolCount:number;capabilityExpansion:number;synthesisUsed:boolean;mutationRetry:number;routerLatency:number;backendFieldAttempts:number;capability_truth_retry?:boolean};
-const retryInstruction='El usuario pidió una acción. Selecciona una tool disponible o explica por qué no puede realizarse. No afirmes que ocurrió sin tool.';
+const retryInstruction='Revisa la intención y la salida solicitada contra CAPABILITY_MANIFEST y los schemas. Si existe una operación compatible, usa la función nativa o carga su dominio primero. Si no existe o está indisponible, responde outcome=unavailable con la limitación real, sin tools ni alternativas ejecutadas. No simules llamadas en effects ni afirmes efectos sin tool.';
 const log=pino({level:'info'});
 const synthesisSchema=z.toJSONSchema(conversationalOutcomeV2);
 delete synthesisSchema.$schema;
@@ -42,11 +43,22 @@ export async function naturalToolLoopV2(ctx:ToolCtx,llm:Llm,catalog:readonly Too
   const results:ToolResult[]=[];
   const providerCallIds=new Set<string>();
   let stopped=false;
+  let forceNextCall=false;
   const local=()=>results.map(localPresenterV2).filter(Boolean).join('\n\n');
   async function generate(synthesis=false):Promise<LlmReply>{
     if(metrics.callsPerTurn>=product.llmMaxCalls)throw new LlmUnavailable('local_limit','message');
     metrics.callsPerTurn++;
-    const reply=await llm.generate({...(ctx.turnId?{turnId:ctx.turnId}:{}),...(synthesis?{responseJsonSchema:synthesisSchema}:metrics.mutationRetry || metrics.capability_truth_retry?{requireFunctionCall:true}:{}),system:system+(synthesis?'\nEsta vuelta solo sintetiza los resultados visibles. Contesta la pregunta con fuentes disponibles. No solicites acciones nuevas. Usa el mismo JSON de outcome sin effects.':''),contents:structuredClone(contents),tools:synthesis?[]:[...exposure.exposure.schemas]});
+    const protocol=synthesis?'':`\n${currentFunctionProtocolV2(exposure.exposure.schemas.map(t=>t.name))}`;
+    const request={...(ctx.turnId?{turnId:ctx.turnId}:{}),...(synthesis?{responseJsonSchema:synthesisSchema}:{validateFunctionCalls:true,...(forceNextCall?{requireFunctionCall:true}:{})}),system:system+(synthesis?'\nEsta vuelta solo sintetiza los resultados visibles. Contesta la pregunta con fuentes disponibles. No solicites acciones nuevas. Usa el mismo JSON de outcome sin effects.':protocol),contents:structuredClone(contents),tools:synthesis?[]:[...exposure.exposure.schemas]};
+    forceNextCall=false;
+    if(!synthesis){
+      // Same accounting as the REST adapter: binary data is not prompt text.
+      const overhead=JSON.stringify({...request,tools:[]},(key,value:unknown)=>key==='data'?'[image]':value).length-2;
+      exposure.fitSchemaBudget(product.llmMaxRequestChars-overhead);
+      request.tools=[...exposure.exposure.schemas];
+      request.system=system+`\n${currentFunctionProtocolV2(request.tools.map(t=>t.name))}`;
+    }
+    const reply=await llm.generate(request);
     metrics.inputTokens+=reply.usage?.inputTokens ?? 0;metrics.outputTokens+=reply.usage?.outputTokens ?? 0;
     return reply;
   }
@@ -64,6 +76,7 @@ export async function naturalToolLoopV2(ctx:ToolCtx,llm:Llm,catalog:readonly Too
         const outcome=conversationTextV2(text);
         if(!metrics.capability_truth_retry && !metrics.mutationRetry && metrics.callsPerTurn<product.llmMaxCalls && shouldRetryCapabilityTruth(ctx.msg.text,text,exposure.exposure)){
           metrics.capability_truth_retry=true;
+          forceNextCall=true;
           contents.push({role:'user',parts:[{text:`The requested capability is available in Botsky: ${capabilityTruthTargets(ctx.msg.text,exposure.exposure).join(', ')}. Use an available tool for it, or explain the real backend/tool error. Do not invent missing access/configuration. Fulfill the requested utility before humor.`}]});continue;
         }
         if(outcome.retry && !metrics.capability_truth_retry && metrics.mutationRetry<product.maxMutationRetriesPerTurn && metrics.callsPerTurn<product.llmMaxCalls){
@@ -93,7 +106,12 @@ export async function naturalToolLoopV2(ctx:ToolCtx,llm:Llm,catalog:readonly Too
             updated.safeRefMap.include(context.safeRefMap);context=updated;
           }
           if(expansion.status!=='ok')results.push({toolName:'core.load_capability',domain:'core',status:'denied',code:'DENIED_CAPABILITY_EXPANSION',data:{}});
-          responses.push(geminiFunctionResult(call,{status:expansion.status,message:expansion.status==='ok'?'Capacidad disponible para continuar.':'No puedo ampliar esa capacidad en este turno.',...(expansion.status==='ok'?{context:JSON.parse(serializeContextV2(context)) as unknown}:{})}));
+          const delta=JSON.parse(serializeContextV2(context)) as Record<string,unknown>;
+          // The complete manifest is already in the first turn message. Do not duplicate it on expansion.
+          delete delta.CAPABILITY_MANIFEST;
+          delete delta.CURRENT_USER_TURN;
+          delete delta.SYSTEM_RULES;
+          responses.push(geminiFunctionResult(call,{status:expansion.status,message:expansion.status==='ok'?'Schemas cargados. Comprueba que la operación produce la salida pedida; si no existe, explica la limitación sin ejecutar alternativas.':'No puedo ampliar esa capacidad en este turno.',...(expansion.status==='ok'?{context:delta}:{})}));
           continue;
         }
         if(call.name==='core_session_confirm' || call.name==='core.session_confirm'){

@@ -7,7 +7,7 @@ import { callMinecraft,type MinecraftClient } from './client.js';
 import { requestSchema,type Request } from './protocol.js';
 import { formatResponse } from './messages.js';
 type Operation={id:string;chat_id:string;actor_id:string;source_id:string;request:Request;status:string};
-export const minecraftOperationTool=defineTool({name:'minecraft.operations',module:'minecraft',permission:'infra.minecraft',scope:'group',modelCallable:false,risk:'read',description:'Últimas operaciones Minecraft y resultados inciertos (owner).',examples:['bot mc operaciones'],args:z.strictObject({}),async run(ctx){
+export const minecraftOperationTool=defineTool({name:'minecraft.operations',capability:{produces:'estado de operaciones'},module:'minecraft',permission:'infra.minecraft',scope:'group',modelCallable:false,risk:'read',description:'Últimas operaciones Minecraft y resultados inciertos (owner).',examples:['bot mc operaciones'],args:z.strictObject({}),async run(ctx){
   const rows=await ctx.c.query<Operation>('SELECT id,status,request FROM minecraft_operations ORDER BY created_at DESC LIMIT 10');
   return ok(rows.rows.map(r=>`${r.id}: ${r.request.action}, ${r.status}`).join('\n') || 'No hay operaciones Minecraft.');
 }});

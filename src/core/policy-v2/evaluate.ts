@@ -65,7 +65,7 @@ export async function evaluateToolPolicy(ctx: ExecutionContextV2, tool: ToolMeta
     if(tool.name==='school.destination' && !resolved.failure && args.destinationRef){
       args.destinationRef=String(args.destinationRef).startsWith('school:')?String(args.destinationRef).slice(7):(await ctx.legacy.c.query<{target_id:string}>('SELECT target_id FROM messaging_destinations WHERE id::text=$1',[args.destinationRef])).rows[0]?.target_id;
     }
-    if (resolved.failure) return decision(resolved.failure, resolved.failure === 'not_found' ? 'REF_NOT_FOUND' : 'REF_AMBIGUOUS');
+    if (resolved.failure) return decision(resolved.failure === 'incompatible' ? 'denied' : resolved.failure, resolved.failure === 'not_found' ? 'REF_NOT_FOUND' : resolved.failure === 'incompatible' ? 'REF_INCOMPATIBLE' : 'REF_AMBIGUOUS');
   }
   gates.push('ownership');
   // Stored refs were resolved by backend on turn A; validate every resource again without a model snapshot.

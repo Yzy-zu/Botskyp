@@ -12,6 +12,7 @@ export class GeminiAttemptError extends LlmUnavailable {
 export type GeminiKeyState={
   keyIndex:number;id:string;available:boolean;cooldownUntil:number;consecutive429:number;
   consecutiveErrors:number;lastUsedAt:number;requests:number;successes:number;rateLimited:number;failures:number;
+  lastFailureKind?:FailureKind;
 };
 type PoolOptions={maxConcurrent?:number;now?:()=>number;log?:(message:string)=>void};
 type Waiter={grant:()=>void;reject:()=>void};
@@ -121,11 +122,12 @@ export class GeminiKeyPool {
             key.available=false;
             this.#log(`${key.id} disabled: unauthorized`);
           }else if(error.status===429){
-            key.rateLimited++;key.consecutive429++;
+            key.rateLimited++;key.consecutive429++;key.lastFailureKind='quota';
             const backoff=Math.min(product.llmCooldownMs*2**Math.min(key.consecutive429-1,10),product.llmMaxCooldownMs);
             key.cooldownUntil=Math.max(key.cooldownUntil,this.#now()+(error.retryAfterMs ?? backoff));
             this.#log(`${key.id} cooldown: rate_limited`);
           }else if(error.kind==='timeout' || (error.kind==='provider' && (error.status===undefined || error.status>=500))){
+            key.lastFailureKind=error.kind==='timeout'?'timeout':'provider';
             const backoff=Math.min(product.llmBackoffMs*2**Math.min(key.consecutiveErrors-1,10),product.llmCooldownMs);
             key.cooldownUntil=Math.max(key.cooldownUntil,this.#now()+(error.retryAfterMs ?? backoff));
           }else{throw error;}
@@ -138,7 +140,8 @@ export class GeminiKeyPool {
       }
       this.#exhausted++;
       this.#log('Gemini key pool exhausted');
-      throw new LlmUnavailable(previousFailure?.kind ?? (this.#states.some(k=>k.available)?'quota':'provider'));
+      const fallbackKind = this.#states.find(k=>k.lastFailureKind)?.lastFailureKind ?? (this.#states.some(k=>k.available)?'quota':'provider');
+      throw new LlmUnavailable(previousFailure?.kind ?? fallbackKind);
     }finally{this.release();}
   }
 }

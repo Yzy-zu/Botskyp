@@ -39,9 +39,10 @@ export class Evolution implements Transport {
     try{
       const quote=delivery.sourceId?{quoted:{key:{id:delivery.sourceId,remoteJid:delivery.chatId}}}:{};
       const media=delivery.media;
-      const path=media?.kind==='sticker'?'sendSticker':media?'sendMedia':'sendText';
-      const body=media?.kind==='sticker'?{number:delivery.chatId,sticker:media.base64,...quote}:media?
-        {number:delivery.chatId,mediatype:media.kind,mimetype:media.mime,media:media.base64,caption:delivery.text,
+      const path=media?.kind==='sticker'?'sendSticker':media?.kind==='audio'?'sendWhatsAppAudio':media?'sendMedia':'sendText';
+      const body=media?.kind==='sticker'?{number:delivery.chatId,sticker:media.base64,...quote}:
+        media?.kind==='audio'?{number:delivery.chatId,audio:media.base64,...quote}:
+        media?{number:delivery.chatId,mediatype:media.kind,mimetype:media.mime,media:media.base64,caption:delivery.text,
           fileName:media.fileName ?? `adjunto-${delivery.id}.${media.mime==='application/pdf'?'pdf':media.mime.split('/')[1]}`,...quote}:
         {number:delivery.chatId,text:delivery.text,linkPreview:false,...quote};
       const response=z.object({key,status:z.string().optional()}).parse(await this.request(`/message/${path}/${this.config.INSTANCE}`,body));

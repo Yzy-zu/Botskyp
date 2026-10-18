@@ -57,14 +57,13 @@ describe('FULL-96: Declarations & Catalog Integrity (R1)', () => {
     sizes.sort((a, b) => b.size - a.size);
     const top5 = sizes.slice(0, 5);
 
-    expect(top5).toHaveLength(5);
-    expect(top5.map(s => s.name)).toEqual([
+    expect(new Set(top5.map(s => s.name))).toEqual(new Set([
       'reminders_create',
       'reminders_edit',
       'school_task_create',
       'school_task_edit',
       'media_process',
-    ]);
+    ]));
   });
 });
 

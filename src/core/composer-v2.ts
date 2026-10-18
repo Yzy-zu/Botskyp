@@ -25,6 +25,7 @@ export function localPresenterV2(result: ToolResult): string {
     if(code.startsWith('DENIED_CONFIRMATION'))return 'La confirmación venció o cambió la operación. Pídemela otra vez para revisarla.';
     if(code==='DENIED_POLL_CLOSED')return 'Esa encuesta ya está cerrada.';
     if(code.includes('NOT_FOUND'))return 'No encontré una operación activa para eso en este chat.';
+    if(code==='REF_INCOMPATIBLE')return 'Ese archivo no es compatible con la operación solicitada.';
     if(code.startsWith('INVALID'))return 'Me faltan datos válidos para hacerlo. No hice cambios.';
     return 'No pude completar esa solicitud. No hice cambios.';
   }
@@ -45,7 +46,7 @@ export function localPresenterV2(result: ToolResult): string {
   if(result.status==='error')return result.presentation || 'No pude completar esa operación. No confirmo ningún cambio.';
   if(result.status==='queued'){
     if(name==='media.process' || name==='media.collect')return '';
-    if(name.startsWith('minecraft.'))return 'Ya solicité la operación de Minecraft. Todavía no está confirmado el cambio.';
+    if(name.startsWith('minecraft.'))return 'Va, ejecutando la operación de Minecraft...';
     return 'La solicitud está en marcha. Te aviso cuando tenga el resultado.';
   }
   if(name==='xp.balance' || name==='xp.daily')return `${name==='xp.daily'?'Listo, cobraste tu premio diario. ':''}Tienes ${data.balance} XP. Nivel ${data.level}; racha de ${data.streak}.`;

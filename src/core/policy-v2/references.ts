@@ -35,7 +35,7 @@ export async function liveResource(ctx: ExecutionContextV2, kind: RefKind, id: s
 }
 export type ResolvedReferences = {
   args: Record<string, unknown>; refs: PolicyDecision['resolvedSafeRefs']; ownership: PolicyDecision['ownership'];
-  failure?: 'not_found' | 'needs_clarification';
+  failure?: 'not_found' | 'needs_clarification' | 'incompatible';
 };
 export async function resolveReferences(ctx: ExecutionContextV2, args: Record<string, unknown>, artifactOperation?: string, allowNewSubjects=false): Promise<ResolvedReferences> {
   const refs: { ref: string; kind: RefKind; id: string }[] = [], ownership: { kind: RefKind; id: string; ownerId: string | null; own: boolean }[] = [];
@@ -57,7 +57,7 @@ export async function resolveReferences(ctx: ExecutionContextV2, args: Record<st
     if (!kind && field !== 'subject') return value;
     if((field==='artifactRef' || field==='collectionArtifactRef') && artifactOperation){
       const selected=await resolveArtifactForOperation(artifactOperation as ArtifactOperation,{c:ctx.legacy.c,...ctx,...(field==='collectionArtifactRef'?{sourceMessageId:''}:ctx.legacy.msg.quoted?{quotedMessageId:ctx.legacy.msg.quoted.id}:{})},value);
-      if(selected.status!=='ok'){failure=selected.status==='not_found'?'not_found':'needs_clarification';return value;}
+      if(selected.status!=='ok'){failure=selected.status==='not_found'?'not_found':selected.status==='incompatible'?'incompatible':'needs_clarification';return value;}
       refs.push({ref:value,kind:'artifactRef',id:selected.artifact.id});
       ownership.push({kind:'artifactRef',id:selected.artifact.id,ownerId:ctx.actorId,own:true});
       return selected.artifact.id;

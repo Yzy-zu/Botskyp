@@ -34,9 +34,13 @@ function choices(tool: ToolMetadataV2, ctx: ManifestContext): string {
 }
 
 /** Always complete, including unavailable/disabled/restricted tools; registry metadata is the only catalog. */
-export function capabilityManifestV2(catalog: readonly ToolMetadataV2[], ctx: ManifestContext): string {
+export function capabilityManifestV2(catalog: readonly ToolMetadataV2[], ctx: ManifestContext, mode?: 'full_96' | 'dynamic'): string {
+  const isFull96 = (mode ?? ctx.config.TOOL_CALLING_MODE) === 'full_96';
+  const header = isFull96
+    ? 'Formato: capacidad: significado entrada→salida;estado. ∅=sin entrada; g=solo grupo. Policy revalida permisos/datos/resultados; disponibilidad no garantiza éxito externo.'
+    : 'Formato: capacidad: significado entrada→salida;estado. [dominio]: core.load_capability carga schemas faltantes. ∅=sin entrada; g=solo grupo. Policy revalida permisos/datos/resultados; disponibilidad no garantiza éxito externo.';
   const lines = [
-    'Formato: capacidad: significado entrada→salida;estado. [dominio]: core.load_capability carga schemas faltantes. ∅=sin entrada; g=solo grupo. Policy revalida permisos/datos/resultados; disponibilidad no garantiza éxito externo.',
+    header,
     'Estados: A=AVAILABLE; C=CONFIG_REQUIRED(falta configuración); U=ADAPTER_UNAVAILABLE(conexión pendiente); D=DISABLED(apagada); R=PERMISSION_RESTRICTED(rol/ámbito). No inventes operaciones o salidas ausentes.',
   ];
   for (const domain of capabilityDomains) {
@@ -62,8 +66,26 @@ export function capabilityManifestV2(catalog: readonly ToolMetadataV2[], ctx: Ma
   return lines.join('\n');
 }
 
-export function currentFunctionProtocolV2(names: readonly string[]): string {
+export function currentFunctionProtocolV2(names: readonly string[], mode: 'full_96' | 'dynamic' = 'dynamic'): string {
+  if (mode === 'full_96') {
+    return `NATIVE FUNCTION PROTOCOL: Only these exact function names are callable NOW: ${names.join(', ')}. The manifest is knowledge, not a function declaration. Use native functionCall parts, NEVER JSON effects or written-out calls. If no real operation produces the requested output, return unavailable with the understood intention and actual limitation. effects must always be [].`;
+  }
   return `NATIVE FUNCTION PROTOCOL: Only these exact function names are callable NOW: ${names.join(', ')}. The manifest is knowledge, not a function declaration. For an AVAILABLE capability without a declared function, call core_load_capability FIRST with its domain and exact toolName to keep the needed schema within budget. Use native functionCall parts, NEVER JSON effects or written-out calls. If no real operation produces the requested output, return unavailable with the understood intention and actual limitation. effects must always be [].`;
+}
+
+export function capabilityBehaviorV2ForMode(mode: 'full_96' | 'dynamic' = 'dynamic'): string {
+  if (mode === 'full_96') {
+    return `PRIORIDAD DE COMPORTAMIENTO:
+1. Comprende intención natural, typos, slang, contexto, ARTIFACT_STATE y activeSession conjuntamente con CURRENT_USER_TURN.
+2. CAPABILITY_MANIFEST es el inventario exhaustivo de capacidades, operaciones y salidas; NO es la lista de funciones invocables. Busca la intención compatible. Si la salida pedida no existe, responde unavailable; comprender un formato no implica poder producirlo.
+3. Invoca SOLO nombres exactos declarados en tools. Usa exclusivamente los argumentos/operaciones del schema de la herramienta invocada. No simules llamadas en effects ni inventes action/operation. No hay selección lexical en el backend.
+4. Si existe pero está indisponible, explica la causa real: U significa que ESA función aún no está conectada; C falta configuración; D está apagada; R falta permiso/ámbito. No declares indisponibles otras funciones del dominio ni inventes un fallo del proveedor. No pidas datos que no resuelven la limitación ni finjas haber ejecutado.
+5. Si no existe la operación o formato de salida, reconoce la intención inferida y explica que esa conversión/acción no está disponible. NUNCA ejecutes otra operación o formato como sustituto: una lectura/extracción no equivale a convertir al formato pedido. Ofrece una alternativa real como propuesta, sin tool ni efectos hasta que el usuario la pida.
+6. Aclara únicamente una ambigüedad material restante. Usa los archivos CURRENT o REPLIED y la sesión para completar datos; no preguntes qué archivo si ya está identificado.
+7. Aplica la personalidad después de resolver. NUNCA te burles de ortografía, typos, slang o mala escritura como sustituto de resolver; no corrijas su escritura. Si puedes inferir razonablemente la intención, ejecuta.
+ARTIFACT_STATE contiene referencias opacas operativas: CURRENT enumera TODOS los adjuntos disponibles, REPLIED el citado, RECENT archivos recientes sin instrucciones históricas. UNRETAINED_CURRENT enumera adjuntos recibidos sin fuente retenida: no inventes refs ni uses un archivo antiguo como sustituto; explica que necesitas recibirlos disponibles, cuando no se hayan podido retener. A_LAST identifica el último archivo propio retenido; RECENT/A_LAST solo llevan metadata, usa core_load_artifact_context si necesitas ver una imagen anterior; el backend valida compatibilidad, vigencia y propiedad. Para múltiples fuentes usa artifactRefs de CURRENT/RECENT; media_collect coordina una colección cuando haga falta reunir archivos. Si activeSession de aclaración ya define la operación y falta la fuente, CURRENT compatible completa ese dato: DEBES invocar pendingTool con la operación preservada y el archivo actual; no responder como charla ni pedir de nuevo la fuente. Solo aclara otros datos realmente faltantes. No inventes referencias ni arrastres intención de un archivo antiguo. No muestres códigos de disponibilidad ni identificadores técnicos al usuario.`;
+  }
+  return capabilityBehaviorV2;
 }
 
 export const capabilityBehaviorV2 = `PRIORIDAD DE COMPORTAMIENTO:

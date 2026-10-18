@@ -25,6 +25,8 @@ export interface ToolExposureInput {
   openCooperacha?: boolean;
   recentArtifactContext?: readonly ArtifactContext[];
   disableLexicalOptimization?: boolean;
+  toolCallingMode?: 'full_96' | 'dynamic';
+  mode?: 'full_96' | 'dynamic';
 }
 export interface ToolExposure {
   readonly toolNames: readonly string[];
@@ -80,12 +82,18 @@ export const sessionCancelMetaTool = Object.freeze({
   modelArgsSchema: emptySessionArgsSchema,
 });
 function metaDeclarations(input: ToolExposureInput): { names: string[]; declarations: Declaration[] } {
-  const loadSchema = z.toJSONSchema(loadCapabilityArgsSchema); delete loadSchema.$schema;
+  const isFull96 = (input.toolCallingMode ?? input.mode) === 'full_96';
   const emptySchema = z.toJSONSchema(emptySessionArgsSchema); delete emptySchema.$schema;
-  const names: string[] = [loadCapabilityMetaTool.name,loadArtifactContextMetaTool.name];
-  const declarations: Declaration[] = [{ name: 'core_load_capability', description: loadCapabilityMetaTool.descriptionForModel, parametersJsonSchema: loadSchema }];
-  const artifactSchema=z.toJSONSchema(loadArtifactContextSchema); delete artifactSchema.$schema;
-  declarations.push({name:'core_load_artifact_context',description:loadArtifactContextMetaTool.description,parametersJsonSchema:artifactSchema});
+  const artifactSchema = z.toJSONSchema(loadArtifactContextSchema); delete artifactSchema.$schema;
+  const names: string[] = [];
+  const declarations: Declaration[] = [];
+  if (!isFull96) {
+    const loadSchema = z.toJSONSchema(loadCapabilityArgsSchema); delete loadSchema.$schema;
+    names.push(loadCapabilityMetaTool.name);
+    declarations.push({ name: 'core_load_capability', description: loadCapabilityMetaTool.descriptionForModel, parametersJsonSchema: loadSchema });
+  }
+  names.push(loadArtifactContextMetaTool.name);
+  declarations.push({ name: 'core_load_artifact_context', description: loadArtifactContextMetaTool.description, parametersJsonSchema: artifactSchema });
   if (input.activeSession?.kind === 'confirm') {
     names.push(sessionConfirmMetaTool.name);
     declarations.push({ name: 'core_session_confirm', description: sessionConfirmMetaTool.descriptionForModel, parametersJsonSchema: emptySchema });
@@ -116,6 +124,11 @@ function baseTools(catalog: readonly ToolMetadataV2[], input: ToolExposureInput)
   return alwaysOnBusinessTools.flatMap(name => catalog.filter(tool => tool.name === name && eligible(tool, input)));
 }
 export function selectToolExposure(catalog: readonly ToolMetadataV2[], input: ToolExposureInput): ToolExposure {
+  const isFull96 = (input.toolCallingMode ?? input.mode) === 'full_96';
+  if (isFull96) {
+    const publicTools = catalog.filter(tool => tool.llmVisible && tool.exposure !== 'internal');
+    return snapshot(catalog, publicTools, capabilityDomains, input);
+  }
   const metaCount = metaDeclarations(input).names.length;
   const maxBusiness = MAX_TOOLS_PER_TURN - metaCount;
   const tools = baseTools(catalog, input).slice(0, maxBusiness);
@@ -167,6 +180,9 @@ export class ToolExposureTurn {
     }
   }
   loadCapability(args: unknown): CapabilityExpansion {
+    if ((this.input.toolCallingMode ?? this.input.mode) === 'full_96') {
+      return { status: 'not_relevant_or_allowed', exposure: this.current };
+    }
     const parsed = loadCapabilityArgsSchema.safeParse(args);
     if (!parsed.success) return { status: 'invalid_domain', exposure: this.current };
     if (this.expansions >= MAX_CAPABILITY_EXPANSIONS_PER_TURN) return { status: 'expansion_limit', exposure: this.current };

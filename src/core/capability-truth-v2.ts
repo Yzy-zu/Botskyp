@@ -3,7 +3,10 @@ import type { ToolMetadataV2 } from './tool-registry-v2.js';
 import type { ToolCtx } from './tools.js';
 import type { TurnContextV2 } from './context-v2.js';
 import { capabilityAvailability } from './capability-manifest-v2.js';
-export function capabilityContextV2(exposure: ToolExposure): string {
+export function capabilityContextV2(exposure: ToolExposure, mode: 'full_96' | 'dynamic' = 'dynamic'): string {
+  if (mode === 'full_96') {
+    return `Schemas cargados: todas las herramientas públicas disponibles. CAPABILITY_MANIFEST es el catálogo conceptual de capacidades. Cumple la utilidad antes del humor.`;
+  }
   return `Schemas cargados: ${exposure.selectedDomains.join(', ')}. CAPABILITY_MANIFEST es el catálogo completo; core_load_capability carga el dominio que falte. Cumple la utilidad antes del humor.`;
 }
 

@@ -40,7 +40,8 @@ export class Gemini implements Llm {
   private async requestImpl(input:LlmInput,search=false):Promise<z.infer<typeof responseSchema>>{
     if(!this.config.GEMINI_FREE_TIER_CONFIRMED)throw new LlmUnavailable('disabled');
     const textOnly=JSON.stringify({...input,contents:input.contents},(key,value:unknown)=>key==='data'?'[image]':value);
-    if(textOnly.length>product.llmMaxRequestChars)throw new LlmUnavailable('invalid');
+    const maxChars = this.config.TOOL_CALLING_MODE === 'full_96' ? product.llmMaxFullRequestChars : product.llmMaxRequestChars;
+    if(textOnly.length>maxChars)throw new LlmUnavailable('invalid');
     const model=search?product.llmLegacySearchModel:this.config.GEMINI_MODEL;
     // No paid grounding with Gemini 3.x; this route is exclusively for the legacy free allowance.
     if(this.budget.used>=product.llmMaxCalls)throw new LlmUnavailable('local_limit','message');

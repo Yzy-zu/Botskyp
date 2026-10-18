@@ -175,6 +175,7 @@ export const product = {
   llmImageReservedTokens: 16_384,
   llmTokenSafetyMargin: 512,
   llmMaxRequestChars: 32_000,
+  llmMaxFullRequestChars: 128_000,
   llmMaxOutputTokens: 2_048,
   llmMaxCalls: 3,
   llmTimeoutMs: 20_000,

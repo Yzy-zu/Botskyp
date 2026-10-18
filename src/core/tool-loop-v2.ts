@@ -55,14 +55,15 @@ export async function naturalToolLoopV2(ctx:ToolCtx,llm:Llm,catalog:readonly Too
   async function generate(synthesis=false):Promise<LlmReply>{
     if(metrics.callsPerTurn>=product.llmMaxCalls)throw new LlmUnavailable('local_limit','message');
     metrics.callsPerTurn++;
-    const protocol=synthesis?'':`\n${currentFunctionProtocolV2(exposure.exposure.schemas.map(t=>t.name))}`;
+    const protocol=synthesis?'':`\n${currentFunctionProtocolV2(exposure.exposure.schemas.map(t=>t.name), ctx.config.TOOL_CALLING_MODE)}`;
     const request={...(ctx.turnId?{turnId:ctx.turnId}:{}),...(synthesis?{responseJsonSchema:synthesisSchema}:{validateFunctionCalls:true}),system:system+(synthesis?'\nEsta vuelta solo sintetiza los resultados visibles. Si status=needs_clarification, formula una pregunta breve para missingSlots; no afirmes ninguna acción. Contesta la pregunta con fuentes disponibles. No solicites acciones nuevas. Usa el mismo JSON de outcome sin effects.':protocol),contents:structuredClone(contents),tools:synthesis?[]:[...exposure.exposure.schemas]};
     if(!synthesis){
       // Same accounting as the REST adapter: binary data is not prompt text.
+      const maxBudget = ctx.config.TOOL_CALLING_MODE === 'full_96' ? product.llmMaxFullRequestChars : product.llmMaxRequestChars;
       const overhead=JSON.stringify({...request,tools:[]},(key,value:unknown)=>key==='data'?'[image]':value).length-2;
-      exposure.fitSchemaBudget(product.llmMaxRequestChars-overhead);
+      exposure.fitSchemaBudget(maxBudget-overhead);
       request.tools=[...exposure.exposure.schemas];
-      request.system=system+`\n${currentFunctionProtocolV2(request.tools.map(t=>t.name))}`;
+      request.system=system+`\n${currentFunctionProtocolV2(request.tools.map(t=>t.name), ctx.config.TOOL_CALLING_MODE)}`;
     }
     const started=performance.now();
     if(!(llm instanceof Gemini))observer.emit(()=>({eventType:'LLM_REQUEST',stage:'gemini.logical',turnId:ctx.turnId!,payload:{ordinal:metrics.callsPerTurn,model:ctx.config.GEMINI_MODEL,synthesis,request}}));
@@ -107,6 +108,10 @@ export async function naturalToolLoopV2(ctx:ToolCtx,llm:Llm,catalog:readonly Too
         }
         metrics.backendFieldAttempts+=backendAttempts(call.args);
         if(call.name==='core_load_capability' || call.name==='core.load_capability'){
+          if(ctx.config.TOOL_CALLING_MODE==='full_96'){
+            const denied:ToolResult={toolName:'core.load_capability',domain:'core',status:'denied',code:'DENIED_TOOL_NOT_EXPOSED',data:{}};
+            results.push(denied);responses.push(geminiFunctionResult(call,visibleToolResultV2(denied)));continue;
+          }
           const before=exposure.exposure.schemas;
           const expansion=exposure.loadCapability(call.args);
           observer.emit(()=>({eventType:'CAPABILITY_LOAD',stage:'tool_loop',payload:{args:call.args,before,after:exposure.exposure.schemas,result:expansion}}));
@@ -155,7 +160,7 @@ export async function naturalToolLoopV2(ctx:ToolCtx,llm:Llm,catalog:readonly Too
         const exposed=tool && exposure.exposure.toolNames.includes(tool.name);
         if(!tool || !exposed){
           const policy=tool?await evaluateToolV2(ctx,tool.name,call.args ?? {},{callOrigin:'llm',safeRefMap:context.safeRefMap,...(call.id?{providerCallId:call.id}:{}),toolExposureCount:exposure.exposure.schemas.length}):undefined;
-          if(tool && policy && ['allow','needs_confirmation','needs_clarification'].includes(policy.status)){
+          if(ctx.config.TOOL_CALLING_MODE!=='full_96' && tool && policy && ['allow','needs_confirmation','needs_clarification'].includes(policy.status)){
             responses.push(geminiFunctionResult(call,{status:'schema_not_loaded',domain:tool.domain,next:'core_load_capability'}));
             expanded=true;continue;
           }

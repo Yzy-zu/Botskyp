@@ -521,3 +521,19 @@ activación de módulos o mensajería masiva de Lab. Main permanece en 0c1a19e.
 Manifest extraído de app con settings reales de Lab: 96 públicas representadas,
 missing=0, 9,898 caracteres. Pruebas/evidencia y límites:
 [WS-CAPABILITY-MANIFEST](v1.1/WS-CAPABILITY-MANIFEST.md). Detenerse tras cierre.
+
+
+### WS-AI-FIRST-PRODUCTION — 18-10-2026, 17:00 UTC
+
+Desplegado aba5cfe por scripts/deploy.sh, backup verificado
+`botsky-20261018T165820-1584174.dump`; migración 015 aplicada sin borrar filas.
+ROUTER_MODE=v1_1 global, sin ROUTER_V1_1_CHAT_IDS. Selector comprobado en app:
+Lab y privado owner elegible v1_1; solo existe un grupo habilitado, sin inscribir
+otros. Manifest 96/96, todos los adapters públicos conectados, dos internos.
+
+Messaging Lab vuelve a ON exclusivamente por su antiguo OFF de canary; resto de
+restricciones y Drive/biblioteca sin configurar se conservan. Health app/worker/DB/
+Evolution verde. Evolution API/PostgreSQL/Redis, PostgreSQL Botsky y SearXNG sin
+cambios de ID, imagen o StartedAt. Rollback privado inmediato preparado a 6b70610.
+Sin merge: main sigue en 0c1a19e. WhatsApp manual pendiente. Evidencia:
+[WS-AI-FIRST-PRODUCTION](v1.1/WS-AI-FIRST-PRODUCTION.md).

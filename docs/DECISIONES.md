@@ -1551,3 +1551,9 @@ La evaluación repetida detectó ambigüedad en la metadata de media.collect: st
 solo abre una sesión y finish genera su PDF. Se precisan esa salida del Registry
 y los argumentos de sesión/lista completa en los schemas. No cambia el handler
 ni se selecciona la operación desde TypeScript o palabras del usuario.
+
+Promoción cerrada a 17:00 UTC: aba5cfe desplegado, backup
+botsky-20261018T165820-1584174.dump, migración 015 y health verificados. Global v1_1
+sin allowlist, sin inscribir chats. Solo se revirtió messaging OFF por canary en Lab,
+con auditoría específica. Segundo grupo real no existe; WhatsApp manual pendiente.
+Rollback inmediato conserva imágenes/configuración de 6b70610. Sin merge a main.

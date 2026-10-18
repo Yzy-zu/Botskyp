@@ -113,8 +113,7 @@ imagen anterior; sin mensajes WhatsApp ni worker externo. Auditoría de secretos
 El ajuste final limita exposición estrictamente a always-on/meta/sesión/CURRENT y
 entidades abiertas. Los recordatorios pendientes se entregan como referencias
 personales acotadas cuando el módulo está habilitado, sin precargar sus schemas.
-Gemini carga el dominio al necesitarlos. Commits y evidencia de despliegue se
-registran al cerrar; la entrega física WhatsApp sigue pendiente.
+Gemini carga el dominio al necesitarlos. La entrega física WhatsApp sigue pendiente.
 
 Auditoría por ubicación de los usos conservados: [107 ubicaciones](AI-FIRST-RUNTIME-AUDIT.md).
 Los tests legacy fijan explícitamente ROUTER_MODE=v1 para verificar su contrato;
@@ -133,3 +132,32 @@ real pasó después de esta corrección genérica de contrato: 43/43 en la tanda
 final de tres archivos, incluida la prueba Gemini real con ambos escenarios.
 Typecheck, lint, build y auditoría de secretos volvieron a pasar. El proveedor
 puede equivocarse: la validación técnica no garantiza interpretación perfecta.
+
+## Despliegue verificado — 17:00 UTC
+
+Código desplegado **aba5cfe8ca9c250d0965af6fa806cbd0d4c1314c** mediante
+scripts/deploy.sh, después del commit de implementación 51f58dc. Backup del script
+verificado: `botsky-20261018T165820-1584174.dump`. Migración 015 aplicada.
+El commit posterior a este código solo cierra documentación; no se fusionó main.
+
+Comprobación dentro de app: default=v1_1, Lab=v1_1, privado owner elegible=v1_1,
+usesLegacyAllowlist=false; 96 públicas/96 callables/2 internas/0 sin adapter;
+Manifest 96/96. Solo un grupo está habilitado: Lab. La selección de un segundo
+grupo habilitado está cubierta por integración, pero la prueba en otro grupo
+productivo es imposible mientras no exista uno autorizado. No se inscribió ninguno.
+
+Se habilitó messaging en Lab: su único OFF era canary.messaging_disabled, sin
+control.modules posterior. Un evento ai_first.promote_modules registra el cambio.
+Drive y biblioteca Drive siguen sin configurar; OFF explícitos de producto se
+respetan. No hubo jobs activos, bulk_ops pendientes ni smoke de efectos masivos.
+
+Health HTTP 200: ok/database/evolution=true, transport=evolution. App y worker
+running/healthy. PostgreSQL propio, SearXNG, Evolution API, Evolution PostgreSQL y
+Redis conservan ID, imagen y StartedAt anteriores. Solo app/worker se reemplazaron.
+
+Rollback inmediato: ejecutar `.local/ai-first-rollback/rollback.sh` desde el repo.
+Restaura entorno y app/worker por IDs inmutables del despliegue anterior 6b70610;
+ambas imágenes están disponibles y la sintaxis del script fue verificada. Conserva
+la BD: la migración es compatible. El snapshot privado incluye settings anteriores
+por si se necesita revertir también la promoción del módulo. No se ejecutó rollback
+ni se probó ningún mensaje WhatsApp; manuales pendientes en el documento de pruebas.

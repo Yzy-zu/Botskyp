@@ -11,6 +11,11 @@
 7. Backup verificado y deploy oficial; router global solo para chats previamente habilitados/elegibles.
 8. Conservar rollback inmediato; sin merge, nuevas features ni smoke masivo/destructivo.
 
+Estado 17:00 UTC: código aba5cfe desplegado y global v1_1 verificado; health verde,
+96/96 públicas con adapter, multiajunto e invariantes en verde. Backup y rollback
+inmediato conservados. Solo Lab existe habilitado; otro grupo real y WhatsApp manual
+pendientes. Sin merge a main hasta uso real del dueño. Workstream detenido tras cierre.
+
 **Archivo:** `docs/ROADMAP.md`  
 **Versión:** 2.3  
 **Rol responsable:** Arquitecto / Revisor  

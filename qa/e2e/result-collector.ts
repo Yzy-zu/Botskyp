@@ -250,14 +250,6 @@ export async function collectTurnResult(
     }
 
     if (inboxStatus === 'done') {
-      const hasSuppressed = toolCalls.some(
-        t => t.executionStatus === 'qa_suppressed' || (t.result as { code?: string })?.code === 'QA_SUPPRESSED'
-      );
-      if (hasSuppressed) {
-        isTerminal = true;
-        break;
-      }
-
       const hasPendingJobs = jobs.some(j => j.status === 'queued' || j.status === 'running');
       const hasPendingOutbox = outbox.some(o => o.status === 'queued' || o.status === 'sending');
       const hasJobTools = toolCalls.some(t =>
@@ -382,6 +374,9 @@ export async function collectTurnResult(
   let status: QaStatus = 'PASS';
   let terminalState = 'TERMINAL_DELIVERED';
   let failureClass: string | null = null;
+  const isSuppressed = toolCalls.some(
+    t => t.executionStatus === 'qa_suppressed' || (t.result as { code?: string })?.code === 'QA_SUPPRESSED'
+  );
 
   const providerFail = classifyProviderFailure(finalText, errors);
   if (providerFail) {
@@ -397,18 +392,12 @@ export async function collectTurnResult(
     terminalState = 'TIMEOUT_INCOMPLETE';
     failureClass = 'TIMEOUT_DELIVERY';
     errors.push('Operation did not reach a terminal state within timeout');
-  } else if (
-    toolCalls.some(
-      t => t.executionStatus === 'qa_suppressed' || (t.result as { code?: string })?.code === 'QA_SUPPRESSED'
-    )
-  ) {
-    terminalState = 'QA_SUPPRESSED';
   } else if (jobs.length > 0) {
     const allJobsDone = jobs.every(j => j.status === 'done');
     const anyJobFailed = jobs.some(j => j.status === 'failed' || j.status === 'dead');
     const allOutboxSent = outbox.length > 0 && outbox.every(o => o.status === 'sent');
     if (allJobsDone && allOutboxSent) {
-      terminalState = 'DELIVERED';
+      terminalState = isSuppressed ? 'QA_SUPPRESSED' : 'DELIVERED';
     } else if (anyJobFailed) {
       status = 'FAIL';
       terminalState = 'JOB_FAILED';
@@ -424,7 +413,7 @@ export async function collectTurnResult(
     const allSent = outbox.every(o => o.status === 'sent');
     const anyFailed = outbox.some(o => o.status === 'failed' || o.status === 'dead');
     if (allSent) {
-      terminalState = 'OUTBOX_SENT';
+      terminalState = isSuppressed ? 'QA_SUPPRESSED' : 'OUTBOX_SENT';
     } else if (anyFailed) {
       status = 'FAIL';
       terminalState = 'OUTBOX_FAILED';
@@ -436,6 +425,8 @@ export async function collectTurnResult(
       failureClass = 'TERMINAL_NOT_REACHED';
       errors.push('Outbox message not sent');
     }
+  } else if (isSuppressed) {
+    terminalState = 'QA_SUPPRESSED';
   }
 
   // Assertions against expected criteria

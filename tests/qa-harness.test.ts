@@ -325,72 +325,80 @@ describe('QA E2E Harness Self-Tests', () => {
   });
 
   describe('9. QA Identity Isolation & Roles', () => {
-    it('authenticates QA_OWNER_JID as owner and QA_MEMBER_JID as member in LAB_CHAT_ID', async () => {
-      const { QA_OWNER_JID, QA_MEMBER_JID, actorFor } = await import('../src/core/permissions.js');
+    it('authenticates QA roles strictly in LAB_CHAT_ID and applies normal resolution elsewhere', async () => {
+      const { QA_OWNER_JID, QA_MEMBER_JID, actorFor, resolveQaRole } = await import('../src/core/permissions.js');
       const { readConfig } = await import('../src/config.js');
 
       const config = readConfig();
       const labChatId = config.LAB_CHAT_ID;
+      const otherGroup = '120363999999999999@g.us';
+
+      // Verify resolveQaRole helper directly
+      expect(resolveQaRole(QA_OWNER_JID, labChatId, labChatId)).toBe('owner');
+      expect(resolveQaRole(QA_MEMBER_JID, labChatId, labChatId)).toBe('member');
+      expect(resolveQaRole(QA_OWNER_JID, QA_OWNER_JID, labChatId)).toBeNull();
+      expect(resolveQaRole(QA_MEMBER_JID, QA_MEMBER_JID, labChatId)).toBeNull();
+      expect(resolveQaRole(QA_OWNER_JID, otherGroup, labChatId)).toBeNull();
+      expect(resolveQaRole(QA_MEMBER_JID, otherGroup, labChatId)).toBeNull();
 
       // Mock DB client that has no memberships
       const mockClient = {
         query: async () => ({ rows: [], rowCount: 0 }),
       } as unknown as Parameters<typeof actorFor>[0];
 
-      const ownerActor = await actorFor(
+      // A) QA_OWNER + LAB_CHAT_ID -> owner
+      const actorA = await actorFor(
         mockClient,
-        {
-          id: 'MSG_1',
-          chatId: labChatId,
-          senderId: QA_OWNER_JID,
-          isGroup: true,
-          ts: new Date(),
-          text: 'hola',
-          fromMe: false,
-          mentions: [],
-          attachments: [],
-        },
+        { id: 'M_A', chatId: labChatId, senderId: QA_OWNER_JID, isGroup: true, ts: new Date(), text: 'hi', fromMe: false, mentions: [], attachments: [] },
         config
       );
-      expect(ownerActor.role).toBe('owner');
-      expect(ownerActor.groupMember).toBe(true);
+      expect(actorA.role).toBe('owner');
+      expect(actorA.groupMember).toBe(true);
 
-      const memberActor = await actorFor(
+      // B) QA_MEMBER + LAB_CHAT_ID -> member
+      const actorB = await actorFor(
         mockClient,
-        {
-          id: 'MSG_2',
-          chatId: labChatId,
-          senderId: QA_MEMBER_JID,
-          isGroup: true,
-          ts: new Date(),
-          text: 'hola',
-          fromMe: false,
-          mentions: [],
-          attachments: [],
-        },
+        { id: 'M_B', chatId: labChatId, senderId: QA_MEMBER_JID, isGroup: true, ts: new Date(), text: 'hi', fromMe: false, mentions: [], attachments: [] },
         config
       );
-      expect(memberActor.role).toBe('member');
-      expect(memberActor.groupMember).toBe(true);
+      expect(actorB.role).toBe('member');
+      expect(actorB.groupMember).toBe(true);
 
-      // In non-lab chat, neither gets elevated role
-      const externalActor = await actorFor(
+      // C) QA_OWNER + private chat -> NO QA override (falls back to normal resolution)
+      const actorC = await actorFor(
         mockClient,
-        {
-          id: 'MSG_3',
-          chatId: '120363999999999999@g.us',
-          senderId: QA_OWNER_JID,
-          isGroup: true,
-          ts: new Date(),
-          text: 'hola',
-          fromMe: false,
-          mentions: [],
-          attachments: [],
-        },
+        { id: 'M_C', chatId: QA_OWNER_JID, senderId: QA_OWNER_JID, isGroup: false, ts: new Date(), text: 'hi', fromMe: false, mentions: [], attachments: [] },
         config
       );
-      expect(externalActor.role).toBe('member');
-      expect(externalActor.groupMember).toBe(false);
+      expect(actorC.role).toBe('member');
+      expect(actorC.groupMember).toBe(false);
+
+      // D) QA_MEMBER + private chat -> NO QA override
+      const actorD = await actorFor(
+        mockClient,
+        { id: 'M_D', chatId: QA_MEMBER_JID, senderId: QA_MEMBER_JID, isGroup: false, ts: new Date(), text: 'hi', fromMe: false, mentions: [], attachments: [] },
+        config
+      );
+      expect(actorD.role).toBe('member');
+      expect(actorD.groupMember).toBe(false);
+
+      // E) QA_OWNER + another group -> NO QA override
+      const actorE = await actorFor(
+        mockClient,
+        { id: 'M_E', chatId: otherGroup, senderId: QA_OWNER_JID, isGroup: true, ts: new Date(), text: 'hi', fromMe: false, mentions: [], attachments: [] },
+        config
+      );
+      expect(actorE.role).toBe('member');
+      expect(actorE.groupMember).toBe(false);
+
+      // F) QA_MEMBER + another group -> NO QA override
+      const actorF = await actorFor(
+        mockClient,
+        { id: 'M_F', chatId: otherGroup, senderId: QA_MEMBER_JID, isGroup: true, ts: new Date(), text: 'hi', fromMe: false, mentions: [], attachments: [] },
+        config
+      );
+      expect(actorF.role).toBe('member');
+      expect(actorF.groupMember).toBe(false);
     });
   });
 
@@ -401,6 +409,155 @@ describe('QA E2E Harness Self-Tests', () => {
 
       // Reset on real owner or normal user JID is a no-op / protected
       await expect(resetQaState(mockDb, '120363431233265050@g.us', '5214435810175@s.whatsapp.net')).resolves.toBeUndefined();
+    });
+  });
+
+  describe('11. Terminal Delivery with QA_SUPPRESSED', () => {
+    it('collector MUST NOT return PASS while outbox is sending, and PASS only after sent', async () => {
+      const { collectTurnResult } = await import('../qa/e2e/result-collector.js');
+
+      let outboxStatus = 'sending';
+      const mockDb = {
+        query: async (sql: string) => {
+          if (sql.includes('inbox')) {
+            return { rows: [{ status: 'done', turn_id: 'TURN_1' }] };
+          }
+          if (sql.includes('message_turns')) {
+            return { rows: [{ final_text: '[QA SAFE] Operación apaga minecraft interceptada' }] };
+          }
+          if (sql.includes('tool_executions')) {
+            return {
+              rows: [
+                {
+                  id: 'EXEC_1',
+                  tool_name: 'minecraft.stop',
+                  status: 'qa_suppressed',
+                  input_args: {},
+                  policy_decision: 'allow',
+                  policy_code: null,
+                  result_json: {
+                    status: 'qa_suppressed',
+                    code: 'QA_SUPPRESSED',
+                    data: { gateDecision: 'WOULD_EXECUTE' },
+                  },
+                },
+              ],
+            };
+          }
+          if (sql.includes('jobs')) {
+            return { rows: [] };
+          }
+          if (sql.includes('outbox')) {
+            return {
+              rows: [
+                {
+                  id: '176',
+                  kind: 'text',
+                  status: outboxStatus,
+                  payload: { text: '[QA SAFE] Operación interceptada', sourceId: 'PROV_SAFE_1' },
+                  created_at: new Date(),
+                  sent_at: outboxStatus === 'sent' ? new Date() : null,
+                },
+              ],
+            };
+          }
+          return { rows: [], rowCount: 0 };
+        },
+      } as unknown as Parameters<typeof collectTurnResult>[0];
+
+      // While outbox is 'sending', collector MUST NOT return PASS
+      const pendingRes = await collectTurnResult(
+        mockDb,
+        0,
+        'PROV_SAFE_1',
+        '120363431233265050@g.us',
+        '5210000000001@s.whatsapp.net',
+        'apaga minecraft',
+        200,
+        {},
+        undefined,
+        { timeoutMs: 300, pollIntervalMs: 50 }
+      );
+      expect(pendingRes.status).not.toBe('PASS');
+      expect(pendingRes.terminalState).toBe('TIMEOUT_INCOMPLETE');
+
+      // Now outbox transitions to 'sent'
+      outboxStatus = 'sent';
+      const sentRes = await collectTurnResult(
+        mockDb,
+        0,
+        'PROV_SAFE_1',
+        '120363431233265050@g.us',
+        '5210000000001@s.whatsapp.net',
+        'apaga minecraft',
+        200,
+        {},
+        undefined,
+        { timeoutMs: 500, pollIntervalMs: 50 }
+      );
+      expect(sentRes.status).toBe('PASS');
+      expect(sentRes.terminalState).toBe('QA_SUPPRESSED');
+    });
+
+    it('returns FAIL when outbox fails even if side effect is QA_SUPPRESSED', async () => {
+      const { collectTurnResult } = await import('../qa/e2e/result-collector.js');
+
+      const mockDb = {
+        query: async (sql: string) => {
+          if (sql.includes('inbox')) {
+            return { rows: [{ status: 'done', turn_id: 'TURN_1' }] };
+          }
+          if (sql.includes('message_turns')) {
+            return { rows: [{ final_text: '[QA SAFE] Intercepted' }] };
+          }
+          if (sql.includes('tool_executions')) {
+            return {
+              rows: [
+                {
+                  id: 'EXEC_1',
+                  tool_name: 'minecraft.stop',
+                  status: 'qa_suppressed',
+                  input_args: {},
+                  policy_decision: 'allow',
+                  policy_code: null,
+                  result_json: { status: 'qa_suppressed', code: 'QA_SUPPRESSED' },
+                },
+              ],
+            };
+          }
+          if (sql.includes('jobs')) return { rows: [] };
+          if (sql.includes('outbox')) {
+            return {
+              rows: [
+                {
+                  id: '177',
+                  kind: 'text',
+                  status: 'failed',
+                  payload: { text: '[QA SAFE] Fail', sourceId: 'PROV_FAIL_1' },
+                  created_at: new Date(),
+                  sent_at: null,
+                },
+              ],
+            };
+          }
+          return { rows: [], rowCount: 0 };
+        },
+      } as unknown as Parameters<typeof collectTurnResult>[0];
+
+      const failedRes = await collectTurnResult(
+        mockDb,
+        0,
+        'PROV_FAIL_1',
+        '120363431233265050@g.us',
+        '5210000000001@s.whatsapp.net',
+        'apaga minecraft',
+        200,
+        {},
+        undefined,
+        { timeoutMs: 500, pollIntervalMs: 50 }
+      );
+      expect(failedRes.status).toBe('FAIL');
+      expect(failedRes.terminalState).toBe('OUTBOX_FAILED');
     });
   });
 });

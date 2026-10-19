@@ -8,13 +8,19 @@ export type Chat = {id:string;isGroup:boolean;enabled:boolean;settings:{modules?
 export const QA_OWNER_JID = '5210000000001@s.whatsapp.net';
 export const QA_MEMBER_JID = '5210000000002@s.whatsapp.net';
 
+export function resolveQaRole(actorId: string, chatId: string, labChatId: string = process.env.LAB_CHAT_ID ?? '120363431233265050@g.us'): 'owner' | 'member' | null {
+  if (!labChatId || chatId !== labChatId) return null;
+  if (actorId === QA_OWNER_JID) return 'owner';
+  if (actorId === QA_MEMBER_JID) return 'member';
+  return null;
+}
+
 export async function actorFor(c:PoolClient,msg:Msg,config:Config):Promise<Actor>{
   const aliases=await c.query<{user_id:string}>("SELECT user_id FROM user_aliases WHERE alias=$1 AND evidence NOT LIKE 'conflict:%'",[msg.senderId]);
   const id=aliases.rows[0]?.user_id ?? msg.senderId;
-  const isQaContext = msg.chatId === config.LAB_CHAT_ID || msg.chatId === QA_OWNER_JID || msg.chatId === QA_MEMBER_JID;
-  if (isQaContext) {
-    if (id === QA_OWNER_JID) return { id, role: 'owner', groupMember: msg.isGroup };
-    if (id === QA_MEMBER_JID) return { id, role: 'member', groupMember: msg.isGroup };
+  const qaRole = resolveQaRole(id, msg.chatId, config.LAB_CHAT_ID);
+  if (qaRole !== null) {
+    return { id, role: qaRole, groupMember: msg.isGroup };
   }
   // Unresolved LIDs and conflicted aliases never acquire owner/admin privileges.
   if(!id.endsWith('@lid') && config.OWNER_JIDS.includes(id))return {id,role:'owner'};

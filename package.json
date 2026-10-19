@@ -22,7 +22,8 @@
     "observer:user": "bash scripts/observer.sh user",
     "observer:chat": "bash scripts/observer.sh chat",
     "observer:errors": "bash scripts/observer.sh errors",
-    "observer:health": "bash scripts/observer.sh health"
+    "observer:health": "bash scripts/observer.sh health",
+    "qa:e2e": "tsx qa/e2e/runner.ts"
   },
   "dependencies": {
     "fastify": "^5.12.7",

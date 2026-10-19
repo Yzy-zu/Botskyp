@@ -44,3 +44,7 @@ backups/
 __pycache__/
 
 .agents/
+
+# QA test reports
+qa/e2e/reports/*
+!qa/e2e/reports/.gitkeep

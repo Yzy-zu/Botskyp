@@ -59,10 +59,19 @@ export interface SetupReport {
 export async function validateGeminiKey(key: string, http: typeof fetch = fetch): Promise<boolean> {
   try {
     const res = await http(
+      'https://generativelanguage.googleapis.com/v1beta/models',
+      {
+        method: 'GET',
+        headers: { 'x-goog-api-key': key },
+        signal: AbortSignal.timeout(8000),
+      },
+    );
+    if (res.ok) return true;
+    const resQuery = await http(
       `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`,
       { method: 'GET', signal: AbortSignal.timeout(8000) },
     );
-    return res.ok;
+    return resQuery.ok;
   } catch {
     return false;
   }
@@ -115,7 +124,7 @@ export async function detectProvider(key: string, http: typeof fetch = fetch): P
   if (!trimmed) return 'invalid';
 
   // Fast path heuristic probes based on standard key prefixes
-  if (trimmed.startsWith('AIzaSy')) {
+  if (trimmed.startsWith('AIzaSy') || trimmed.startsWith('AQ.')) {
     if (await validateGeminiKey(trimmed, http)) return 'gemini';
     if (await validateGroqKey(trimmed, http)) return 'groq';
     if (await validateOpenRouterKey(trimmed, http)) return 'openrouter';
@@ -639,10 +648,13 @@ if (process.argv[1] && process.argv[1].endsWith('llm-setup.ts')) {
   async function main(): Promise<void> {
     const args = process.argv.slice(2);
     let rawKeys: string[] = [];
-
-    // Check for --keys argument
+    // Check for --keys-file argument
+    const keysFileArg = args.find(a => a.startsWith('--keys-file='));
     const keysArg = args.find(a => a.startsWith('--keys='));
-    if (keysArg) {
+    if (keysFileArg) {
+      const filePath = keysFileArg.slice('--keys-file='.length).trim();
+      rawKeys = readFileSync(filePath, 'utf8').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    } else if (keysArg) {
       rawKeys = keysArg.slice('--keys='.length).split(/[\n,]/).map(s => s.trim()).filter(Boolean);
     } else if (!process.stdin.isTTY) {
       // Read from stdin pipe

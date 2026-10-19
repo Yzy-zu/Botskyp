@@ -80,7 +80,7 @@ export async function claimVideoJob(db: Db): Promise<MediaJob | undefined> {
   return transaction(db, async c => {
     const job = (
       await c.query<MediaJob>(
-        "SELECT * FROM jobs WHERE kind='video_download' AND status='queued' AND run_after<=now() ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1"
+        "SELECT * FROM jobs WHERE kind IN ('video_download', 'video') AND status='queued' AND run_after<=now() ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1"
       )
     ).rows[0];
     if (job) {
@@ -96,7 +96,7 @@ export async function claimVideoJob(db: Db): Promise<MediaJob | undefined> {
 export async function recoverVideoJobs(db: Db, routing: Config | Config['ROUTER_MODE'] = 'v1'): Promise<void> {
   await transaction(db, async c => {
     const rows = (
-      await c.query<MediaJob>("SELECT * FROM jobs WHERE kind='video_download' AND status='running' FOR UPDATE")
+      await c.query<MediaJob>("SELECT * FROM jobs WHERE kind IN ('video_download', 'video') AND status='running' FOR UPDATE")
     ).rows;
     for (const job of rows) {
       observer.emit(() => ({

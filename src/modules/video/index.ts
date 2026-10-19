@@ -192,7 +192,7 @@ export const videoTools: Tool[] = [
       const row = (
         await ctx.c.query<{ id: string }>(
           `INSERT INTO jobs (kind, payload, chat_id, owner_id, source_message_id)
-           VALUES ('video', $1, $2, $3, $4)
+           VALUES ('video_download', $1, $2, $3, $4)
            RETURNING id`,
           [JSON.stringify(payload), ctx.chat.id, ctx.actor.id, ctx.msg.id]
         )

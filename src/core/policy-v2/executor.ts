@@ -12,9 +12,9 @@ import { randomUUID } from 'node:crypto';
 import pino from 'pino';
 import { executionTransaction } from '../execution-transaction-v2.js';
 import { createRegistry } from '../registry.js';
-import { createToolRegistryV2 } from '../tool-registry-v2.js';
+import { createToolRegistryV2, type ToolMetadataV2 } from '../tool-registry-v2.js';
 import { executionKey } from '../tool-execution.js';
-import type { ToolCtx } from '../tools.js';
+import type { ToolCtx, Tool } from '../tools.js';
 import type { ToolResult } from '../tool-result.js';
 import { argumentHash } from '../sessions.js';
 import { draft, confirm } from '../../modules/messaging/service.js';
@@ -37,6 +37,14 @@ function metadata(name: string) {
 }
 function result(name: string, domain: string, status: ToolResult['status'], code: string, data: unknown = {}): ToolResult {
   return { toolName: name, domain, status, code, data };
+}
+export function isDangerousOrDestructive(tool: ToolMetadataV2, legacy: Tool): boolean {
+  if (tool.risk === 'DESTRUCTIVE' || legacy.risk === 'destructive') return true;
+  if (tool.risk === 'PRIVILEGED') return true;
+  if (tool.domain === 'minecraft' && tool.risk !== 'READ') return true;
+  if (tool.domain === 'moderation' && tool.risk !== 'READ') return true;
+  if (tool.name.startsWith('bulk.') || tool.name === 'messaging.send') return true;
+  return false;
 }
 export function policyDecisionDebug(ctx: Pick<ExecutionContextV2, 'callOrigin'>, name: string, domain: string, d: PolicyDecision, count: number) {
   return { selectedTool: name, domain, policyDecision: d.status, denialCode: d.denialCode,
@@ -124,12 +132,14 @@ export async function executeToolV2(ctx: ToolCtx, name: string, modelArgs: unkno
     const risk = entry.legacy.risk;
     const claim = result(name, entry.tool.domain, 'uncertain', 'EXECUTION_IN_PROGRESS');
     await c.query(`INSERT INTO tool_executions(id,turn_id,call_origin,provider_call_id,execution_key,source_message_id,
-      chat_id,actor_id,tool_name,risk_level,args_hash,status,result_json,parent_execution_id,logical_action_id,request_hash)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'uncertain',$12,$13,$14,$15)`,
+      chat_id,actor_id,tool_name,risk_level,args_hash,status,result_json,parent_execution_id,logical_action_id,request_hash,
+      input_args,policy_decision,policy_code)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'uncertain',$12,$13,$14,$15,$16,$17,$18)`,
     [id, context.turnId, context.callOrigin, context.providerCallId, context.executionKey, context.sourceMessageId,
-      context.chatId, context.actorId, name, risk, hash, JSON.stringify(claim), context.parentExecutionId, context.logicalActionId, requestHash]);
+      context.chatId, context.actorId, name, risk, hash, JSON.stringify(claim), context.parentExecutionId, context.logicalActionId, requestHash,
+      JSON.stringify(modelArgs ?? {}), decision.status, decision.denialCode ?? null]);
     async function finish(value: ToolResult): Promise<ToolResult> {
-      if (pending && confirmationFailure !== 'DENIED_CONFIRMATION_INPUT' && ['ok','queued','uncertain','error','denied'].includes(value.status)) {
+      if (pending && confirmationFailure !== 'DENIED_CONFIRMATION_INPUT' && ['ok','queued','uncertain','error','denied','qa_suppressed'].includes(value.status)) {
         const sessionStatus = pending.expires_at <= context.now ? 'expired' : pending.invalidated ? 'cancelled' : 'done';
         await observer.rows(c.query("UPDATE sessions_v2 SET status=$2,version=version+1 WHERE confirmation_id=$1 AND status='active' RETURNING *", [pending.id, sessionStatus]),'session.persisted','SESSION_AFTER');
       }
@@ -159,6 +169,27 @@ export async function executeToolV2(ctx: ToolCtx, name: string, modelArgs: unkno
       // Terminal parent must exist before confirmation FK; no business handler has run.
       const confirmationId = await createPendingConfirmation(c, context, id, name, entry.tool.permission, decision);
       return finish(result(name, entry.tool.domain, 'needs_confirmation', 'NEEDS_CONFIRMATION', { confirmationId, prompt:await confirmationPromptV2(context,name,decision) }));
+    }
+    // QA Safety Gate: Enforce central barrier preventing destructive external mutations in SAFE mode.
+    const isSafeMode = context.legacy.msg.qaMode === 'SAFE';
+    if (isSafeMode && isDangerousOrDestructive(entry.tool, entry.legacy)) {
+      const suppressed: ToolResult = {
+        toolName: name,
+        domain: entry.tool.domain,
+        status: 'qa_suppressed',
+        code: 'QA_SUPPRESSED',
+        data: {
+          gateDecision: 'WOULD_EXECUTE',
+          qaSafetySuppressed: true,
+          toolName: name,
+          risk: entry.tool.risk,
+          args: decision.resolvedArgs,
+        },
+        presentation: `[QA SAFE] Operación ${name} interceptada por el gate de seguridad (WOULD_EXECUTE). No se ejecutaron efectos secundarios reales.`,
+      };
+      await finish(suppressed);
+      if (pending) await c.query('UPDATE tool_confirmations_v2 SET consumed_execution_id=$2 WHERE id=$1', [pending.id, id]);
+      return suppressed;
     }
     await c.query('SAVEPOINT v2_handler');
     let normalized: ToolResult;

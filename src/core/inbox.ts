@@ -12,7 +12,7 @@ import { transaction, type Db } from '../db/client.js';
 import { configForChat, type Config } from '../config.js';
 import { product } from '../../config/product.js';
 import { msgSchema, type Msg } from '../wa/types.js';
-import { actorFor,privateEligible,type Chat } from './permissions.js';
+import { actorFor,privateEligible,type Chat,QA_OWNER_JID,QA_MEMBER_JID } from './permissions.js';
 import { activeSession,sessionAccepts } from './sessions.js';
 import { route,rememberContext } from './router.js';
 import { Gemini } from './llm.js';
@@ -22,6 +22,9 @@ import { activated, enableCommand } from './activation.js';
 
 export async function receive(db: Db, config: Config, input: Msg, now = new Date(), rawEvolution?:unknown):Promise<string> {
   const msg = msgSchema.parse(input);
+  if (msg.qaMode && (msg.chatId !== config.LAB_CHAT_ID || (![QA_OWNER_JID, QA_MEMBER_JID].includes(msg.senderId) && !config.OWNER_JIDS.includes(msg.senderId)))) {
+    delete msg.qaMode;
+  }
   if(msg.isGroup!==msg.chatId.endsWith('@g.us'))return 'ignored';
   if (msg.fromMe || now.getTime() - msg.ts.getTime() > config.STALE_SECONDS * 1000 || msg.ts.getTime() - now.getTime() > product.futureToleranceSeconds * 1000) return 'ignored';
   if(msg.isGroup){

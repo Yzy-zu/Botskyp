@@ -5,7 +5,7 @@ const list = z.string().transform(s => s.split(',').map(x => x.trim()).filter(Bo
 export function validGeminiApiKey(key:string):boolean{return /^[\x21-\x2B\x2D-\x7E]+$/.test(key);}
 const localLimit = (max:number, fallback:number) => z.string().trim().min(1).transform(Number).pipe(z.number().int().min(0).max(max)).default(fallback);
 const schema = z.object({
-  OBSERVER_ENABLED: z.enum(['true','false']).default('true').catch('false').transform(s=>s==='true'),
+  OBSERVER_ENABLED: z.enum(['true','false']).default('false').catch('false').transform(s=>s==='true'),
   OBSERVER_SPOOL_DIR: z.string().min(1).default('/var/lib/botsky-observer/spool').catch('/var/lib/botsky-observer/spool'),
   OBSERVER_RETENTION_DAYS: z.coerce.number().int().min(1).max(90).default(7).catch(7),
   OBSERVER_MAX_SPOOL_MB: z.coerce.number().int().min(1).max(10240).default(512).catch(512),

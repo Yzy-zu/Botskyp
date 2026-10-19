@@ -11,7 +11,8 @@ export async function loadExecutionContext(ctx: ToolCtx, call: BackendCall): Pro
   if (!ctx.turnId || !row || row.source_message_id !== ctx.msg.id) throw new Error('Invalid authenticated turn');
   const chat = (await ctx.c.query<Chat>('SELECT id,is_group AS "isGroup",enabled,settings FROM chats WHERE id=$1', [row.resolved_chat_id])).rows[0];
   if (!chat) throw new Error('Unknown authenticated chat');
-  const msg = { ...row.payload, id: row.source_message_id, chatId: chat.id, isGroup: chat.isGroup, ts: new Date(row.payload.ts) };
+  const qaMode = ctx.msg.qaMode ?? row.payload.qaMode;
+  const msg = { ...row.payload, ...(qaMode ? { qaMode } : {}), id: row.source_message_id, chatId: chat.id, isGroup: chat.isGroup, ts: new Date(row.payload.ts) };
   const actor = await actorFor(ctx.c, msg, ctx.config);
   if (call.callOrigin !== 'llm' && call.providerCallId !== undefined) throw new Error('Provider ID requires llm origin');
   return {

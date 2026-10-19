@@ -4,7 +4,8 @@ import { execSync } from 'node:child_process';
 import { readConfig } from '../../src/config.js';
 import { createDb } from '../../src/db/client.js';
 import { buildEvolutionPayload, generateProviderMessageId } from './evolution-payload.js';
-import { collectTurnResult, seedMediaFixture } from './result-collector.js';
+import { collectTurnResult, seedMediaFixture, resetQaState, DEFAULT_QA_CHAT_ID } from './result-collector.js';
+import { QA_OWNER_JID, QA_MEMBER_JID } from '../../src/core/permissions.js';
 import { smokeCases } from './cases/smoke.js';
 import type {
   QaCase,
@@ -60,8 +61,8 @@ export class QaRunner {
     this.db = createDb(resolveDatabaseUrl(this.config.DATABASE_URL));
     this.targetUrl = options.targetUrl ?? process.env.WEBHOOK_TARGET ?? `http://127.0.0.1:${this.config.PORT}/webhook`;
     this.secret = options.webhookSecret ?? process.env.WEBHOOK_SECRET ?? this.config.WEBHOOK_SECRET;
-    this.qaChatId = options.qaChatId ?? process.env.QA_CHAT_ID ?? this.config.LAB_CHAT_ID;
-    this.qaActorId = options.qaActorId ?? process.env.QA_ACTOR_ID ?? (this.config.OWNER_JIDS?.[0] ?? '5214435810175@s.whatsapp.net');
+    this.qaChatId = options.qaChatId ?? process.env.QA_CHAT_ID ?? this.config.LAB_CHAT_ID ?? DEFAULT_QA_CHAT_ID;
+    this.qaActorId = options.qaActorId ?? process.env.QA_ACTOR_ID ?? QA_OWNER_JID;
     this.defaultMode = options.mode ?? (process.env.QA_MODE as QaMode) ?? 'SAFE';
 
     const defaultReportsDir = join(process.cwd(), 'qa', 'e2e', 'reports');
@@ -121,9 +122,13 @@ export class QaRunner {
     const chatId = qaCase.chatId ?? this.qaChatId;
     const actorId = qaCase.actorId ?? this.qaActorId;
 
-    // Hard security check: never send QA requests to non-lab chats
-    if (chatId !== this.qaChatId && !chatId.endsWith('@g.us')) {
+    // Hard security check: strictly enforce authorized QA chat identity
+    if (chatId !== this.qaChatId) {
       throw new Error(`Security Violation: QA runner attempted to target non-QA chat ${chatId}`);
+    }
+    const isAuthorizedActor = actorId === QA_OWNER_JID || actorId === QA_MEMBER_JID || Boolean(process.env.ALLOW_CUSTOM_QA_ACTOR);
+    if (!isAuthorizedActor) {
+      throw new Error(`Security Violation: QA runner attempted to use unauthorized actor ${actorId}`);
     }
 
     // Handle media attachments fixture seeding
@@ -138,17 +143,20 @@ export class QaRunner {
     }
 
     // Build authentic Evolution v2.3.7 payload
+    const isGroup = qaCase.isGroup ?? chatId.endsWith('@g.us');
     const payload = buildEvolutionPayload({
       instance: this.config.INSTANCE,
       providerMessageId,
       chatId,
       actorId,
-      isGroup: qaCase.isGroup ?? chatId.endsWith('@g.us'),
+      isGroup,
       text: turn.input,
       attachments: attachments.length > 0 ? attachments : undefined,
+      mentions: turn.mentions ?? (isGroup ? this.config.BOT_JIDS : undefined),
       quoted: turn.quotePrevious && previousMessageId
         ? { stanzaId: previousMessageId, participant: actorId }
         : undefined,
+      qaMode: qaCase.mode ?? this.defaultMode,
     });
 
     if (this.dryRun) {
@@ -159,13 +167,17 @@ export class QaRunner {
         input: turn.input,
         httpStatus: 200,
         httpResponse: { dryRun: true },
+        toolCalls: [],
         toolExecutions: [],
         session: null,
+        relevantSession: null,
         jobs: [],
         outbox: [],
         llmUsage: [],
         finalText: '[DRY RUN PASS]',
+        finalResponse: '[DRY RUN PASS]',
         latencyMs: 0,
+        terminalState: 'SKIPPED',
         status: 'SKIPPED',
         errors: [],
       };
@@ -180,6 +192,7 @@ export class QaRunner {
         headers: {
           'Content-Type': 'application/json',
           'x-webhook-secret': this.secret,
+          'x-qa-mode': qaCase.mode ?? this.defaultMode,
         },
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(15000),
@@ -212,6 +225,13 @@ export class QaRunner {
 
   async runCase(qaCase: QaCase): Promise<QaCaseResult> {
     const started = Date.now();
+    const chatId = qaCase.chatId ?? this.qaChatId;
+    const actorId = qaCase.actorId ?? this.qaActorId;
+
+    if (!this.dryRun) {
+      await resetQaState(this.db, chatId, actorId);
+    }
+
     const turnResults: QaTurnResult[] = [];
     let overallStatus: QaStatus = 'PASS';
     let previousMsgId: string | undefined;
@@ -233,13 +253,18 @@ export class QaRunner {
     const providerMessageIds = turnResults.map(t => t.providerMessageId);
     const turnIds = turnResults.map(t => t.turnId).filter((t): t is string => Boolean(t));
     const inputs = turnResults.map(t => t.input);
-    const actualTools = turnResults.flatMap(t => t.toolExecutions.map(e => e.toolName));
-    const args = turnResults.flatMap(t => t.toolExecutions.map(e => (e.resultJson?.data as Record<string, unknown>) ?? {}));
-    const policy = turnResults.flatMap(t => t.toolExecutions.map(e => ({ tool: e.toolName, status: e.status })));
-    const session = turnResults[turnResults.length - 1]?.session ?? null;
+    const toolCalls = turnResults.flatMap(t => t.toolCalls);
+    const actualTools = toolCalls.map(c => c.toolName);
+    const args = toolCalls.map(c => c.inputArgs);
+    const policy = toolCalls.map(c => ({ tool: c.toolName, status: c.policyStatus, code: c.policyCode }));
+    const relevantSession = turnResults[turnResults.length - 1]?.relevantSession ?? null;
+    const session = relevantSession;
     const jobs = turnResults.flatMap(t => t.jobs);
     const outbox = turnResults.flatMap(t => t.outbox);
     const finalText = turnResults[turnResults.length - 1]?.finalText ?? null;
+    const finalResponse = turnResults[turnResults.length - 1]?.finalResponse ?? finalText;
+    const terminalState = turnResults[turnResults.length - 1]?.terminalState ?? overallStatus;
+    const failureClass = turnResults.find(t => t.failureClass)?.failureClass ?? null;
     const errors = turnResults.flatMap(t => t.errors);
 
     return {
@@ -248,16 +273,21 @@ export class QaRunner {
       suite: qaCase.suite,
       mode: qaCase.mode ?? this.defaultMode,
       status: overallStatus,
+      terminalState,
+      failureClass,
       providerMessageIds,
       turnIds,
       inputs,
       actualTools,
+      toolCalls,
       args,
       policy,
       session,
+      relevantSession,
       jobs,
       outbox,
       finalText,
+      finalResponse,
       latency: Date.now() - started,
       errors,
       turnResults,

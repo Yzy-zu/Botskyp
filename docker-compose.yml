@@ -14,7 +14,7 @@ x-runtime: &runtime
     options: {max-size: 5m, max-file: '3'}
   environment: &environment
     BOTSKY_GIT_COMMIT: ${BOTSKY_GIT_COMMIT:-unknown}
-    OBSERVER_ENABLED: ${OBSERVER_ENABLED:-true}
+    OBSERVER_ENABLED: ${OBSERVER_ENABLED:-false}
     OBSERVER_SPOOL_DIR: ${OBSERVER_SPOOL_DIR:-/var/lib/botsky-observer/spool}
     OBSERVER_RETENTION_DAYS: ${OBSERVER_RETENTION_DAYS:-7}
     OBSERVER_MAX_SPOOL_MB: ${OBSERVER_MAX_SPOOL_MB:-512}

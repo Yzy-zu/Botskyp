@@ -5,6 +5,7 @@ export const msgSchema = z.object({
   ts:z.coerce.date(), text:z.string(), fromMe:z.boolean(), mentions:z.array(z.string()),
   quoted:z.object({id:z.string(), text:z.string().optional(), senderId:z.string().optional(), fromBot:z.boolean(),attachments:z.array(z.object({kind:z.literal('image'),ref:z.string(),mime:z.string().optional()})).optional()}).optional(),
   attachments:z.array(z.object({kind:z.string(),ref:z.string(),mime:z.string().optional(),fileName:z.string().optional(),providerMessageId:z.string().min(1).max(200).optional()})),
+  qaMode:z.enum(['SAFE','LIVE_SAFE']).optional(),
 });
 export type Msg = z.infer<typeof msgSchema>;
 export type Delivery = {id:string;chatId:string;text:string;sourceId:string;attachmentId?:string;requireReceipt?:boolean;media?:{kind:'image'|'document'|'audio'|'video'|'sticker';mime:string;base64:string;fileName?:string}};

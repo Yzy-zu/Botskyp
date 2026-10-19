@@ -34,8 +34,8 @@ const registry = createRegistry(), catalog = createToolRegistryV2(registry);
 let c: PoolClient;
 const empty = () => new SafeRefs([]);
 function call(safeRefMap = empty(), extra: Partial<BackendCall> = {}): BackendCall { return { callOrigin: 'fast_path', safeRefMap, ...extra }; }
-async function context(actor = owner, text = 'bot ping', chatId = chat): Promise<ToolCtx> {
-  const msg = { id: randomUUID(), chatId, senderId: actor, isGroup: chatId.endsWith('@g.us'), ts: new Date(), text, mentions: [], fromMe: false, attachments: [] };
+async function context(actor = owner, text = 'bot ping', chatId = chat, qaMode?: 'SAFE' | 'LIVE_SAFE'): Promise<ToolCtx> {
+  const msg = { id: randomUUID(), chatId, senderId: actor, isGroup: chatId.endsWith('@g.us'), ts: new Date(), text, mentions: [], fromMe: false, attachments: [], ...(qaMode ? { qaMode } : {}) };
   expect(await receive(db, config, msg)).toBe('accepted');
   const turn = (await db.query<{ turn_id: string }>('SELECT turn_id FROM inbox WHERE payload->>\'id\'=$1', [msg.id])).rows[0]!;
   return { turnId: turn.turn_id, msg, actor: { id: actor, role: 'member' }, chat: { id: chatId, isGroup: msg.isGroup, enabled: true, settings: {} }, db, c, config, now: new Date(), search: async () => 'mock search' };
@@ -557,3 +557,38 @@ it('rejects prompt balance/identity fields before economic effects', async () =>
   expect((await evaluate(ctx, 'games.blackjack', { bet: 50, balance: 999999 })).denialCode).toBe('INVALID_MODEL_ARGUMENTS');
   expect(await count('wallets')).toBe(0); expect(await count('xp_ledger')).toBe(0);
 });
+
+it('enforces SAFE mode execution barrier preventing destructive operations and proving ZERO side effects', async () => {
+  const ctxSafe = await context(owner, 'apaga minecraft', chat, 'SAFE');
+  const ask = await execute(ctxSafe, 'minecraft.stop');
+  expect(ask.status).toBe('needs_confirmation');
+  const id = confirmationId(ask);
+
+  const confirmCtx = await context(owner, 'sí', chat, 'SAFE');
+  const suppressed = await execute(confirmCtx, 'minecraft.stop', {}, empty(), { callOrigin: 'session', confirmationId: id });
+  expect(suppressed.status).toBe('qa_suppressed');
+  expect(suppressed.code).toBe('QA_SUPPRESSED');
+  expect((suppressed.data as { gateDecision: string }).gateDecision).toBe('WOULD_EXECUTE');
+
+  // ZERO side effects in business tables
+  expect(await count('minecraft_operations')).toBe(0);
+  expect(await count('jobs')).toBe(0);
+  expect(await count('outbox')).toBe(0);
+});
+
+it('enforces SAFE mode execution barrier on bulk.nuclear with zero side effects', async () => {
+  const ctxSafe = await context(owner, 'nuclear', chat, 'SAFE');
+  const ask = await execute(ctxSafe, 'bulk.nuclear', { text: 'alerta' }, empty());
+  expect(ask.status).toBe('needs_confirmation');
+  const id = confirmationId(ask);
+
+  const confirmCtx = await context(owner, 'sí', chat, 'SAFE');
+  const suppressed = await execute(confirmCtx, 'bulk.nuclear', {}, empty(), { callOrigin: 'session', confirmationId: id });
+  expect(suppressed.status).toBe('qa_suppressed');
+  expect(suppressed.code).toBe('QA_SUPPRESSED');
+  expect((suppressed.data as { gateDecision: string }).gateDecision).toBe('WOULD_EXECUTE');
+
+  expect(await count('bulk_ops')).toBe(0);
+  expect(await count('outbox')).toBe(0);
+});
+

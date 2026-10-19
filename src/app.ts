@@ -28,7 +28,13 @@ export function makeApp(db:Db,config:Config,transport:Transport,normalize:Normal
     const actual=Buffer.from(typeof header==='string'?header:'');const expected=Buffer.from(config.WEBHOOK_SECRET);
     if (actual.length!==expected.length || !timingSafeEqual(actual,expected)) return reply.code(401).send({error:'unauthorized'});
     let msg:Msg|null;
-    try {msg=normalize(req.body);} catch(error) {observer.emit(()=>({eventType:'TURN_FAILED',stage:'normalization',payload:{error,rawEvolution:req.body,status:'invalid_event'}}));return reply.code(400).send({error:'invalid_event'});}
+    try {
+      msg=normalize(req.body);
+      if(msg){
+        const headerQa=req.headers['x-qa-mode'];
+        if(headerQa==='SAFE' || headerQa==='LIVE_SAFE')msg.qaMode=headerQa;
+      }
+    } catch(error) {observer.emit(()=>({eventType:'TURN_FAILED',stage:'normalization',payload:{error,rawEvolution:req.body,status:'invalid_event'}}));return reply.code(400).send({error:'invalid_event'});}
     if (!msg) return {status:'ignored'};
     const start=performance.now();
     let status:string;

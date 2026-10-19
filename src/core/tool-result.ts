@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const toolStatuses = ['ok', 'denied', 'needs_confirmation', 'needs_clarification', 'not_found', 'queued', 'uncertain', 'error'] as const;
+export const toolStatuses = ['ok', 'denied', 'needs_confirmation', 'needs_clarification', 'not_found', 'queued', 'uncertain', 'error', 'qa_suppressed'] as const;
 export const toolStatusSchema = z.enum(toolStatuses);
 export type ToolStatus = z.infer<typeof toolStatusSchema>;
 

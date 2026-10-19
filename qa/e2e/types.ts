@@ -41,6 +41,7 @@ export interface EvolutionPayloadOptions {
   } | undefined;
   mentions?: string[] | undefined;
   timestamp?: number | undefined;
+  qaMode?: QaMode | undefined;
 }
 
 export interface QaTurn {
@@ -49,9 +50,11 @@ export interface QaTurn {
   attachment?: EvolutionAttachmentOption | undefined;
   attachments?: EvolutionAttachmentOption[] | undefined;
   quotePrevious?: boolean | undefined;
+  mentions?: string[] | undefined;
   expectedTool?: string | null | undefined;
   expectedArgsPartial?: Record<string, unknown> | undefined;
-  expectedStatus?: 'ok' | 'needs_confirmation' | 'needs_clarification' | 'queued' | 'denied' | undefined;
+  expectedStatus?: 'ok' | 'needs_confirmation' | 'needs_clarification' | 'queued' | 'denied' | 'qa_suppressed' | undefined;
+  expectedPolicy?: string | undefined;
   expectedReplySnippet?: string | undefined;
   assertFn?: ((result: QaTurnResult) => Promise<void> | void) | undefined;
 }
@@ -68,11 +71,23 @@ export interface QaCase {
   turns: QaTurn[];
 }
 
+export interface ToolCallEvidence {
+  toolName: string;
+  inputArgs: Record<string, unknown>;
+  policyStatus: string;
+  policyCode: string | null;
+  executionStatus: string;
+  result: Record<string, unknown>;
+}
+
 export interface ToolExecutionRecord {
   id: string;
   toolName: string;
   status: string;
   riskLevel: string;
+  inputArgs?: Record<string, unknown> | undefined;
+  policyDecision?: string | null | undefined;
+  policyCode?: string | null | undefined;
   resultJson: Record<string, unknown>;
   createdAt: Date;
   finishedAt?: Date | null | undefined;
@@ -87,6 +102,7 @@ export interface SessionRecord {
   prompt: string;
   status: string;
   expiresAt: Date;
+  videoRefs?: string[] | undefined;
 }
 
 export interface JobRecord {
@@ -128,20 +144,27 @@ export interface LlmUsageRecord {
 
 export interface QaTurnResult {
   turnIndex: number;
+  caseId?: string | undefined;
   providerMessageId: string;
   turnId?: string | undefined;
   input: string;
   httpStatus: number;
   httpResponse: unknown;
   inboxStatus?: string | undefined;
+  llmOutcome?: string | undefined;
+  toolCalls: ToolCallEvidence[];
   toolExecutions: ToolExecutionRecord[];
   session: SessionRecord | null;
+  relevantSession: SessionRecord | null;
   jobs: JobRecord[];
   outbox: OutboxRecord[];
   llmUsage: LlmUsageRecord[];
   finalText: string | null;
+  finalResponse: string | null;
   latencyMs: number;
+  terminalState: string;
   status: QaStatus;
+  failureClass?: string | null | undefined;
   errors: string[];
 }
 
@@ -151,16 +174,21 @@ export interface QaCaseResult {
   suite: string;
   mode: QaMode;
   status: QaStatus;
+  terminalState: string;
+  failureClass?: string | null | undefined;
   providerMessageIds: string[];
   turnIds: string[];
   inputs: string[];
   actualTools: string[];
+  toolCalls: ToolCallEvidence[];
   args: Record<string, unknown>[];
   policy: Record<string, unknown>[];
   session: SessionRecord | null;
+  relevantSession: SessionRecord | null;
   jobs: JobRecord[];
   outbox: OutboxRecord[];
   finalText: string | null;
+  finalResponse: string | null;
   latency: number;
   errors: string[];
   turnResults: QaTurnResult[];

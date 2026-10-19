@@ -111,9 +111,10 @@ export function buildEvolutionPayload(options: EvolutionPayloadOptions): Record<
     }
   }
 
-  const payload = {
+  const payload: Record<string, unknown> = {
     event: 'messages.upsert',
     instance,
+    ...(options.qaMode ? { qaMode: options.qaMode } : {}),
     data: {
       key,
       message,

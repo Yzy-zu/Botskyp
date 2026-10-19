@@ -51,15 +51,21 @@ export function normalizeData(input:unknown):NormalizedEvent|null {
     ...(context.quotedMessage?.imageMessage?{attachments:[{kind:'image' as const,ref:`${context.stanzaId}:image`,...(context.quotedMessage.imageMessage.mimetype?{mime:context.quotedMessage.imageMessage.mimetype}:{})}]}:{}),
     ...(context.quotedMessage?{text:context.quotedMessage.conversation ?? context.quotedMessage.extendedTextMessage?.text ?? ''}:{}),
   }:undefined;
+  const rawQa = typeof (input as { qaMode?: unknown })?.qaMode === 'string' ? (input as { qaMode?: unknown }).qaMode : undefined;
+  const qaMode = rawQa === 'SAFE' || rawQa === 'LIVE_SAFE' ? rawQa : undefined;
   return {kind:'message',message:{
     id:data.key.id,chatId:data.key.remoteJid,isGroup,senderId,ts:new Date(data.messageTimestamp*1000),text,
-    fromMe:false,mentions:context?.mentionedJid ?? [],attachments,...(quoted?{quoted}:{}),
+    fromMe:false,mentions:context?.mentionedJid ?? [],attachments,...(quoted?{quoted}:{}),...(qaMode?{qaMode}:{}),
   }};
 }
 export function normalizeEvent(input:unknown,instance:string):NormalizedEvent|null {
-  const event=z.object({event:z.string(),instance:z.string(),data:z.unknown()}).parse(input);
+  const event=z.object({event:z.string(),instance:z.string(),data:z.unknown(),qaMode:z.enum(['SAFE','LIVE_SAFE']).optional()}).passthrough().parse(input);
   if(event.instance!==instance || event.event!=='messages.upsert')return null;
-  return normalizeData(event.data);
+  const res = normalizeData(event.data);
+  if (res?.kind === 'message' && event.qaMode) {
+    res.message.qaMode = event.qaMode;
+  }
+  return res;
 }
 export function normalizeMessage(input:unknown,instance:string):Msg|null {
   const event=normalizeEvent(input,instance);

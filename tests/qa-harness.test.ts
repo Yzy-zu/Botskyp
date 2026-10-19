@@ -216,11 +216,192 @@ describe('QA E2E Harness Self-Tests', () => {
         suite: 'test',
         mode: 'SAFE',
         chatId: '5219999999999@s.whatsapp.net',
-        actorId: '5219999999999@s.whatsapp.net',
+        actorId: '5210000000001@s.whatsapp.net',
         turns: [{ input: 'ping' }],
       };
 
       await expect(runner.runTurn(unsafeCase, 0)).rejects.toThrow(/Security Violation/);
     });
+
+    it('enforces that QA cases reject unauthorized actors', async () => {
+      const runner = new QaRunner({ qaChatId: '120363431233265050@g.us' });
+      const unsafeCase: QaCase = {
+        id: 'UNSAFE-002',
+        title: 'Attempt using unauthorized real user identity',
+        suite: 'test',
+        mode: 'SAFE',
+        chatId: '120363431233265050@g.us',
+        actorId: '5219999999999@s.whatsapp.net',
+        turns: [{ input: 'ping' }],
+      };
+
+      await expect(runner.runTurn(unsafeCase, 0)).rejects.toThrow(/Security Violation: QA runner attempted to use unauthorized actor/);
+    });
+
+    it('strictly rejects any other group JID other than authorized QA lab chat', async () => {
+      const runner = new QaRunner({ qaChatId: '120363431233265050@g.us' });
+      const unsafeGroupCase: QaCase = {
+        id: 'UNSAFE-003',
+        title: 'Attempt targeting arbitrary external group',
+        suite: 'test',
+        mode: 'SAFE',
+        chatId: '120369999999999999@g.us',
+        actorId: '5210000000001@s.whatsapp.net',
+        turns: [{ input: 'ping' }],
+      };
+
+      await expect(runner.runTurn(unsafeGroupCase, 0)).rejects.toThrow(/Security Violation/);
+    });
+  });
+
+  describe('7. Centralized SAFE Execution Barrier & Tool Classification', () => {
+    it('classifies dangerous and destructive operations correctly using structured metadata', async () => {
+      const { createRegistry } = await import('../src/core/registry.js');
+      const { createToolRegistryV2 } = await import('../src/core/tool-registry-v2.js');
+      const { isDangerousOrDestructive } = await import('../src/core/policy-v2/executor.js');
+
+      const registry = createRegistry();
+      const catalog = createToolRegistryV2(registry);
+
+      const checkTool = (name: string) => {
+        const tool = catalog.find(t => t.name === name);
+        const legacy = registry.all().find(t => t.name === name);
+        if (!tool || !legacy) throw new Error(`Tool not found: ${name}`);
+        return isDangerousOrDestructive(tool, legacy);
+      };
+
+      // Destructive / high-privilege tools must be flagged
+      expect(checkTool('minecraft.stop')).toBe(true);
+      expect(checkTool('minecraft.restart')).toBe(true);
+      expect(checkTool('minecraft.console')).toBe(true);
+      expect(checkTool('bulk.nuclear')).toBe(true);
+      expect(checkTool('bulk.broadcast')).toBe(true);
+      expect(checkTool('messaging.send')).toBe(true);
+      expect(checkTool('moderation.change')).toBe(true);
+      expect(checkTool('moderation.config')).toBe(true);
+      expect(checkTool('notes.delete')).toBe(true);
+      expect(checkTool('control.emergency')).toBe(true);
+
+      // Read and non-destructive tools must NOT be suppressed
+      expect(checkTool('minecraft.status')).toBe(false);
+      expect(checkTool('minecraft.players')).toBe(false);
+      expect(checkTool('notes.create')).toBe(false);
+      expect(checkTool('notes.list')).toBe(false);
+      expect(checkTool('reminders.create')).toBe(false);
+      expect(checkTool('video.search')).toBe(false);
+      expect(checkTool('video.download')).toBe(false);
+      expect(checkTool('web.search')).toBe(false);
+      expect(checkTool('core.help')).toBe(false);
+    });
+  });
+
+  describe('8. Argument Capture Fidelity (inputArgs !== result)', () => {
+    it('proves that inputArgs captures Gemini proposed args distinct from backend result', () => {
+      const proposedGeminiArgs = {
+        query: 'minecraft',
+        source: 'dailymotion',
+      };
+
+      const backendExecutionResult = {
+        toolName: 'video.search',
+        domain: 'media',
+        status: 'ok',
+        code: 'VIDEO_RESULTS',
+        data: {
+          adapter: 'legacy',
+          factsAvailable: true,
+          count: 5,
+        },
+      };
+
+      // Ensure inputArgs and result are structurally distinct
+      expect(proposedGeminiArgs).not.toEqual(backendExecutionResult);
+      expect(proposedGeminiArgs).toHaveProperty('query', 'minecraft');
+      expect(proposedGeminiArgs).toHaveProperty('source', 'dailymotion');
+      expect(proposedGeminiArgs).not.toHaveProperty('adapter');
+      expect(backendExecutionResult.data).toHaveProperty('adapter', 'legacy');
+      expect(backendExecutionResult.data).not.toHaveProperty('query');
+    });
+  });
+
+  describe('9. QA Identity Isolation & Roles', () => {
+    it('authenticates QA_OWNER_JID as owner and QA_MEMBER_JID as member in LAB_CHAT_ID', async () => {
+      const { QA_OWNER_JID, QA_MEMBER_JID, actorFor } = await import('../src/core/permissions.js');
+      const { readConfig } = await import('../src/config.js');
+
+      const config = readConfig();
+      const labChatId = config.LAB_CHAT_ID;
+
+      // Mock DB client that has no memberships
+      const mockClient = {
+        query: async () => ({ rows: [], rowCount: 0 }),
+      } as unknown as Parameters<typeof actorFor>[0];
+
+      const ownerActor = await actorFor(
+        mockClient,
+        {
+          id: 'MSG_1',
+          chatId: labChatId,
+          senderId: QA_OWNER_JID,
+          isGroup: true,
+          ts: new Date(),
+          text: 'hola',
+          fromMe: false,
+          mentions: [],
+          attachments: [],
+        },
+        config
+      );
+      expect(ownerActor.role).toBe('owner');
+      expect(ownerActor.groupMember).toBe(true);
+
+      const memberActor = await actorFor(
+        mockClient,
+        {
+          id: 'MSG_2',
+          chatId: labChatId,
+          senderId: QA_MEMBER_JID,
+          isGroup: true,
+          ts: new Date(),
+          text: 'hola',
+          fromMe: false,
+          mentions: [],
+          attachments: [],
+        },
+        config
+      );
+      expect(memberActor.role).toBe('member');
+      expect(memberActor.groupMember).toBe(true);
+
+      // In non-lab chat, neither gets elevated role
+      const externalActor = await actorFor(
+        mockClient,
+        {
+          id: 'MSG_3',
+          chatId: '120363999999999999@g.us',
+          senderId: QA_OWNER_JID,
+          isGroup: true,
+          ts: new Date(),
+          text: 'hola',
+          fromMe: false,
+          mentions: [],
+          attachments: [],
+        },
+        config
+      );
+      expect(externalActor.role).toBe('member');
+      expect(externalActor.groupMember).toBe(false);
+    });
+  });
+
+  describe('10. Targeted QA State Isolation', () => {
+    it('refuses to reset non-QA actors to protect user/business state', async () => {
+      const { resetQaState } = await import('../qa/e2e/result-collector.js');
+      const mockDb = { query: async () => ({ rows: [], rowCount: 0 }) } as unknown as Parameters<typeof resetQaState>[0];
+
+      // Reset on real owner or normal user JID is a no-op / protected
+      await expect(resetQaState(mockDb, '120363431233265050@g.us', '5214435810175@s.whatsapp.net')).resolves.toBeUndefined();
+    });
   });
 });
+

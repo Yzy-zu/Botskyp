@@ -42,6 +42,20 @@ const openAiErrorSchema = z.object({
   }).optional(),
 });
 
+const groqModelsResponseSchema = z.object({
+  data: z.array(z.object({
+    id: z.string(),
+    active: z.boolean().optional(),
+    context_window: z.number().optional(),
+  })),
+});
+
+export type DiscoveredGroqModel = {
+  id: string;
+  contextWindow: number;
+  active: boolean;
+};
+
 function isTimeout(error: unknown, signal?: AbortSignal): boolean {
   return Boolean(signal?.aborted) || (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError'));
 }
@@ -61,6 +75,25 @@ export class GroqProvider implements LlmProviderAdapter {
 
   listConfiguredModels(): string[] {
     return [...this.configuredModels];
+  }
+
+  async discoverModels(apiKey?: string): Promise<DiscoveredGroqModel[]> {
+    try {
+      const headers: Record<string, string> = {};
+      if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+      const res = await this.http(`${this.baseUrl}/models`, { method: 'GET', headers });
+      if (!res.ok) return [];
+      const raw = await res.json();
+      const parsed = groqModelsResponseSchema.safeParse(raw);
+      if (!parsed.success) return [];
+      return parsed.data.data.map(m => ({
+        id: m.id,
+        contextWindow: m.context_window ?? 4096,
+        active: m.active ?? true,
+      }));
+    } catch {
+      return [];
+    }
   }
 
   canHandle(request: LlmInput, model: string): boolean {

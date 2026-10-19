@@ -22,7 +22,7 @@ import type { LlmProviderAdapter } from '../src/core/llm/provider-adapter.js';
 import type { LlmInput, ProviderId } from '../src/core/llm/types.js';
 import { saveQualificationManifest, type QualifiedManifestEntry, CURRENT_QUALIFICATION_VERSION, computeToolSchemaHash } from '../src/core/llm/capability-matrix.js';
 
-interface QualificationResult {
+export interface QualificationResult {
   provider: string;
   model: string;
   hasCredentials: boolean;
@@ -38,7 +38,7 @@ interface QualificationResult {
   notes: string;
 }
 
-async function qualifyModel(
+export async function qualifyModel(
   adapter: LlmProviderAdapter,
   model: string,
   apiKey: string | undefined,
@@ -248,7 +248,7 @@ export async function runQualification(): Promise<QualificationResult[]> {
     chatCompatible: r.chatCompatible,
     testedAt: qualifiedAt,
     latencyMs: r.latencyMs,
-    notes: r.notes || undefined,
+    ...(r.notes ? { notes: r.notes } : {}),
   }));
   saveQualificationManifest(manifestEntries);
   console.log(`\nManifest saved to var/llm-qualified-models.json.`);

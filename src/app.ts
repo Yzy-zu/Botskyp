@@ -21,7 +21,7 @@ export function makeApp(db:Db,config:Config,transport:Transport,normalize:Normal
     try {await db.query('SELECT 1');database=true;} catch {app.log.warn({where:'health.db'},'Base no disponible');}
     try {evolution=await checkConnection(db,config,transport);} catch {app.log.warn({where:'health.evolution'},'Evolution no disponible');}
     const ok=database && evolution;
-    return reply.code(ok?200:503).send({observer:observer.health(),ok,database,evolution:config.TRANSPORT==='evolution'?evolution:null,transport:config.TRANSPORT});
+    return reply.code(ok?200:503).send({commit:process.env.BOTSKY_GIT_COMMIT ?? 'unknown',observer:observer.health(),ok,database,evolution:config.TRANSPORT==='evolution'?evolution:null,transport:config.TRANSPORT});
   });
   app.post('/webhook',async(req,reply)=>{
     const header=req.headers['x-webhook-secret'];

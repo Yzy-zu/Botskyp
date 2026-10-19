@@ -231,5 +231,8 @@ export async function naturalToolLoopV2(ctx:ToolCtx,llm:Llm,catalog:readonly Too
   }
   finally{
     if(llm.counters && initialCounters){metrics.callsPerTurn=llm.counters.calls-initialCounters.calls;metrics.inputTokens=llm.counters.inputTokens-initialCounters.inputTokens;metrics.outputTokens=llm.counters.outputTokens-initialCounters.outputTokens;}
+    if(ctx.turnId && 'cleanupTurnBudget' in llm && typeof (llm as {cleanupTurnBudget?: unknown}).cleanupTurnBudget === 'function'){
+      (llm as {cleanupTurnBudget: (id: string) => void}).cleanupTurnBudget(ctx.turnId);
+    }
   }
 }

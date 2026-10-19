@@ -11,7 +11,7 @@ import type { TurnLlmBudget } from './llm/types.js';
 export type Image={mimeType:string;data:string};
 export type Declaration={name:string;description:string;parametersJsonSchema:Record<string,unknown>};
 export type LlmInput={turnId?:string;turnBudget?:TurnLlmBudget;actor?:string;system:string;contents:unknown[];tools:Declaration[];images?:Image[];responseJsonSchema?:Record<string,unknown>;requireFunctionCall?:boolean;validateFunctionCalls?:boolean};
-export type LlmReply={text:string;calls:GeminiFunctionCall[];content:unknown;provider?:string|undefined;model?:string|undefined;providerState?:unknown;providerContext?:ProviderToolContext|undefined;usage?:{inputTokens:number;outputTokens:number}|undefined};
+export type LlmReply={text:string;calls:GeminiFunctionCall[];content:unknown;provider?:string|undefined;model?:string|undefined;providerState?:unknown;providerContext?:ProviderToolContext|undefined;usage?:{inputTokens:number;outputTokens:number}|undefined;credentialId?:string|undefined;actualNetworkAttempts?:number|undefined};
 export type CallBudget={used:number};
 export interface Llm { readonly counters?:Readonly<{calls:number;inputTokens:number;outputTokens:number}>;generate(input:LlmInput):Promise<LlmReply> }
 const responseSchema=z.object({
@@ -151,7 +151,16 @@ export {
   TurnLlmBudget,
 } from './llm/index.js';
 export { CredentialPool } from './llm/credential-pool.js';
-export { getModelCapability, setModelCapabilityOverride, clearModelCapabilityOverrides } from './llm/capability-matrix.js';
+export {
+  getModelCapability,
+  setModelCapabilityOverride,
+  clearModelCapabilityOverrides,
+  computeToolSchemaHash,
+  CURRENT_QUALIFICATION_VERSION,
+  getCurrentToolSchemaHash,
+  loadQualificationManifest,
+  saveQualificationManifest,
+} from './llm/capability-matrix.js';
 export { tokenPreflight, estimateRequestTokens } from './llm/preflight.js';
 
 export function createLlmBackend(

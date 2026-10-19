@@ -113,7 +113,13 @@ export async function processNext(db: Db, baseConfig: Config):Promise<boolean> {
           else {
             const llmBackend=getSharedMultiProviderRouter(config,{db,actor:actor.id});
             const ctx={...(config.ROUTER_MODE==='v1_1'?{inboxTransaction:true as const}:{}),turnId:row.turn_id,actor,chat:{id:msg.chatId,isGroup:msg.isGroup,enabled:true,settings:saved?.settings ?? {}},msg,db,c,config,now:new Date(),search:(query:string)=>config.WEB_SEARCH_PROVIDER==='gemini'?llmBackend.search(query,config.ROUTER_MODE==='v1_1'?row.turn_id:undefined):searxSearch(config,query)};
-            reply=await route(ctx,llmBackend);
+            try {
+              reply=await route(ctx,llmBackend);
+            } finally {
+              if (row.turn_id) {
+                llmBackend.cleanupTurnBudget(row.turn_id);
+              }
+            }
             if(config.ROUTER_MODE!=='v1_1' && commandText(msg.text).toLowerCase()==='apagado de emergencia' && owner)reply=undefined;
             if(reply)await rememberContext(ctx,reply);
           }

@@ -34,7 +34,20 @@ x-runtime: &runtime
     GEMINI_API_KEYS: ${GEMINI_API_KEYS:-}
     GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash-lite}
+    GEMINI_MODELS: ${GEMINI_MODELS:-}
     GEMINI_FREE_TIER_CONFIRMED: ${GEMINI_FREE_TIER_CONFIRMED:-false}
+    GROQ_ENABLED: ${GROQ_ENABLED:-false}
+    GROQ_API_KEY: ${GROQ_API_KEY:-}
+    GROQ_API_KEYS: ${GROQ_API_KEYS:-}
+    GROQ_MODELS: ${GROQ_MODELS:-}
+    OPENROUTER_ENABLED: ${OPENROUTER_ENABLED:-false}
+    OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+    OPENROUTER_API_KEYS: ${OPENROUTER_API_KEYS:-}
+    OPENROUTER_MODELS: ${OPENROUTER_MODELS:-}
+    OPENROUTER_ALLOW_FREE_MODELS: ${OPENROUTER_ALLOW_FREE_MODELS:-false}
+    LLM_ROUTE: ${LLM_ROUTE:-}
+    LLM_MAX_PROVIDER_ATTEMPTS: ${LLM_MAX_PROVIDER_ATTEMPTS:-3}
+    QUALIFICATION_MANIFEST_PATH: ${QUALIFICATION_MANIFEST_PATH:-var/llm-qualified-models.json}
     WEB_SEARCH_PROVIDER: ${WEB_SEARCH_PROVIDER:-searxng}
     SEARXNG_URL: http://searxng:8080
     DATABASE_URL: ${DATABASE_URL:?required}
@@ -121,14 +134,18 @@ services:
       options: {max-size: 5m, max-file: '3'}
   app:
     <<: *runtime
-    build: {context: ., target: app}
+    build:
+      context: .
+      target: app
+      args:
+        BOTSKY_GIT_COMMIT: ${BOTSKY_GIT_COMMIT:-unknown}
     container_name: botsky-app
     ports: ['127.0.0.1:${BIND_PORT:-3000}:3000']
     networks: [internal, evolution]
     environment:
       <<: *environment
       MINECRAFT_ENABLED: ${MINECRAFT_ENABLED:-false}
-    volumes: ['./.local/captures:/app/captures', './.local/minecraft:/run/botsky-minecraft:ro', 'botsky_observer:/var/lib/botsky-observer']
+    volumes: ['./.local/captures:/app/captures', './.local/minecraft:/run/botsky-minecraft:ro', 'botsky_observer:/var/lib/botsky-observer', './var:/app/var:ro']
     mem_limit: 256m
     cpus: '0.25'
     healthcheck:
@@ -139,7 +156,11 @@ services:
   worker:
     <<: *runtime
     image: ${BOTSKY_WORKER_IMAGE:-botsky-worker:phase5}
-    build: {context: ., target: worker}
+    build:
+      context: .
+      target: worker
+      args:
+        BOTSKY_GIT_COMMIT: ${BOTSKY_GIT_COMMIT:-unknown}
     container_name: botsky-worker
     tmpfs: ['/tmp:size=256m,mode=1777']
     pids_limit: 64
@@ -148,7 +169,7 @@ services:
     environment:
       <<: *environment
       CAPTURE_ENABLED: 'false'
-    volumes: ['./.local/library/source:/run/botsky-library/source:ro', './.local/library/rclone:/run/botsky-rclone', './.local/drive:/run/botsky-drive:ro', 'botsky_observer:/var/lib/botsky-observer']
+    volumes: ['./.local/library/source:/run/botsky-library/source:ro', './.local/library/rclone:/run/botsky-rclone', './.local/drive:/run/botsky-drive:ro', 'botsky_observer:/var/lib/botsky-observer', './var:/app/var:ro']
     networks: [internal, media-egress, evolution]
     mem_limit: 768m
     cpus: '0.50'

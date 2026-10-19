@@ -133,6 +133,8 @@ export class TurnLlmBudget {
   sawCompatibleCandidate = false;
   stickyCandidate?: RouteCandidate | undefined;
   initialOpenAiFormat = false;
+  finalProvider?: ProviderId | undefined;
+  finalModel?: string | undefined;
 
   constructor(maxNetworkAttempts: number, turnId?: string) {
     this.maxNetworkAttempts = maxNetworkAttempts;

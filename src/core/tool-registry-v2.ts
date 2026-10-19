@@ -5,6 +5,7 @@ import type { ToolRegistry, CapabilityMetadata } from './tools.js';
 import type { Declaration } from './llm.js';
 import type { CapabilityDomain } from './capability-domain.js';
 import { modelArgsSchemas, type BusinessToolName } from './model-args.js';
+import { registerToolCatalog } from './llm/capability-matrix.js';
 
 export type ToolRisk = 'READ' | 'USER_WRITE' | 'ECONOMIC' | 'EXTERNAL' | 'PRIVILEGED' | 'DESTRUCTIVE';
 export type ConfirmationPolicy = 'none' | 'explicit' | 'preview';
@@ -82,7 +83,7 @@ const descriptions: Partial<Record<BusinessToolName, string>> = {
 export function createToolRegistryV2(legacy: ToolRegistry): readonly ToolMetadataV2[] {
   const tools = legacy.all();
   if (tools.length !== Object.keys(modelArgsSchemas).length) throw new Error('v2 catalog differs from business registry');
-  return Object.freeze(tools.map(tool => {
+  const catalog = Object.freeze(tools.map(tool => {
     if (!Object.hasOwn(modelArgsSchemas, tool.name)) throw new Error('Missing v2 tool metadata');
     const name = tool.name as BusinessToolName;
     if (!internal[name] && (!tool.description.trim() || !tool.capability?.produces.trim())) throw new Error(`Missing public capability metadata: ${name}`);
@@ -114,6 +115,8 @@ export function createToolRegistryV2(legacy: ToolRegistry): readonly ToolMetadat
       scope: tool.scope,
     } satisfies ToolMetadataV2);
   }));
+  registerToolCatalog(registryV2Declarations(catalog));
+  return catalog;
 }
 
 /** Fail closed on backend field leaks, including nested fields. No schema is derived from handler args. */

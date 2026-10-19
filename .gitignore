@@ -23,6 +23,8 @@ tmp/
 temp/
 coverage/
 .turbo/
+var/*.tmp*
+
 
 # Backups y dumps
 *.sql

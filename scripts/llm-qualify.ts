@@ -20,7 +20,7 @@ import { GroqProvider } from '../src/core/llm/groq-adapter.js';
 import { OpenRouterProvider } from '../src/core/llm/openrouter-adapter.js';
 import type { LlmProviderAdapter } from '../src/core/llm/provider-adapter.js';
 import type { LlmInput, ProviderId } from '../src/core/llm/types.js';
-import { saveQualificationManifest, type QualifiedManifestEntry } from '../src/core/llm/capability-matrix.js';
+import { saveQualificationManifest, type QualifiedManifestEntry, CURRENT_QUALIFICATION_VERSION, computeToolSchemaHash } from '../src/core/llm/capability-matrix.js';
 
 interface QualificationResult {
   provider: string;
@@ -233,14 +233,20 @@ export async function runQualification(): Promise<QualificationResult[]> {
     console.log(`| ${r.provider} | ${r.model} | ${chat} | ${simple} | ${args} | ${cat} | ${loop} | ${lat} | ${status} | **${r.qualifiedRole}** | ${r.notes || 'OK'} |`);
   }
 
+  const schemaHash = computeToolSchemaHash(fullCatalogTools);
+  const qualifiedAt = new Date().toISOString();
   const manifestEntries: QualifiedManifestEntry[] = results.map(r => ({
+    qualificationVersion: CURRENT_QUALIFICATION_VERSION,
     provider: r.provider as ProviderId,
     model: r.model,
+    toolCount: fullCatalogTools.length,
+    toolSchemaHash: schemaHash,
+    qualifiedAt,
     status: r.agentCompatible ? 'FULL_CATALOG_SMOKE_COMPATIBLE' : 'UNQUALIFIED',
     agentCompatible: r.agentCompatible,
     fullCatalogCompatible: r.fullCatalogCompatible,
     chatCompatible: r.chatCompatible,
-    testedAt: new Date().toISOString(),
+    testedAt: qualifiedAt,
     latencyMs: r.latencyMs,
     notes: r.notes || undefined,
   }));

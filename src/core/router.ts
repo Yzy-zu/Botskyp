@@ -110,10 +110,11 @@ export async function route(ctx:ToolCtx,llm?:Llm):Promise<string|undefined>{
   const userData={...((schoolFile || mediaFile)?{attachmentKinds:ctx.msg.attachments.map(a=>a.kind)}:{}),userText:ctx.msg.text.slice(0,product.maxTextChars),quotedData:ctx.msg.quoted?.text?.slice(0,product.maxTextChars),memories:memories.map(m=>m.body),pendingData:clarification,...(contextualSearch?{searchData:{query:search.query,previousSearchRequest:previousSearchRequest(history.rows)}}:{})};
   const contents:ConversationTurn[]=[];
   for(const message of history.rows)appendTurn(contents,message.role==='bot'?'model':'user',[{text:message.text.slice(0,product.contextChars/product.contextMessages)}]);
+  let model: Llm | undefined;
   try{
     const inline=images.length?[{inlineData:await currentImage(ctx.config,source.kind==='image'?source.msg:ctx.msg)}]:[];
     appendTurn(contents,'user',[{text:JSON.stringify(userData)},...inline]);
-    const model=llm ?? createLlmBackend(ctx.db,ctx.config,ctx.actor.id);
+    model=llm ?? createLlmBackend(ctx.db,ctx.config,ctx.actor.id);
     const output=await model.generate({system:system+searchInstruction,contents,tools:registry.declarations(ctx).filter(t=>(!contextualSearch || t.name==='web_search') && (!schoolFile || t.name==='school_task_create'))});
     if(output.calls.length){
       if(output.calls.length>product.llmMaxCalls)return 'La solicitud tiene demasiadas acciones. Divídela.';
@@ -143,6 +144,10 @@ export async function route(ctx:ToolCtx,llm?:Llm):Promise<string|undefined>{
     if(error instanceof LlmUnavailable)return llmError(error);
     await ctx.c.query("INSERT INTO error_log(where_,msg_id,detail) VALUES('router',$1,'Error de proveedor o imagen; datos omitidos')",[ctx.msg.id]);
     return 'No pude procesar la solicitud. Los comandos directos siguen disponibles.';
+  }finally{
+    if(ctx.turnId && model && 'cleanupTurnBudget' in model && typeof (model as {cleanupTurnBudget?: unknown}).cleanupTurnBudget === 'function'){
+      (model as {cleanupTurnBudget: (id: string) => void}).cleanupTurnBudget(ctx.turnId);
+    }
   }
 }
 export async function rememberContext(ctx:ToolCtx,response:string):Promise<void>{

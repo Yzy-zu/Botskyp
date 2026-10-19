@@ -8,6 +8,9 @@ COPY config ./config
 RUN npm run build && mkdir -p dist/src/db/migrations && cp src/db/migrations/*.sql dist/src/db/migrations/ && cp config/persona.md dist/config/persona.md
 RUN npm prune --omit=dev
 FROM node:24-bookworm-slim AS app
+ARG BOTSKY_GIT_COMMIT=unknown
+LABEL botsky.git_commit="${BOTSKY_GIT_COMMIT}"
+ENV BOTSKY_GIT_COMMIT="${BOTSKY_GIT_COMMIT}"
 RUN apt-get update && apt-get install -y --no-install-recommends openssh-client && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
 WORKDIR /app
@@ -34,6 +37,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && mkdir -p /opt/voices && /opt/piper/bin/python -m piper.download_voices --data-dir /opt/voices es_MX-ald-medium \
     && rm -rf /var/lib/apt/lists/*
 FROM media-deps AS worker
+ARG BOTSKY_GIT_COMMIT=unknown
+LABEL botsky.git_commit="${BOTSKY_GIT_COMMIT}"
+ENV BOTSKY_GIT_COMMIT="${BOTSKY_GIT_COMMIT}"
 RUN apt-get update && apt-get install -y --no-install-recommends rclone && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
 WORKDIR /app

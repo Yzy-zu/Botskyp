@@ -1,8 +1,11 @@
+import pino from 'pino';
 import { observer } from '../../observer/index.js';
 import type { Config } from '../../config.js';
 import type { Db } from '../../db/client.js';
 import { product } from '../../../config/product.js';
 import { LlmUnavailable, reserveCall } from '../quota.js';
+
+const log = pino({ level: 'info' });
 import type {
   CandidateHealthState,
   Llm,
@@ -97,7 +100,7 @@ export class MultiProviderRouter implements Llm {
 
   private initializeProviders(): void {
     // 1. Gemini
-    const geminiKeys = this.config.GEMINI_API_KEYS.length
+    const geminiKeys = this.config.GEMINI_API_KEYS?.length
       ? this.config.GEMINI_API_KEYS
       : this.config.GEMINI_API_KEY ? [this.config.GEMINI_API_KEY] : [];
     if (geminiKeys.length) {
@@ -168,6 +171,25 @@ export class MultiProviderRouter implements Llm {
       return b;
     }
     return new TurnLlmBudget(maxAttempts);
+  }
+
+  cleanupTurnBudget(turnId?: string): void {
+    if (turnId) {
+      this.turnBudgets.delete(turnId);
+    }
+  }
+
+  get retainedBudgetCount(): number {
+    return this.turnBudgets.size;
+  }
+
+  async runInTurn<T>(turnId: string, fn: (budget: TurnLlmBudget) => Promise<T>): Promise<T> {
+    const budget = this.getOrCreateBudget(turnId);
+    try {
+      return await fn(budget);
+    } finally {
+      this.cleanupTurnBudget(turnId);
+    }
   }
 
   reset(): void {
@@ -470,6 +492,31 @@ export class MultiProviderRouter implements Llm {
           fallbackLog.finalProvider = candidate.provider;
           fallbackLog.finalModel = candidate.model;
           fallbackLog.success = true;
+          budget.finalProvider = candidate.provider;
+          budget.finalModel = candidate.model;
+          reply.actualNetworkAttempts = budget.actualNetworkAttempts;
+          reply.credentialId = credState.id;
+
+          log.info({
+            telemetry: 'provider_attempt',
+            turnId: budget.turnId ?? 'anonymous',
+            generationIndex: budget.generationIndex,
+            networkAttemptOrdinal: attemptOrdinal,
+            provider: candidate.provider,
+            model: candidate.model,
+            credentialId: credState.id,
+            outcome: 'success',
+            latencyMs,
+          }, 'Provider HTTP attempt completed');
+
+          log.info({
+            telemetry: 'turn_completion',
+            turnId: budget.turnId ?? 'anonymous',
+            generationIndex: budget.generationIndex,
+            actualNetworkAttempts: budget.actualNetworkAttempts,
+            finalProvider: candidate.provider,
+            finalModel: candidate.model,
+          }, 'LLM turn generation completed');
 
           observer.emit(() => ({
             eventType: 'ROUTER_METRICS',
@@ -520,6 +567,24 @@ export class MultiProviderRouter implements Llm {
             ).catch(() => undefined);
           }
 
+          const retryAfter = error instanceof ProviderAttemptError ? error.retryAfterMs : undefined;
+          const providerErrorClass = error instanceof Error ? error.constructor.name : typeof error;
+
+          log.info({
+            telemetry: 'provider_attempt',
+            turnId: budget.turnId ?? 'anonymous',
+            generationIndex: budget.generationIndex,
+            networkAttemptOrdinal: attemptOrdinal,
+            provider: candidate.provider,
+            model: candidate.model,
+            credentialId: credState.id,
+            outcome: failureKind,
+            latencyMs,
+            ...(retryAfter !== undefined ? { retryAfter } : {}),
+            ...(candHealth.cooldownUntil ? { cooldownUntil: candHealth.cooldownUntil } : {}),
+            providerErrorClass,
+          }, 'Provider HTTP attempt failed');
+
           budget.fallbackAttempts.push({
             ordinal: attemptOrdinal,
             provider: candidate.provider,
@@ -560,6 +625,14 @@ export class MultiProviderRouter implements Llm {
     }
 
     fallbackLog.success = false;
+    log.info({
+      telemetry: 'turn_completion',
+      turnId: budget.turnId ?? 'anonymous',
+      generationIndex: budget.generationIndex,
+      actualNetworkAttempts: budget.actualNetworkAttempts,
+      finalProvider: fallbackLog.finalProvider,
+      finalModel: fallbackLog.finalModel,
+    }, 'LLM turn generation failed');
     observer.emit(() => ({
       eventType: 'ROUTER_METRICS',
       stage: 'router.fallback',

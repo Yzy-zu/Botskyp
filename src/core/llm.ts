@@ -10,7 +10,7 @@ export { LlmUnavailable } from './quota.js';
 export type Image={mimeType:string;data:string};
 export type Declaration={name:string;description:string;parametersJsonSchema:Record<string,unknown>};
 export type LlmInput={turnId?:string;system:string;contents:unknown[];tools:Declaration[];images?:Image[];responseJsonSchema?:Record<string,unknown>;requireFunctionCall?:boolean;validateFunctionCalls?:boolean};
-export type LlmReply={text:string;calls:GeminiFunctionCall[];content:unknown;providerContext?:ProviderToolContext;usage?:{inputTokens:number;outputTokens:number}};
+export type LlmReply={text:string;calls:GeminiFunctionCall[];content:unknown;provider?:string|undefined;model?:string|undefined;providerState?:unknown;providerContext?:ProviderToolContext|undefined;usage?:{inputTokens:number;outputTokens:number}|undefined};
 export type CallBudget={used:number};
 export interface Llm { readonly counters?:Readonly<{calls:number;inputTokens:number;outputTokens:number}>;generate(input:LlmInput):Promise<LlmReply> }
 const responseSchema=z.object({
@@ -136,3 +136,26 @@ export class Gemini implements Llm {
     return `${candidate?.content?.parts.filter(p=>!p.thought).map(p=>p.text ?? '').join('') ?? ''}\nFuentes:\n${[...new Set(sources)].join('\n')}`;
   }
 }
+
+import { MultiProviderRouter } from './llm/index.js';
+export { MultiProviderRouter, GeminiProvider, GroqProvider, OpenRouterProvider } from './llm/index.js';
+export { CredentialPool } from './llm/credential-pool.js';
+export { getModelCapability, setModelCapabilityOverride, clearModelCapabilityOverrides } from './llm/capability-matrix.js';
+export { tokenPreflight, estimateRequestTokens } from './llm/preflight.js';
+
+export function createLlmBackend(
+  db: Db | undefined,
+  config: Config,
+  actor: string,
+  _budget?: CallBudget,
+  http?: typeof fetch,
+  signal?: AbortSignal,
+): Llm {
+  return new MultiProviderRouter(config, {
+    ...(db !== undefined ? { db } : {}),
+    actor,
+    ...(http !== undefined ? { http } : {}),
+    ...(signal !== undefined ? { parentSignal: signal } : {}),
+  });
+}
+

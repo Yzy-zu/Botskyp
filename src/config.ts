@@ -3,6 +3,7 @@ import { product } from '../config/product.js';
 const jid = z.string().regex(/^\d+@(s\.whatsapp\.net|lid)$/);
 const list = z.string().transform(s => s.split(',').map(x => x.trim()).filter(Boolean)).pipe(z.array(jid).min(1));
 export function validGeminiApiKey(key:string):boolean{return /^[\x21-\x2B\x2D-\x7E]+$/.test(key);}
+export function validApiKey(key:string):boolean{return /^[\x21-\x7E]+$/.test(key);}
 const localLimit = (max:number, fallback:number) => z.string().trim().min(1).transform(Number).pipe(z.number().int().min(0).max(max)).default(fallback);
 const schema = z.object({
   OBSERVER_ENABLED: z.enum(['true','false']).default('false').catch('false').transform(s=>s==='true'),
@@ -31,7 +32,19 @@ const schema = z.object({
   GEMINI_API_KEY: z.string().trim().default(''),
   GEMINI_API_KEYS: z.string().default('').transform(s => [...new Set(s.split(',').map(key => key.trim()).filter(Boolean))]).pipe(z.array(z.string().refine(validGeminiApiKey))),
   GEMINI_MODEL: z.enum(['gemini-3.5-flash-lite','gemini-2.5-flash-lite','gemini-3.8-flash']).default(product.llmModel),
+  GEMINI_MODELS: z.string().default('').transform(s => [...new Set(s.split(',').map(m => m.trim()).filter(Boolean))]),
   GEMINI_FREE_TIER_CONFIRMED: z.enum(['true','false']).default('false').transform(s => s === 'true'),
+  GROQ_ENABLED: z.enum(['true','false']).default('false').transform(s => s === 'true'),
+  GROQ_API_KEY: z.string().trim().default(''),
+  GROQ_API_KEYS: z.string().default('').transform(s => [...new Set(s.split(',').map(key => key.trim()).filter(Boolean))]).pipe(z.array(z.string().refine(validApiKey))),
+  GROQ_MODELS: z.string().default('').transform(s => [...new Set(s.split(',').map(m => m.trim()).filter(Boolean))]),
+  OPENROUTER_ENABLED: z.enum(['true','false']).default('false').transform(s => s === 'true'),
+  OPENROUTER_API_KEY: z.string().trim().default(''),
+  OPENROUTER_API_KEYS: z.string().default('').transform(s => [...new Set(s.split(',').map(key => key.trim()).filter(Boolean))]).pipe(z.array(z.string().refine(validApiKey))),
+  OPENROUTER_MODELS: z.string().default('').transform(s => [...new Set(s.split(',').map(m => m.trim()).filter(Boolean))]),
+  OPENROUTER_ALLOW_FREE_MODELS: z.enum(['true','false']).default('false').transform(s => s === 'true'),
+  LLM_ROUTE: z.string().default(''),
+  LLM_MAX_PROVIDER_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
   WEB_SEARCH_PROVIDER: z.enum(['searxng','gemini']).default('searxng'),
   SEARXNG_URL: z.url().default('http://searxng:8080'),
   DATABASE_URL: z.url().refine(s => s.startsWith('postgresql://') || s.startsWith('postgres://')),
@@ -57,6 +70,21 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (!result.success) throw new Error(`Invalid configuration: ${result.error.issues.map(i => i.path.join('.')).join(', ')}`);
   const keys = result.data.GEMINI_API_KEYS.length ? result.data.GEMINI_API_KEYS : result.data.GEMINI_API_KEY ? [result.data.GEMINI_API_KEY] : [];
   if (!keys.length || keys.some(key => !validGeminiApiKey(key))) throw new Error('Invalid configuration: GEMINI_API_KEYS / GEMINI_API_KEY');
+
+  const groqKeys = result.data.GROQ_API_KEYS.length ? result.data.GROQ_API_KEYS : result.data.GROQ_API_KEY ? [result.data.GROQ_API_KEY] : [];
+  if (result.data.GROQ_ENABLED && (!groqKeys.length || groqKeys.some(key => !validApiKey(key)))) {
+    throw new Error('Invalid configuration: GROQ_API_KEYS / GROQ_API_KEY');
+  }
+
+  const openRouterKeys = result.data.OPENROUTER_API_KEYS.length ? result.data.OPENROUTER_API_KEYS : result.data.OPENROUTER_API_KEY ? [result.data.OPENROUTER_API_KEY] : [];
+  if (result.data.OPENROUTER_ENABLED && (!openRouterKeys.length || openRouterKeys.some(key => !validApiKey(key)))) {
+    throw new Error('Invalid configuration: OPENROUTER_API_KEYS / OPENROUTER_API_KEY');
+  }
+
+  const geminiModels = result.data.GEMINI_MODELS.length ? result.data.GEMINI_MODELS : [result.data.GEMINI_MODEL];
+  const groqModels = result.data.GROQ_MODELS.length ? result.data.GROQ_MODELS : ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+  const openRouterModels = result.data.OPENROUTER_MODELS.length ? result.data.OPENROUTER_MODELS : ['meta-llama/llama-3.3-70b-instruct'];
+
   if (result.data.TRANSPORT === 'evolution') {
     const db = new URL(result.data.DATABASE_URL);
     if (db.hostname !== 'botsky-db' || db.pathname !== '/botsky' || db.username !== 'botsky') {
@@ -65,6 +93,8 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
   // Preserve legacy Config consumers while giving the explicit LLM_* names precedence.
   return { ...result.data, GEMINI_API_KEYS: keys,
+    GROQ_API_KEYS: groqKeys, OPENROUTER_API_KEYS: openRouterKeys,
+    GEMINI_MODELS: geminiModels, GROQ_MODELS: groqModels, OPENROUTER_MODELS: openRouterModels,
     GEMINI_USER_RPM: result.data.LLM_LOCAL_USER_RPM, LLM_USER_RPM: result.data.LLM_LOCAL_USER_RPM,
     GEMINI_GLOBAL_RPM: result.data.LLM_LOCAL_GLOBAL_RPM, LLM_GLOBAL_RPM: result.data.LLM_LOCAL_GLOBAL_RPM,
     GEMINI_DAILY_LIMIT: result.data.LLM_LOCAL_DAILY_LIMIT, LLM_DAILY_LIMIT: result.data.LLM_LOCAL_DAILY_LIMIT, GEMINI_INPUT_TPM: result.data.LLM_INPUT_TOKENS_PER_MINUTE,

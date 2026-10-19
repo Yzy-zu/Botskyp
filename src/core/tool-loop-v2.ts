@@ -33,8 +33,12 @@ function backendAttempts(args:unknown):number{
   return Object.entries(args).reduce((sum,[k,v])=>sum+((backendOnlyFields as readonly string[]).some(f=>f.toLowerCase()===k.toLowerCase())?1:0)+backendAttempts(v),0);
 }
 function providerFailure(error:unknown):string{
-  if(error instanceof LlmUnavailable && error.kind==='blocked')return 'Gemini bloqueó esa solicitud por sus propias restricciones. No pude completarla.';
-  if(error instanceof LlmUnavailable && ['quota','local_limit'].includes(error.kind))return 'Llegué al límite de IA por ahora. Inténtalo más tarde.';
+  if(error instanceof LlmUnavailable){
+    if(error.kind==='blocked')return 'Gemini bloqueó esa solicitud por sus propias restricciones. No pude completarla.';
+    if(error.kind==='disabled')return 'Hay un problema con la configuración de autenticación de la IA. Por favor, contacta al administrador.';
+    if(error.kind==='invalid')return 'No hay un modelo compatible disponible para procesar esta solicitud.';
+    if(['quota','local_limit'].includes(error.kind))return 'Llegué al límite de IA por ahora. Inténtalo más tarde.';
+  }
   return 'La IA no pudo responder en este momento. Inténtalo más tarde.';
 }
 /** All provider content exists only inside this logical turn. Historical context never becomes executable contents. */
@@ -69,7 +73,7 @@ export async function naturalToolLoopV2(ctx:ToolCtx,llm:Llm,catalog:readonly Too
     if(!(llm instanceof Gemini))observer.emit(()=>({eventType:'LLM_REQUEST',stage:'gemini.logical',turnId:ctx.turnId!,payload:{ordinal:metrics.callsPerTurn,model:ctx.config.GEMINI_MODEL,synthesis,request}}));
     let reply:LlmReply;
     try{reply=await llm.generate(request);if(!(llm instanceof Gemini))observer.emit(()=>({eventType:'LLM_RESPONSE',stage:'gemini.logical',payload:{ordinal:metrics.callsPerTurn,latencyMs:performance.now()-started,reply}}));}
-    catch(error){if(!(llm instanceof Gemini))observer.emit({eventType:'LLM_ERROR',stage:'gemini.logical',payload:{ordinal:metrics.callsPerTurn,latencyMs:performance.now()-started,error}});throw error;}
+    catch(error){if(!(llm instanceof Gemini))observer.emit(()=>({eventType:'LLM_ERROR',stage:'gemini.logical',payload:{ordinal:metrics.callsPerTurn,latencyMs:performance.now()-started,error}}));throw error;}
     metrics.inputTokens+=reply.usage?.inputTokens ?? 0;metrics.outputTokens+=reply.usage?.outputTokens ?? 0;
     return reply;
   }
@@ -77,13 +81,16 @@ export async function naturalToolLoopV2(ctx:ToolCtx,llm:Llm,catalog:readonly Too
     while(metrics.callsPerTurn<product.llmMaxCalls){
       const output=await generate();
       const parsed=geminiContentSchema.safeParse(output.content);
-      if(!parsed.success)throw new LlmUnavailable('invalid');
-      const provider=geminiToolContext(parsed.data);
-      // Use original content with all parts/signatures, never rebuild {name,args} into a new model part.
-      contents.push(provider.modelContent);
-      if(!provider.calls.length){
+      const isGeminiContent=parsed.success;
+      const calls=isGeminiContent ? geminiToolContext(parsed.data).calls.map(c=>c.call) : (output.calls ?? []);
+      const text=isGeminiContent ? parsed.data.parts.filter(p=>!p.thought).map(p=>p.text ?? '').join('') : (output.text ?? '');
+      if(isGeminiContent){
+        contents.push(geminiToolContext(parsed.data).modelContent);
+      }else{
+        contents.push(output.content);
+      }
+      if(!calls.length){
         if(results.length)return local();
-        const text=provider.modelContent.parts.filter(p=>!p.thought).map(p=>p.text ?? '').join('');
         const outcome=conversationTextV2(text);
         const invalidLimitation=outcome.outcome==='unavailable' && !await verifiedLimitationV2(ctx,context,catalog,outcome.capability);
         if((outcome.retry || invalidLimitation) && !metrics.capability_truth_retry && metrics.mutationRetry<product.maxMutationRetriesPerTurn && metrics.callsPerTurn<product.llmMaxCalls){
@@ -94,7 +101,7 @@ export async function naturalToolLoopV2(ctx:ToolCtx,llm:Llm,catalog:readonly Too
       const responses:ReturnType<typeof geminiFunctionResult>[]=[];
       let expanded=false;
       const loadedImages:Image[]=[];
-      for(const {call} of provider.calls){
+      for(const call of calls){
         observer.emit(()=>({eventType:'TOOL_PROPOSED',stage:'tool_loop',payload:{toolName:call.name,args:call.args,call}}));
         // Every proposed call, including failed/unknown/meta calls, consumes a hard slot.
         if(metrics.toolCount>=product.maxToolCallsPerTurn){stopped=true;responses.push(geminiFunctionResult(call,{status:'denied',message:'Se alcanzó el límite de acciones del turno.'}));continue;}
@@ -184,8 +191,12 @@ export async function naturalToolLoopV2(ctx:ToolCtx,llm:Llm,catalog:readonly Too
         metrics.synthesisUsed=true;
         const clarified=await generate(true);
         const content=geminiContentSchema.safeParse(clarified.content);
-        if(content.success && !geminiToolContext(content.data).calls.length){
-          const answer=conversationTextV2(content.data.parts.filter(p=>!p.thought).map(p=>p.text ?? '').join(''));
+        const clarifiedCalls=content.success ? geminiToolContext(content.data).calls : (clarified.calls ?? []);
+        if(!clarifiedCalls.length){
+          const synthText=content.success
+            ? content.data.parts.filter(p=>!p.thought).map(p=>p.text ?? '').join('')
+            : clarified.text;
+          const answer=conversationTextV2(synthText);
           if(answer.valid && !answer.retry)return answer.text;
         }
         return local();
@@ -199,9 +210,13 @@ export async function naturalToolLoopV2(ctx:ToolCtx,llm:Llm,catalog:readonly Too
       metrics.synthesisUsed=true;
       const summary=await generate(true);
       const content=geminiContentSchema.safeParse(summary.content);
+      const summaryCalls=content.success ? geminiToolContext(content.data).calls : (summary.calls ?? []);
       // Synthesis is read-only even if the provider violates the no-tools request.
-      if(content.success && !geminiToolContext(content.data).calls.length){
-        const answer=conversationTextV2(content.data.parts.filter(p=>!p.thought).map(p=>p.text ?? '').join(''));
+      if(!summaryCalls.length){
+        const synthText=content.success
+          ? content.data.parts.filter(p=>!p.thought).map(p=>p.text ?? '').join('')
+          : summary.text;
+        const answer=conversationTextV2(synthText);
         if(!answer.retry && answer.valid)return answer.text;
       }
       return local();

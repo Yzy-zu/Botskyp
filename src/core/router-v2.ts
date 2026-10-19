@@ -4,7 +4,7 @@ import { currentResultV2 } from './current-result-v2.js';
 import { readFileSync } from 'node:fs';
 import pino from 'pino';
 import { product } from '../../config/product.js';
-import { Gemini, type Llm, type Image } from './llm.js';
+import { createLlmBackend, type Llm, type Image } from './llm.js';
 import { createRegistry } from './registry.js';
 import { createToolRegistryV2 } from './tool-registry-v2.js';
 import { buildTurnContextV2, serializeContextV2 } from './context-v2.js';
@@ -84,7 +84,7 @@ export async function routeNaturalV2(ctx:ToolCtx,llm?:Llm):Promise<string|undefi
     }
     if(!initial.runtime.enabledModules.includes('conversation'))return 'La conversación está apagada en este chat.';
 
-    return observedOutputV2(await naturalToolLoopV2(ctx,llm ?? new Gemini(ctx.db,ctx.config,ctx.actor.id),catalog,context,exposure,naturalRouterSystemV2(exposure, ctx.config.TOOL_CALLING_MODE),serializeContextV2(context),images,metrics)) || undefined;
+    return observedOutputV2(await naturalToolLoopV2(ctx,llm ?? createLlmBackend(ctx.db,ctx.config,ctx.actor.id),catalog,context,exposure,naturalRouterSystemV2(exposure, ctx.config.TOOL_CALLING_MODE),serializeContextV2(context),images,metrics)) || undefined;
   }catch(error){
     observer.emit({eventType:'TURN_FAILED',stage:'router',payload:{error,status:'caught_router_error'}});
     return 'No pude procesar la solicitud en este momento. No confirmo ninguna operación.';

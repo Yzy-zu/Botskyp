@@ -23,7 +23,8 @@
     "observer:chat": "bash scripts/observer.sh chat",
     "observer:errors": "bash scripts/observer.sh errors",
     "observer:health": "bash scripts/observer.sh health",
-    "qa:e2e": "tsx qa/e2e/runner.ts"
+    "qa:e2e": "tsx qa/e2e/runner.ts",
+    "llm:qualify": "tsx scripts/llm-qualify.ts"
   },
   "dependencies": {
     "fastify": "^5.12.7",

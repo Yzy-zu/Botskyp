@@ -97,7 +97,7 @@ export async function resetQaState(db: Db, chatId: string, actorId: string): Pro
   );
   // Clear legacy sessions for this QA actor in QA chat
   await db.query(
-    `DELETE FROM sessions WHERE chat_id = $1 AND actor_id = $2`,
+    `DELETE FROM sessions WHERE chat_id = $1 AND owner_id = $2`,
     [chatId, actorId]
   );
 }

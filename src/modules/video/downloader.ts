@@ -44,6 +44,7 @@ export async function downloadVideo(
     '--no-call-home',
     '--no-check-certificates',
     '--no-progress',
+    '--impersonate', 'chrome',
     '--max-filesize', String(maxBytes),
     '-o', outputPattern,
     '--print', 'after_move:filepath',

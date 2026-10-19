@@ -232,8 +232,11 @@ export async function executeToolV2(ctx: ToolCtx, name: string, modelArgs: unkno
       await c.query('ROLLBACK TO SAVEPOINT v2_handler');
       await c.query('RELEASE SAVEPOINT v2_handler');
       // All supported effects are transactional DB mutations or durable queues, never remote writes.
-      const failure = result(name, entry.tool.domain, 'error', error instanceof EconomyError ? 'DOMAIN_REJECTED' : 'HANDLER_ERROR');
-      if(name==='web.search')failure.presentation='No pude completar la búsqueda en este momento. Inténtalo más tarde.';
+      const isEconomy = error instanceof EconomyError;
+      const isNoGame = isEconomy && ['games.status', 'games.cancel'].includes(name) && error.message.includes('No tienes una partida disponible');
+      const failure = result(name, entry.tool.domain, 'error', isNoGame ? 'NO_ACTIVE_GAME' : isEconomy ? 'DOMAIN_REJECTED' : 'HANDLER_ERROR', isEconomy ? { message: error.message } : {});
+      if (isEconomy && error.message) failure.presentation = error.message;
+      if (name === 'web.search') failure.presentation = 'No pude completar la búsqueda en este momento. Inténtalo más tarde.';
       await finish(failure);
       if (pending) await c.query('UPDATE tool_confirmations_v2 SET consumed_execution_id=$2 WHERE id=$1', [pending.id, id]);
       return failure;

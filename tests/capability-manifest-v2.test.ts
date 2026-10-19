@@ -73,7 +73,7 @@ it('projects all five availability states from real Policy adapters, config, sco
   expect(capabilityAvailability(t('control.reactivate'),{...auth,emergency:true})).toBe('AVAILABLE');
   expect(manifest).toMatch(/media.search:.*;A/u);
   for(const scope of [auth,{...auth,chat:{...auth.chat,settings:{modules:{notes:false,messaging:false}}}}]){
-    expect(capabilityManifestV2(catalog,scope).split('\n').filter(l=>/^\w+\.[\w-]+:/u.test(l))).toHaveLength(96);
+    expect(capabilityManifestV2(catalog,scope).split('\n').filter(l=>/^\w+\.[\w-]+:/u.test(l))).toHaveLength(99);
   }
 });
 it('keeps the complete manifest compact for every role and chat scope',()=>{

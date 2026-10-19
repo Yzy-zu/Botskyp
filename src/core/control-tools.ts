@@ -13,8 +13,8 @@ function flagTool(name:string,description:string,example:string,key:string,value
 export const controlTools:Tool[]=[
   flagTool('control.emergency','Apagado de emergencia activado.','bot apagado de emergencia','emergency',true),
   flagTool('control.reactivate','Botsky reactivado.','bot reactiva','emergency',false),
-  flagTool('control.maintenance_on','Mantenimiento activado.','bot mantenimiento on','maintenance',true),
-  flagTool('control.maintenance_off','Mantenimiento desactivado.','bot mantenimiento off','maintenance',false),
+  flagTool('control.maintenance_on','Activar modo de mantenimiento de Botsky.','bot mantenimiento on','maintenance',true),
+  flagTool('control.maintenance_off','Desactivar modo de mantenimiento de Botsky.','bot mantenimiento off','maintenance',false),
   defineTool({...base,name:'control.modules',capability:{summary:'Consultar/activar/apagar módulos.',produces:'estado'},description:'Ver o cambiar módulos de este chat.',examples:['bot módulos','bot activa notas aquí','bot desactiva conversación aquí'],args:z.strictObject({module:z.enum(modules).optional(),enabled:z.boolean().optional()}),
     async run(ctx,args){
       if(args.module && args.enabled!==undefined)await ctx.c.query(`UPDATE chats SET settings=jsonb_set(settings,'{modules}',coalesce(settings->'modules','{}'::jsonb)||jsonb_build_object($2::text,$3::boolean)) WHERE id=$1`,[ctx.chat.id,args.module,args.enabled]);

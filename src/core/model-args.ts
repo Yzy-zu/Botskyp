@@ -18,7 +18,11 @@ const poll = { pollRef: ref('pollRef') };
 const op = { opRef: ref('opRef') };
 const task = { taskRef: ref('taskRef') };
 const subject = z.union([ref('subjectRef'), short]).describe('Materia por referencia o nombre; el backend resuelve ambigüedades.');
-const reminder = { body: text.optional(), time: semanticTimeSchema.optional(), recurrence: recurrenceSchema.optional() };
+const reminder = {
+  body: text.optional().describe('Texto literal del recordatorio'),
+  time: semanticTimeSchema.optional().describe('Momento del recordatorio. OBLIGATORIO: Si el usuario NO indicó fecha, hora ni periodo (ej. "recuérdame comprar pan"), OMITE este campo por completo; NUNCA inventes mañana, 9:00 ni ninguna fecha/hora por defecto. Para tiempos relativos ("en 3 días", "dentro de 3 días", "en 15 minutos") usa kind="relative" con amount y unit ("day"|"hour"|"minute"); si además dio hora (ej. "en 2 días a las 10 am") incluye hour y meridiem dentro de relative. Para mañana usa kind="tomorrow" con hour. Para hora sin día usa kind="clock".'),
+  recurrence: recurrenceSchema.optional(),
+};
 const destinations = z.array(ref('destinationRef')).min(1).max(product.bulkMaxTargets);
 const message = { destinations, text: text.max(product.bulkTextChars) };
 const lesson = object({ subject, weekday: integer(7), start: clock, end: clock });
@@ -105,7 +109,7 @@ export const modelArgsSchemas = {
   'school.schedule_import': object({ artifactRef: ref('artifactRef').optional() }),
   'school.schedule_commit': empty,
   'school.tasks': object({ subject: subject.optional() }),
-  'school.task_create': object({ subject, title: text.max(product.schoolTaskChars), time: semanticTimeSchema.optional(), includeAttachment: bool.optional() }),
+  'school.task_create': object({ subject, title: text.max(product.schoolTaskChars), time: semanticTimeSchema.optional().describe('Momento de entrega. Para tiempos relativos como "dentro de tres días" o "en 3 días" usa kind="relative" con amount y unit="day". Omite time si no se especificó fecha.'), includeAttachment: bool.optional() }),
   'school.task_edit': object({ ...task, title: text.max(product.schoolTaskChars).optional(), time: semanticTimeSchema.nullable().optional() }),
   'school.task_delete': object(task),
   'school.task_attachment': object(task),

@@ -41,6 +41,21 @@ it('handles day after tomorrow, relative calendar days and explicit local dates'
   expect(local({ kind: 'date', date: '2026-11-01', hour: 14 })).toBe('2026-11-01 14:00');
   expect(local({ kind: 'relative', amount: 1, unit: 'day' })).toBe('2026-10-18 12:00');
   expect(local({ kind: 'relative', amount: 1, unit: 'hour' })).toBe('2026-10-17 13:00');
+  expect(local({ kind: 'relative', amount: 15, unit: 'minute' })).toBe('2026-10-17 12:15');
+  expect(local({ kind: 'relative', amount: 3, unit: 'day' })).toBe('2026-10-20 12:00');
+});
+it('handles relative date with explicit clock time (REM-004 fix)', () => {
+  // "en dos días a las diez de la mañana" -> 2026-10-19 10:00
+  expect(local({ kind: 'relative', amount: 2, unit: 'day', hour: 10, meridiem: 'am' })).toBe('2026-10-19 10:00');
+  // "dentro de tres días a las 15:30"
+  expect(local({ kind: 'relative', amount: 3, unit: 'day', hour: 15, minute: 30 })).toBe('2026-10-20 15:30');
+  // "en 3 días a las 8" without meridiem -> ambiguous_hour
+  expect(resolveSemanticTime({ kind: 'relative', amount: 3, unit: 'day', hour: 8 }, now)).toEqual({ status: 'needs_clarification', code: 'ambiguous_hour' });
+});
+it('gracefully handles kind aliases produced by LLM for relative days', () => {
+  expect(local({ kind: 'day', amount: 3, unit: 'day' } as unknown as SemanticTimeInput)).toBe('2026-10-20 12:00');
+  expect(local({ kind: 'in', amount: 3, unit: 'day' } as unknown as SemanticTimeInput)).toBe('2026-10-20 12:00');
+  expect(local({ kind: 'amount', amount: 3, unit: 'day' } as unknown as SemanticTimeInput)).toBe('2026-10-20 12:00');
 });
 it('rejects malformed semantics and nonexistent dates', () => {
   for (const input of [{ kind: 'date', date: '2026-02-30', hour: 20 }, { kind: 'today', hour: 24 }, { kind: 'today', hour: 15, meridiem: 'am' }, { kind: 'relative', amount: -1, unit: 'minute' }, { kind: 'tomorrow', hour: 20, timezone: 'UTC' }]) {

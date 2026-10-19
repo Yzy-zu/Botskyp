@@ -1,12 +1,23 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { CredentialPool, ProviderAttemptError } from '../src/core/llm/credential-pool.js';
+import { GeminiProvider } from '../src/core/llm/gemini-adapter.js';
 import { GroqProvider } from '../src/core/llm/groq-adapter.js';
 import { OpenRouterProvider } from '../src/core/llm/openrouter-adapter.js';
-import { MultiProviderRouter } from '../src/core/llm/router.js';
+import {
+  MultiProviderRouter,
+  getSharedMultiProviderRouter,
+  resetSharedMultiProviderRouter,
+  parseRouteCandidate,
+} from '../src/core/llm/router.js';
+import { TurnLlmBudget } from '../src/core/llm/types.js';
 import { tokenPreflight, estimateRequestTokens } from '../src/core/llm/preflight.js';
 import { getModelCapability, setModelCapabilityOverride, clearModelCapabilityOverrides } from '../src/core/llm/capability-matrix.js';
-import { llmInputToOpenAiMessages } from '../src/core/llm/provider-adapter.js';
+import { llmInputToOpenAiMessages, hasVisionInput } from '../src/core/llm/provider-adapter.js';
 import { LlmUnavailable } from '../src/core/quota.js';
+import { randomUUID } from 'node:crypto';
+import { receive, processNext } from '../src/core/inbox.js';
+import { db, config as harnessConfig, owner as harnessOwner, chat as harnessChat, reset as harnessReset, initialize as harnessInitialize } from './r4-harness.js';
+import type { Msg } from '../src/wa/types.js';
 import type { LlmInput } from '../src/core/llm/types.js';
 import type { Config } from '../src/config.js';
 
@@ -378,6 +389,590 @@ describe('Multi-Provider LLM Backend', () => {
       // Next call with same turnId must stick to Gemini
       const reply2 = await router.generate({ ...input, contents: [...input.contents, { role: 'model', parts: [{ text: 'ok' }] }] });
       expect(reply2.provider).toBe('gemini');
+    });
+  });
+
+  describe('Route Parser (Section 10)', () => {
+    it('parses provider|model preserving model name byte-for-byte intact', () => {
+      const parsed1 = parseRouteCandidate('openrouter|some/model:free');
+      expect(parsed1).toEqual({ provider: 'openrouter', model: 'some/model:free' });
+
+      const parsed2 = parseRouteCandidate('groq|llama-3.3-70b-versatile');
+      expect(parsed2).toEqual({ provider: 'groq', model: 'llama-3.3-70b-versatile' });
+
+      const parsed3 = parseRouteCandidate('gemini|gemini-2.5-flash');
+      expect(parsed3).toEqual({ provider: 'gemini', model: 'gemini-2.5-flash' });
+    });
+
+    it('parses legacy formats provider:model and provider/model', () => {
+      const p1 = parseRouteCandidate('gemini:gemini-3.5-flash-lite');
+      expect(p1).toEqual({ provider: 'gemini', model: 'gemini-3.5-flash-lite' });
+
+      const p2 = parseRouteCandidate('groq/llama-3.1-8b-instant');
+      expect(p2).toEqual({ provider: 'groq', model: 'llama-3.1-8b-instant' });
+    });
+
+    it('rejects invalid or unknown providers', () => {
+      expect(parseRouteCandidate('')).toBeUndefined();
+      expect(parseRouteCandidate('unknown|model')).toBeUndefined();
+      expect(parseRouteCandidate('claude/claude-3-opus')).toBeUndefined();
+    });
+  });
+
+  describe('Application-Scoped Provider Runtime & Cooldown Persistence (Section 2 & 17)', () => {
+    const baseConfig = {
+      GEMINI_API_KEY: 'test-gemini-key',
+      GEMINI_API_KEYS: ['test-gemini-key-1', 'test-gemini-key-2'],
+      GEMINI_MODEL: 'gemini-3.5-flash-lite' as const,
+      GEMINI_MODELS: ['gemini-3.5-flash-lite'],
+      GEMINI_FREE_TIER_CONFIRMED: true,
+      GROQ_ENABLED: false,
+      OPENROUTER_ENABLED: false,
+      LLM_ROUTE: 'gemini/gemini-3.5-flash-lite',
+      LLM_MAX_PROVIDER_ATTEMPTS: 3,
+    };
+
+    afterEach(() => {
+      resetSharedMultiProviderRouter();
+    });
+
+    it('preserves cooldown between two independent turns (turn 1 429 skips key on turn 2)', async () => {
+      let nowMs = 100000;
+      const httpCalls: string[] = [];
+      const mockHttp = vi.fn<typeof fetch>(async (_url, init) => {
+        const apiKey = (init?.headers as Record<string, string>)?.['x-goog-api-key'] ?? '';
+        httpCalls.push(apiKey);
+        if (apiKey === 'test-gemini-key-1') {
+          return new Response(JSON.stringify({ error: { message: 'Quota exceeded' } }), {
+            status: 429,
+            headers: { 'retry-after': '30' },
+          });
+        }
+        return Response.json({
+          candidates: [{
+            content: { role: 'model', parts: [{ text: 'Success from key-2' }] },
+            finishReason: 'STOP',
+          }],
+          usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 5 },
+        });
+      });
+
+      const shared = getSharedMultiProviderRouter(baseConfig as unknown as Config, {
+        http: mockHttp,
+        now: () => nowMs,
+      });
+
+      // Turn 1: key-1 gets 429, router fails over to key-2 and succeeds
+      const reply1 = await shared.generate({
+        turnId: 'turn-1',
+        system: 'System',
+        contents: [{ role: 'user', parts: [{ text: 'First message' }] }],
+        tools: [],
+      });
+      expect(reply1.text).toBe('Success from key-2');
+      expect(httpCalls).toEqual(['test-gemini-key-1', 'test-gemini-key-2']);
+
+      httpCalls.length = 0;
+      nowMs += 5000; // 5s later, cooldown of 30s is still active!
+
+      // Turn 2: Independent turn. Must skip key-1 completely and hit key-2 directly!
+      const reply2 = await shared.generate({
+        turnId: 'turn-2',
+        system: 'System',
+        contents: [{ role: 'user', parts: [{ text: 'Second message' }] }],
+        tools: [],
+      });
+      expect(reply2.text).toBe('Success from key-2');
+      // Hard invariant: key-1 was skipped; zero network attempts to key-1!
+      expect(httpCalls).toEqual(['test-gemini-key-2']);
+    });
+
+    it('auth-disabled credentials remain disabled across turns until reset', async () => {
+      const httpCalls: string[] = [];
+      const mockHttp = vi.fn<typeof fetch>(async (_url, init) => {
+        const apiKey = (init?.headers as Record<string, string>)?.['x-goog-api-key'] ?? '';
+        httpCalls.push(apiKey);
+        if (apiKey === 'test-gemini-key-1') {
+          return new Response(JSON.stringify({ error: { details: [{ reason: 'API_KEY_INVALID' }] } }), {
+            status: 400,
+          });
+        }
+        return Response.json({
+          candidates: [{
+            content: { role: 'model', parts: [{ text: 'Key 2 success' }] },
+            finishReason: 'STOP',
+          }],
+        });
+      });
+
+      const shared = getSharedMultiProviderRouter(baseConfig as unknown as Config, { http: mockHttp });
+
+      await shared.generate({
+        turnId: 'turn-auth-1',
+        system: 'System',
+        contents: [{ role: 'user', parts: [{ text: 'Msg 1' }] }],
+        tools: [],
+      });
+
+      httpCalls.length = 0;
+
+      // Turn 2: Key 1 was permanently disabled due to invalid auth, so it must not be called
+      await shared.generate({
+        turnId: 'turn-auth-2',
+        system: 'System',
+        contents: [{ role: 'user', parts: [{ text: 'Msg 2' }] }],
+        tools: [],
+      });
+
+      expect(httpCalls).toEqual(['test-gemini-key-2']);
+    });
+  });
+
+  describe('Attempt Budget Is Per Whole Agentic Turn (Section 3)', () => {
+    const baseConfig = {
+      GEMINI_API_KEY: 'test-gemini-key',
+      GEMINI_API_KEYS: ['test-gemini-key-1', 'test-gemini-key-2'],
+      GEMINI_MODEL: 'gemini-3.5-flash-lite' as const,
+      GEMINI_MODELS: ['gemini-3.5-flash-lite'],
+      GEMINI_FREE_TIER_CONFIRMED: true,
+      GROQ_ENABLED: true,
+      GROQ_API_KEY: 'gsk-key',
+      GROQ_API_KEYS: ['gsk-key-1'],
+      GROQ_MODELS: ['llama-3.3-70b-versatile'],
+      OPENROUTER_ENABLED: false,
+      LLM_ROUTE: 'gemini/gemini-3.5-flash-lite,groq/llama-3.3-70b-versatile',
+      LLM_MAX_PROVIDER_ATTEMPTS: 3,
+    };
+
+    it('enforces actual network calls <= LLM_MAX_PROVIDER_ATTEMPTS across entire turn loop', async () => {
+      let callCount = 0;
+      const mockHttp = vi.fn<typeof fetch>(async () => {
+        callCount++;
+        // First 2 calls fail with 503
+        if (callCount <= 2) {
+          return new Response(null, { status: 503 });
+        }
+        return Response.json({
+          choices: [{
+            message: { role: 'assistant', content: 'Turn output' },
+            finish_reason: 'stop',
+          }],
+        });
+      });
+
+      const turnBudget = new TurnLlmBudget(3, 'agentic-turn-1');
+      const router = new MultiProviderRouter(baseConfig as unknown as Config, { http: mockHttp });
+
+      setModelCapabilityOverride('groq', 'llama-3.3-70b-versatile', { enabled: true, fullCatalogCompatible: true, supportsTools: true });
+
+      const reply1 = await router.generate({
+        turnBudget,
+        system: 'System',
+        contents: [{ role: 'user', parts: [{ text: 'Do tool' }] }],
+        tools: [],
+      });
+      expect(reply1.text).toBe('Turn output');
+      expect(turnBudget.actualNetworkAttempts).toBe(3);
+
+      // Phase 2: tool continuation in same turn. Budget is exhausted (actualNetworkAttempts === 3)!
+      await expect(router.generate({
+        turnBudget,
+        system: 'System',
+        contents: [{ role: 'user', parts: [{ text: 'Continue tool' }] }],
+        tools: [],
+      })).rejects.toThrow(LlmUnavailable);
+
+      // Hard invariant: actualNetworkCalls MUST NOT exceed 3!
+      expect(mockHttp).toHaveBeenCalledTimes(3);
+    });
+
+    it('skipped candidates (cooldown / preflight) do NOT consume network attempt budget', async () => {
+      const mockHttp = vi.fn<typeof fetch>(async () => Response.json({
+        candidates: [{
+          content: { role: 'model', parts: [{ text: 'OK' }] },
+          finishReason: 'STOP',
+        }],
+      }));
+
+      const router = new MultiProviderRouter(baseConfig as unknown as Config, { http: mockHttp });
+      // Cooldown key 1
+      const pool = router.getPool('gemini');
+      pool?.recordFailure(1, new ProviderAttemptError('quota', 429, 60000), 100);
+
+      const turnBudget = new TurnLlmBudget(3, 'turn-skip-test');
+      await router.generate({
+        turnBudget,
+        system: 'System',
+        contents: [{ role: 'user', parts: [{ text: 'Hello' }] }],
+        tools: [],
+      });
+
+      // Key 1 was skipped by cooldown; key 2 was called.
+      // actualNetworkAttempts MUST be exactly 1!
+      expect(turnBudget.actualNetworkAttempts).toBe(1);
+      expect(mockHttp).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('Strict Error Classification (Section 4)', () => {
+    const baseConfig = {
+      GEMINI_API_KEY: 'test-gemini-key',
+      GEMINI_API_KEYS: ['test-gemini-key-1', 'test-gemini-key-2'],
+      GEMINI_MODEL: 'gemini-3.5-flash-lite' as const,
+      GEMINI_MODELS: ['gemini-3.5-flash-lite'],
+      GEMINI_FREE_TIER_CONFIRMED: true,
+      GROQ_ENABLED: false,
+      OPENROUTER_ENABLED: false,
+      LLM_ROUTE: 'gemini/gemini-3.5-flash-lite',
+      LLM_MAX_PROVIDER_ATTEMPTS: 3,
+    };
+
+    it('Gemini 400 INVALID_ARGUMENT -> invalid (no failover)', async () => {
+      const mockHttp = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+        error: { message: 'Invalid arguments', status: 'INVALID_ARGUMENT' },
+      }), { status: 400 }));
+
+      const router = new MultiProviderRouter(baseConfig as unknown as Config, { http: mockHttp });
+      await expect(router.generate({
+        system: 'System',
+        contents: [{ role: 'user', parts: [{ text: 'Bad request' }] }],
+        tools: [],
+      })).rejects.toThrow(LlmUnavailable);
+
+      // No failover to key 2 on client-side invalid argument
+      expect(mockHttp).toHaveBeenCalledTimes(1);
+    });
+
+    it('Gemini 400 API_KEY_INVALID -> auth failure disables key and fails over within budget', async () => {
+      let callCount = 0;
+      const mockHttp = vi.fn<typeof fetch>(async () => {
+        callCount++;
+        if (callCount === 1) {
+          return new Response(JSON.stringify({
+            error: { details: [{ reason: 'API_KEY_INVALID' }] },
+          }), { status: 400 });
+        }
+        return Response.json({
+          candidates: [{
+            content: { role: 'model', parts: [{ text: 'Key 2 succeeded' }] },
+            finishReason: 'STOP',
+          }],
+        });
+      });
+
+      const router = new MultiProviderRouter(baseConfig as unknown as Config, { http: mockHttp });
+      const reply = await router.generate({
+        system: 'System',
+        contents: [{ role: 'user', parts: [{ text: 'Hi' }] }],
+        tools: [],
+      });
+
+      expect(reply.text).toBe('Key 2 succeeded');
+      expect(mockHttp).toHaveBeenCalledTimes(2);
+      expect(router.getPool('gemini')?.getState('gemini-key-1')?.available).toBe(false);
+    });
+
+    it('Gemini 403 SAFETY_REFUSAL -> blocked (no failover)', async () => {
+      const mockHttp = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+        error: { message: 'Content safety refusal', status: 'SAFETY_REFUSAL' },
+      }), { status: 403 }));
+
+      const router = new MultiProviderRouter(baseConfig as unknown as Config, { http: mockHttp });
+      await expect(router.generate({
+        system: 'System',
+        contents: [{ role: 'user', parts: [{ text: 'Unsafe text' }] }],
+        tools: [],
+      })).rejects.toThrow(LlmUnavailable);
+
+      expect(mockHttp).toHaveBeenCalledTimes(1);
+    });
+
+    it('Groq 403 moderation/safety -> blocked (no failover)', async () => {
+      const groqAdapter = new GroqProvider(['llama-3.3-70b-versatile'], vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+        error: { message: 'Request was flagged by safety guardrail', type: 'guardrail_violation' },
+      }), { status: 403 })));
+
+      await expect(groqAdapter.generate({
+        system: 'System',
+        contents: [{ role: 'user', parts: [{ text: 'Violating request' }] }],
+        tools: [],
+      }, 'llama-3.3-70b-versatile', 'gsk_test', 'groq-key-1')).rejects.toMatchObject({
+        failureKind: 'blocked',
+        status: 403,
+      });
+    });
+
+    it('OpenRouter 403 moderation/flagged -> blocked (no failover)', async () => {
+      const openRouterAdapter = new OpenRouterProvider(['meta-llama/llama-3.3-70b-instruct'], false, vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+        error: { message: 'Provider moderation flagged prompt', code: 'content_filter' },
+      }), { status: 403 })));
+
+      await expect(openRouterAdapter.generate({
+        system: 'System',
+        contents: [{ role: 'user', parts: [{ text: 'Violating request' }] }],
+        tools: [],
+      }, 'meta-llama/llama-3.3-70b-instruct', 'sk-or-test', 'openrouter-key-1')).rejects.toMatchObject({
+        failureKind: 'blocked',
+        status: 403,
+      });
+    });
+  });
+
+  describe('canHandle & Free Model Gating (Section 5 & 16)', () => {
+    it('model with :free and OPENROUTER_ALLOW_FREE_MODELS=false yields zero network calls', async () => {
+      const mockHttp = vi.fn<typeof fetch>();
+      const adapter = new OpenRouterProvider(['meta-llama/llama-3.3-70b:free'], false, mockHttp);
+
+      const can = adapter.canHandle({
+        system: 'System',
+        contents: [{ role: 'user', parts: [{ text: 'Test' }] }],
+        tools: [],
+      }, 'meta-llama/llama-3.3-70b:free');
+
+      expect(can).toBe(false);
+      expect(mockHttp).toHaveBeenCalledTimes(0);
+    });
+  });
+
+  describe('Tool Args Malformed JSON (Section 7)', () => {
+    it('Groq: malformed JSON tool args throws PROVIDER_TOOL_ARGS_INVALID_JSON and is not repaired to {}', async () => {
+      const mockHttp = vi.fn<typeof fetch>(async () => Response.json({
+        choices: [{
+          message: {
+            role: 'assistant',
+            tool_calls: [{
+              id: 'call_1',
+              type: 'function',
+              function: { name: 'minecraft_status', arguments: '{bad' },
+            }],
+          },
+        }],
+      }));
+
+      const adapter = new GroqProvider(['llama-3.3-70b-versatile'], mockHttp);
+      await expect(adapter.generate({
+        system: 'System',
+        contents: [{ role: 'user', parts: [{ text: 'Status' }] }],
+        tools: [],
+      }, 'llama-3.3-70b-versatile', 'gsk_test', 'groq-key-1')).rejects.toMatchObject({
+        failureKind: 'invalid',
+        providerErrorCode: 'PROVIDER_TOOL_ARGS_INVALID_JSON',
+      });
+    });
+
+    it('OpenRouter: malformed JSON tool args throws PROVIDER_TOOL_ARGS_INVALID_JSON and is not repaired to {}', async () => {
+      const mockHttp = vi.fn<typeof fetch>(async () => Response.json({
+        choices: [{
+          message: {
+            role: 'assistant',
+            tool_calls: [{
+              id: 'call_1',
+              type: 'function',
+              function: { name: 'minecraft_status', arguments: 'not valid json' },
+            }],
+          },
+        }],
+      }));
+
+      const adapter = new OpenRouterProvider(['meta-llama/llama-3.3-70b-instruct'], false, mockHttp);
+      await expect(adapter.generate({
+        system: 'System',
+        contents: [{ role: 'user', parts: [{ text: 'Status' }] }],
+        tools: [],
+      }, 'meta-llama/llama-3.3-70b-instruct', 'sk-test', 'openrouter-key-1')).rejects.toMatchObject({
+        failureKind: 'invalid',
+        providerErrorCode: 'PROVIDER_TOOL_ARGS_INVALID_JSON',
+      });
+    });
+  });
+
+  describe('Conservative Gemini Finish Semantics (Section 8)', () => {
+    it('does not execute Gemini functionCall when finishReason is MAX_TOKENS', async () => {
+      const mockHttp = vi.fn<typeof fetch>(async () => Response.json({
+        candidates: [{
+          content: {
+            role: 'model',
+            parts: [{ functionCall: { name: 'minecraft_status', args: {} } }],
+          },
+          finishReason: 'MAX_TOKENS',
+        }],
+      }));
+
+      const geminiAdapter = new GeminiProvider(['gemini-3.5-flash-lite'], mockHttp);
+      await expect(geminiAdapter.generate({
+        system: 'System',
+        contents: [{ role: 'user', parts: [{ text: 'Check server' }] }],
+        tools: [],
+      }, 'gemini-3.5-flash-lite', 'key-test', 'gemini-key-1')).rejects.toMatchObject({
+        failureKind: 'invalid',
+        providerErrorCode: 'MAX_TOKENS',
+      });
+    });
+  });
+
+  describe('Vision / Media (Section 9)', () => {
+    it('detects vision input and rejects model without vision support without dropping images', () => {
+      const visionInput: LlmInput = {
+        system: 'System',
+        contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'image/jpeg', data: 'abcd' } }] }],
+        tools: [],
+      };
+      expect(hasVisionInput(visionInput)).toBe(true);
+
+      const groqAdapter = new GroqProvider(['llama-3.3-70b-versatile']);
+      // Groq does not support vision, canHandle must return false
+      expect(groqAdapter.canHandle(visionInput, 'llama-3.3-70b-versatile')).toBe(false);
+
+      // llmInputToOpenAiMessages throws incompatible when images present on non-vision model
+      expect(() => llmInputToOpenAiMessages(visionInput, false)).toThrowError();
+    });
+  });
+
+  describe('Tool Call IDs Stability (Section 12)', () => {
+    it('generates distinct stable call IDs for parallel calls to same tool name', () => {
+      const turnId = 'turn-test-parallel';
+      const input: LlmInput = {
+        turnId,
+        system: 'System',
+        contents: [
+          { role: 'user', parts: [{ text: 'Run two searches' }] },
+          {
+            role: 'model',
+            parts: [
+              { functionCall: { name: 'web_search', args: { query: 'cats' } } },
+              { functionCall: { name: 'web_search', args: { query: 'dogs' } } },
+            ],
+          },
+          {
+            role: 'user',
+            parts: [
+              { functionResponse: { name: 'web_search', response: { result: 'cats are cool' } } },
+              { functionResponse: { name: 'web_search', response: { result: 'dogs are loyal' } } },
+            ],
+          },
+        ],
+        tools: [],
+      };
+
+      const messages = llmInputToOpenAiMessages(input, false);
+      const assistantMsg = messages.find(m => m.role === 'assistant');
+      expect(assistantMsg?.tool_calls).toHaveLength(2);
+      const id0 = assistantMsg!.tool_calls![0]!.id;
+      const id1 = assistantMsg!.tool_calls![1]!.id;
+
+      // Both must have distinct IDs
+      expect(id0).not.toBe(id1);
+      expect(id0).toContain('call_0');
+      expect(id1).toContain('call_1');
+
+      // The 2 tool response messages must correspond to their respective IDs
+      const toolMsgs = messages.filter(m => m.role === 'tool');
+      expect(toolMsgs).toHaveLength(2);
+      expect(toolMsgs[0]!.tool_call_id).toBe(id0);
+      expect(toolMsgs[1]!.tool_call_id).toBe(id1);
+    });
+  });
+
+  describe('Cross-Provider Continuation (Section 13)', () => {
+    const baseConfig = {
+      GEMINI_API_KEY: 'test-gemini-key',
+      GEMINI_API_KEYS: ['test-gemini-key-1', 'test-gemini-key-2'],
+      GEMINI_MODEL: 'gemini-3.5-flash-lite' as const,
+      GEMINI_MODELS: ['gemini-3.5-flash-lite'],
+      GEMINI_FREE_TIER_CONFIRMED: true,
+      GROQ_ENABLED: true,
+      GROQ_API_KEY: 'gsk-key',
+      GROQ_API_KEYS: ['gsk-key-1'],
+      GROQ_MODELS: ['llama-3.3-70b-versatile'],
+      OPENROUTER_ENABLED: false,
+      LLM_ROUTE: 'gemini/gemini-3.5-flash-lite,groq/llama-3.3-70b-versatile',
+      LLM_MAX_PROVIDER_ATTEMPTS: 3,
+    };
+
+    it('Option B: skips Gemini mid-turn if turn started with OpenAI format provider', async () => {
+      const mockHttp = vi.fn<typeof fetch>(async (url) => {
+        if (String(url).includes('generativelanguage.googleapis.com')) {
+          return Response.json({
+            candidates: [{
+              content: { role: 'model', parts: [{ text: 'Gemini' }] },
+              finishReason: 'STOP',
+            }],
+          });
+        }
+        return Response.json({
+          choices: [{
+            message: { role: 'assistant', content: 'Groq reply' },
+            finish_reason: 'stop',
+          }],
+        });
+      });
+
+      setModelCapabilityOverride('groq', 'llama-3.3-70b-versatile', { enabled: true, fullCatalogCompatible: true, supportsTools: true });
+
+      const router = new MultiProviderRouter(baseConfig as unknown as Config, { http: mockHttp });
+      const budget = new TurnLlmBudget(3, 'turn-cross-1');
+      // Suppose earlier in the turn Groq executed a tool call
+      budget.initialOpenAiFormat = true;
+
+      const reply = await router.generate({
+        turnBudget: budget,
+        system: 'System',
+        contents: [{ role: 'user', parts: [{ text: 'Tool continuation' }] }],
+        tools: [],
+      });
+
+      // Gemini must have been skipped; Groq was chosen
+      expect(reply.provider).toBe('groq');
+    });
+  });
+
+  describe('Real Inbox Production Path Integration (Section 1)', () => {
+    it('proves that a real inbox message goes through MultiProviderRouter', async () => {
+      await harnessInitialize();
+      await harnessReset();
+
+      const router = getSharedMultiProviderRouter(harnessConfig, { db });
+      const responsePayload = JSON.stringify({ outcome: 'conversation', text: 'Hola desde MultiProviderRouter!', effects: [] });
+      const generateSpy = vi.spyOn(router, 'generate').mockResolvedValue({
+        text: responsePayload,
+        calls: [],
+        content: {
+          role: 'model',
+          parts: [{ text: responsePayload }],
+        },
+        provider: 'gemini',
+        model: harnessConfig.GEMINI_MODEL,
+      });
+
+      const msg: Msg = {
+        id: randomUUID(),
+        chatId: harnessChat,
+        senderId: harnessOwner,
+        isGroup: true,
+        ts: new Date(),
+        text: 'ola botsky',
+        fromMe: false,
+        mentions: [],
+        attachments: [],
+      };
+
+      const accepted = await receive(db, harnessConfig, msg);
+      expect(accepted).toBe('accepted');
+
+      const processed = await processNext(db, harnessConfig);
+      expect(processed).toBe(true);
+
+      // Verifies that the real production flow: /webhook -> inbox -> ContextV2 -> naturalToolLoopV2
+      // executes through MultiProviderRouter!
+      expect(generateSpy).toHaveBeenCalled();
+      const calls = generateSpy.mock.calls;
+      expect(calls.length).toBeGreaterThanOrEqual(1);
+
+      // Verify that outbox received the sanitized reply from MultiProviderRouter
+      const outbox = await db.query<{ text: string }>("SELECT payload->>'text' text FROM outbox WHERE payload->>'sourceId'=$1", [msg.id]);
+      expect(outbox.rows[0]?.text).toBe('Hola desde MultiProviderRouter!');
+
+      generateSpy.mockRestore();
     });
   });
 });

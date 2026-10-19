@@ -121,8 +121,37 @@ export type CandidateHealthState = {
   lastLatencyMs: number;
 };
 
+export class TurnLlmBudget {
+  readonly turnId?: string | undefined;
+  readonly maxNetworkAttempts: number;
+  actualNetworkAttempts = 0;
+  generationIndex = 0;
+  fallbackAttempts: FallbackAttemptRecord[] = [];
+  lastError: unknown;
+  sawRateLimit = false;
+  sawAuthFailure = false;
+  sawCompatibleCandidate = false;
+  stickyCandidate?: RouteCandidate | undefined;
+  initialOpenAiFormat = false;
+
+  constructor(maxNetworkAttempts: number, turnId?: string) {
+    this.maxNetworkAttempts = maxNetworkAttempts;
+    this.turnId = turnId;
+  }
+
+  canAttempt(): boolean {
+    return this.actualNetworkAttempts < this.maxNetworkAttempts;
+  }
+
+  recordAttempt(): number {
+    this.actualNetworkAttempts++;
+    return this.actualNetworkAttempts;
+  }
+}
+
 export type PreflightDecision =
   | { ok: true; estimatedTokens: number }
   | { ok: false; reason: 'MODEL_REQUEST_TOO_LARGE' | 'MODEL_RATE_BUDGET_INCOMPATIBLE'; estimatedTokens: number; limit: number };
 
 export { GeminiFunctionCall, ProviderToolContext, Image, Declaration, LlmInput, LlmReply, Llm };
+

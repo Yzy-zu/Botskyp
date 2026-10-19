@@ -220,8 +220,9 @@ export class CredentialPool {
     this.#latencies.push(Math.max(0, latencyMs));
     if (this.#latencies.length > product.llmLatencySamples) this.#latencies.shift();
 
-    if (error.status === 401 || error.status === 403 || error.failureKind === 'auth') {
+    if (error.failureKind === 'auth' || error.status === 401) {
       key.available = false;
+      key.lastFailureKind = 'auth';
       this.#log(`${key.id} disabled: unauthorized`);
     } else if (error.status === 429 || error.failureKind === 'quota') {
       key.rateLimited++;
@@ -242,6 +243,34 @@ export class CredentialPool {
       const backoff = Math.min(product.llmBackoffMs * 2 ** Math.min(key.consecutiveErrors - 1, 10), timeoutMaxCooldownMs);
       key.cooldownUntil = Math.max(key.cooldownUntil, this.#now() + backoff);
       this.#log(`${key.id} cooldown: timeout`);
+    }
+  }
+
+  disable(credentialId: string): void {
+    const key = this.#states.find(s => s.id === credentialId);
+    if (key) {
+      key.available = false;
+      key.lastFailureKind = 'auth';
+      this.#log(`${key.id} disabled: unauthorized`);
+    }
+  }
+
+  reset(): void {
+    this.#cursor = 0;
+    this.#active = 0;
+    this.#queue = [];
+    this.#failovers = 0;
+    this.#exhausted = 0;
+    for (const s of this.#states) {
+      s.available = true;
+      s.cooldownUntil = 0;
+      s.consecutive429 = 0;
+      s.consecutiveErrors = 0;
+      s.requests = 0;
+      s.successes = 0;
+      s.rateLimited = 0;
+      s.failures = 0;
+      s.lastFailureKind = undefined;
     }
   }
 

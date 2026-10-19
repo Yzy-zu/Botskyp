@@ -19,7 +19,8 @@ import { GeminiProvider } from '../src/core/llm/gemini-adapter.js';
 import { GroqProvider } from '../src/core/llm/groq-adapter.js';
 import { OpenRouterProvider } from '../src/core/llm/openrouter-adapter.js';
 import type { LlmProviderAdapter } from '../src/core/llm/provider-adapter.js';
-import type { LlmInput } from '../src/core/llm/types.js';
+import type { LlmInput, ProviderId } from '../src/core/llm/types.js';
+import { saveQualificationManifest, type QualifiedManifestEntry } from '../src/core/llm/capability-matrix.js';
 
 interface QualificationResult {
   provider: string;
@@ -218,7 +219,7 @@ export async function runQualification(): Promise<QualificationResult[]> {
 
   // Print results table
   console.log(`\n### Empirical Model Qualification Matrix\n`);
-  console.log(`| Provider | Model | Plain Chat | Simple Tool | Args Tool | Full Catalog | Loop Done | Latency | Agent Compat | Qualified Role | Notes |`);
+  console.log(`| Provider | Model | Plain Chat | Simple Tool | Args Tool | Full Catalog | Loop Done | Latency | Status | Qualified Role | Notes |`);
   console.log(`|---|---|---|---|---|---|---|---|---|---|---|`);
 
   for (const r of results) {
@@ -228,11 +229,24 @@ export async function runQualification(): Promise<QualificationResult[]> {
     const cat = r.fullCatalogCompatible ? 'PASS' : (r.hasCredentials ? 'FAIL' : 'SKIPPED');
     const loop = r.toolLoopCompleted ? 'PASS' : (r.hasCredentials ? 'FAIL' : 'SKIPPED');
     const lat = r.latencyMs ? `${r.latencyMs}ms` : '-';
-    const agent = r.agentCompatible ? 'YES' : 'NO';
-    console.log(`| ${r.provider} | ${r.model} | ${chat} | ${simple} | ${args} | ${cat} | ${loop} | ${lat} | ${agent} | **${r.qualifiedRole}** | ${r.notes || 'OK'} |`);
+    const status = r.agentCompatible ? 'FULL_CATALOG_SMOKE_COMPATIBLE' : 'UNQUALIFIED';
+    console.log(`| ${r.provider} | ${r.model} | ${chat} | ${simple} | ${args} | ${cat} | ${loop} | ${lat} | ${status} | **${r.qualifiedRole}** | ${r.notes || 'OK'} |`);
   }
 
-  console.log(`\nSummary: Qualified ${results.filter(r => r.qualifiedRole !== 'none').length}/${results.length} models.\n`);
+  const manifestEntries: QualifiedManifestEntry[] = results.map(r => ({
+    provider: r.provider as ProviderId,
+    model: r.model,
+    status: r.agentCompatible ? 'FULL_CATALOG_SMOKE_COMPATIBLE' : 'UNQUALIFIED',
+    agentCompatible: r.agentCompatible,
+    fullCatalogCompatible: r.fullCatalogCompatible,
+    chatCompatible: r.chatCompatible,
+    testedAt: new Date().toISOString(),
+    latencyMs: r.latencyMs,
+    notes: r.notes || undefined,
+  }));
+  saveQualificationManifest(manifestEntries);
+  console.log(`\nManifest saved to var/llm-qualified-models.json.`);
+  console.log(`Summary: Qualified ${results.filter(r => r.qualifiedRole !== 'none').length}/${results.length} models.\n`);
   return results;
 }
 

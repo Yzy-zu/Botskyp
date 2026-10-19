@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { product } from '../../../config/product.js';
 import type { FailureKind, LlmInput, LlmReply, NormalizedAssistantTurn, RateLimitTelemetry } from './types.js';
 import type { LlmProviderAdapter } from './provider-adapter.js';
-import { llmInputToOpenAiMessages, openAiToolsFromDeclarations } from './provider-adapter.js';
+import { llmInputToOpenAiMessages, openAiToolsFromDeclarations, hasVisionInput } from './provider-adapter.js';
 import { ProviderAttemptError, retryAfterMs } from './credential-pool.js';
 import { getModelCapability } from './capability-matrix.js';
 
@@ -67,7 +67,8 @@ export class GroqProvider implements LlmProviderAdapter {
     if (!this.configuredModels.includes(model)) return false;
     const cap = getModelCapability('groq', model);
     if (!cap.enabled) return false;
-    if (request.tools && request.tools.length > 0 && !cap.supportsTools) return false;
+    if (request.tools && request.tools.length > 0 && (!cap.supportsTools || !cap.agentCompatible)) return false;
+    if (hasVisionInput(request) && !cap.supportsVision) return false;
     return true;
   }
 
@@ -79,15 +80,23 @@ export class GroqProvider implements LlmProviderAdapter {
     const parsed = openAiResponseSchema.parse(raw);
     const choice = parsed.choices[0];
     if (!choice) throw new ProviderAttemptError('invalid');
+    if (choice.finish_reason === 'length') {
+      throw new ProviderAttemptError('invalid', 400, undefined, 'MAX_TOKENS');
+    }
 
     const message = choice.message;
     const text = message.content ?? '';
     const toolCalls = (message.tool_calls ?? []).map(tc => {
-      let args: unknown = {};
-      try {
-        args = JSON.parse(tc.function.arguments || '{}');
-      } catch {
+      let args: unknown;
+      const rawArgs = tc.function.arguments;
+      if (rawArgs === undefined || rawArgs === null || rawArgs.trim() === '') {
         args = {};
+      } else {
+        try {
+          args = JSON.parse(rawArgs);
+        } catch {
+          throw new ProviderAttemptError('invalid', 400, undefined, 'PROVIDER_TOOL_ARGS_INVALID_JSON');
+        }
       }
       return {
         id: tc.id,
@@ -105,7 +114,7 @@ export class GroqProvider implements LlmProviderAdapter {
     };
   }
 
-  classifyError(error: unknown, status?: number): {
+  classifyError(error: unknown, status?: number, errorObj?: { code?: string; type?: string; message?: string }): {
     kind: FailureKind;
     retryable: boolean;
     retryAfterMs?: number;
@@ -114,8 +123,24 @@ export class GroqProvider implements LlmProviderAdapter {
     if (status === 429) {
       return { kind: 'quota', retryable: true };
     }
-    if (status === 401 || status === 403) {
-      return { kind: 'auth', retryable: false };
+    if (status === 401) {
+      return { kind: 'auth', retryable: false, ...(errorObj?.code ? { providerErrorCode: errorObj.code } : {}) };
+    }
+    if (status === 403) {
+      const desc = `${errorObj?.code ?? ''} ${errorObj?.type ?? ''} ${errorObj?.message ?? ''}`.toLowerCase();
+      if (desc.includes('moderation') || desc.includes('guardrail') || desc.includes('safety') || desc.includes('content_filter')) {
+        return { kind: 'blocked', retryable: false, providerErrorCode: 'SAFETY_REFUSAL' };
+      }
+      if (desc.includes('organization_restricted') || desc.includes('invalid_api_key') || desc.includes('unauthorized')) {
+        return { kind: 'auth', retryable: true, providerErrorCode: 'AUTH_INVALID' };
+      }
+      return { kind: 'invalid', retryable: false, providerErrorCode: 'PERMISSION_DENIED' };
+    }
+    if (status === 400) {
+      if (errorObj?.code === 'model_decommissioned') {
+        return { kind: 'incompatible', retryable: false, providerErrorCode: errorObj.code };
+      }
+      return { kind: 'invalid', retryable: false, providerErrorCode: errorObj?.code || 'INVALID_REQUEST' };
     }
     if (status !== undefined && status >= 500) {
       return { kind: 'provider', retryable: true };
@@ -125,6 +150,7 @@ export class GroqProvider implements LlmProviderAdapter {
     }
     return { kind: 'provider', retryable: false };
   }
+
 
   async generate(
     input: LlmInput,
@@ -212,14 +238,27 @@ export class GroqProvider implements LlmProviderAdapter {
       if (response.status === 429) {
         throw new ProviderAttemptError('quota', 429, retryMs ?? resetMs, errorCode);
       }
-      if (response.status === 401 || response.status === 403) {
-        throw new ProviderAttemptError('auth', response.status, undefined, errorCode || errorType);
+      if (response.status === 401) {
+        throw new ProviderAttemptError('auth', 401, undefined, errorCode || errorType);
+      }
+      if (response.status === 403) {
+        const desc = `${errorCode ?? ''} ${errorType ?? ''}`.toLowerCase();
+        if (desc.includes('moderation') || desc.includes('guardrail') || desc.includes('safety') || desc.includes('content_filter')) {
+          throw new ProviderAttemptError('blocked', 403, undefined, errorCode || 'SAFETY_REFUSAL');
+        }
+        if (desc.includes('organization_restricted') || desc.includes('invalid_api_key') || desc.includes('unauthorized')) {
+          throw new ProviderAttemptError('auth', 403, undefined, errorCode || 'AUTH_INVALID');
+        }
+        throw new ProviderAttemptError('invalid', 403, undefined, errorCode || 'PERMISSION_DENIED');
       }
       if (response.status >= 500) {
         throw new ProviderAttemptError('provider', response.status, retryMs, errorCode);
       }
-      if (response.status === 400 && (errorCode === 'model_decommissioned' || errorType === 'invalid_request_error')) {
-        throw new ProviderAttemptError('incompatible', 400, undefined, errorCode);
+      if (response.status === 400) {
+        if (errorCode === 'model_decommissioned') {
+          throw new ProviderAttemptError('incompatible', 400, undefined, errorCode);
+        }
+        throw new ProviderAttemptError('invalid', 400, undefined, errorCode || 'INVALID_REQUEST');
       }
       throw new ProviderAttemptError('invalid', response.status, undefined, errorCode);
     }
@@ -235,15 +274,23 @@ export class GroqProvider implements LlmProviderAdapter {
 
     const choice = result.choices[0];
     if (!choice) throw new ProviderAttemptError('invalid');
+    if (choice.finish_reason === 'length') {
+      throw new ProviderAttemptError('invalid', 400, undefined, 'MAX_TOKENS');
+    }
 
     const msg = choice.message;
     const text = msg.content ?? '';
     const calls = (msg.tool_calls ?? []).map(tc => {
-      let args: unknown = {};
-      try {
-        args = JSON.parse(tc.function.arguments || '{}');
-      } catch {
+      let args: unknown;
+      const rawArgs = tc.function.arguments;
+      if (rawArgs === undefined || rawArgs === null || rawArgs.trim() === '') {
         args = {};
+      } else {
+        try {
+          args = JSON.parse(rawArgs);
+        } catch {
+          throw new ProviderAttemptError('invalid', 400, undefined, 'PROVIDER_TOOL_ARGS_INVALID_JSON');
+        }
       }
       return {
         id: tc.id,

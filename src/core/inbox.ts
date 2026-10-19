@@ -15,7 +15,7 @@ import { msgSchema, type Msg } from '../wa/types.js';
 import { actorFor,privateEligible,type Chat,QA_OWNER_JID,QA_MEMBER_JID } from './permissions.js';
 import { activeSession,sessionAccepts } from './sessions.js';
 import { route,rememberContext } from './router.js';
-import { Gemini } from './llm.js';
+import { getSharedMultiProviderRouter } from './llm.js';
 import { searxSearch } from '../modules/web/index.js';
 import { commandText } from './shortcuts.js';
 import { activated, enableCommand } from './activation.js';
@@ -111,9 +111,9 @@ export async function processNext(db: Db, baseConfig: Config):Promise<boolean> {
           if(msg.isGroup && !owner && !actor.groupMember)reply='No.';
           else if(maintenance && !owner)reply='Estoy en mantenimiento.';
           else {
-            const gemini=new Gemini(db,config,actor.id);
-            const ctx={...(config.ROUTER_MODE==='v1_1'?{inboxTransaction:true as const}:{}),turnId:row.turn_id,actor,chat:{id:msg.chatId,isGroup:msg.isGroup,enabled:true,settings:saved?.settings ?? {}},msg,db,c,config,now:new Date(),search:(query:string)=>config.WEB_SEARCH_PROVIDER==='gemini'?gemini.search(query,config.ROUTER_MODE==='v1_1'?row.turn_id:undefined):searxSearch(config,query)};
-            reply=await route(ctx,config.GEMINI_API_KEY && config.GEMINI_FREE_TIER_CONFIRMED?gemini:undefined);
+            const llmBackend=getSharedMultiProviderRouter(config,{db,actor:actor.id});
+            const ctx={...(config.ROUTER_MODE==='v1_1'?{inboxTransaction:true as const}:{}),turnId:row.turn_id,actor,chat:{id:msg.chatId,isGroup:msg.isGroup,enabled:true,settings:saved?.settings ?? {}},msg,db,c,config,now:new Date(),search:(query:string)=>config.WEB_SEARCH_PROVIDER==='gemini'?llmBackend.search(query,config.ROUTER_MODE==='v1_1'?row.turn_id:undefined):searxSearch(config,query)};
+            reply=await route(ctx,llmBackend);
             if(config.ROUTER_MODE!=='v1_1' && commandText(msg.text).toLowerCase()==='apagado de emergencia' && owner)reply=undefined;
             if(reply)await rememberContext(ctx,reply);
           }

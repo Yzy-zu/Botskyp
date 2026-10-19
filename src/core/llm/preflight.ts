@@ -18,9 +18,10 @@ export function estimateRequestTokens(input: LlmInput): number {
 
 export function tokenPreflight(capability: ModelCapability, input: LlmInput): PreflightDecision {
   const estimatedTokens = estimateRequestTokens(input);
+  const reservedOutput = product.llmMaxOutputTokens;
 
-  // Check 1: Model Context Window
-  if (capability.contextWindow > 0 && estimatedTokens > capability.contextWindow) {
+  // Check 1: Model Context Window reserving output budget (estimatedInput + reservedOutput <= contextWindow)
+  if (capability.contextWindow > 0 && (estimatedTokens + reservedOutput) > capability.contextWindow) {
     return {
       ok: false,
       reason: 'MODEL_REQUEST_TOO_LARGE',
@@ -39,15 +40,6 @@ export function tokenPreflight(capability: ModelCapability, input: LlmInput): Pr
     };
   }
 
-  // Check 3: Known TPM (Tokens Per Minute) Budget
-  if (capability.knownRateLimitWhenAvailable?.tpm && capability.knownRateLimitWhenAvailable.tpm > 0 && estimatedTokens > capability.knownRateLimitWhenAvailable.tpm) {
-    return {
-      ok: false,
-      reason: 'MODEL_RATE_BUDGET_INCOMPATIBLE',
-      estimatedTokens,
-      limit: capability.knownRateLimitWhenAvailable.tpm,
-    };
-  }
-
   return { ok: true, estimatedTokens };
 }
+

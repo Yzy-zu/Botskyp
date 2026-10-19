@@ -6,8 +6,8 @@ import { product } from '../../config/product.js';
 import pino from 'pino';
 import { z } from 'zod';
 import type { ToolCtx } from './tools.js';
-import type { Llm, Image, LlmReply } from './llm.js';
-import { Gemini, LlmUnavailable } from './llm.js';
+import type { Llm, Image, LlmReply, LlmInput } from './llm.js';
+import { Gemini, LlmUnavailable, TurnLlmBudget } from './llm.js';
 import type { ToolMetadataV2 } from './tool-registry-v2.js';
 import { backendOnlyFields, modelDeclaration } from './tool-registry-v2.js';
 import type { TurnContextV2 } from './context-v2.js';
@@ -44,6 +44,8 @@ function providerFailure(error:unknown):string{
 /** All provider content exists only inside this logical turn. Historical context never becomes executable contents. */
 export async function naturalToolLoopV2(ctx:ToolCtx,llm:Llm,catalog:readonly ToolMetadataV2[],initial:TurnContextV2,exposure:ToolExposureTurn,system:string,userText:string,images:Image[],metrics:RouterMetricsV2):Promise<string>{
   const initialCounters=llm.counters?{...llm.counters}:undefined;
+  const maxAttempts = ctx.config.LLM_MAX_PROVIDER_ATTEMPTS ?? 3;
+  const turnBudget = new TurnLlmBudget(maxAttempts, ctx.turnId);
   let context=initial;
   const contents:unknown[]=[{role:'user',parts:[{text:userText},...images.map(inlineData=>({inlineData}))]}];
   const results:ToolResult[]=[];
@@ -60,7 +62,7 @@ export async function naturalToolLoopV2(ctx:ToolCtx,llm:Llm,catalog:readonly Too
     if(metrics.callsPerTurn>=product.llmMaxCalls)throw new LlmUnavailable('local_limit','message');
     metrics.callsPerTurn++;
     const protocol=synthesis?'':`\n${currentFunctionProtocolV2(exposure.exposure.schemas.map(t=>t.name), ctx.config.TOOL_CALLING_MODE)}`;
-    const request={...(ctx.turnId?{turnId:ctx.turnId}:{}),...(synthesis?{responseJsonSchema:synthesisSchema}:{validateFunctionCalls:true}),system:system+(synthesis?'\nEsta vuelta solo sintetiza los resultados visibles. Si status=needs_clarification, formula una pregunta breve para missingSlots; no afirmes ninguna acción. Contesta la pregunta con fuentes disponibles. No solicites acciones nuevas. Usa el mismo JSON de outcome sin effects.':protocol),contents:structuredClone(contents),tools:synthesis?[]:[...exposure.exposure.schemas]};
+    const request:LlmInput={...(ctx.turnId?{turnId:ctx.turnId}:{}),turnBudget,actor:ctx.actor.id,...(synthesis?{responseJsonSchema:synthesisSchema}:{validateFunctionCalls:true}),system:system+(synthesis?'\nEsta vuelta solo sintetiza los resultados visibles. Si status=needs_clarification, formula una pregunta breve para missingSlots; no afirmes ninguna acción. Contesta la pregunta con fuentes disponibles. No solicites acciones nuevas. Usa el mismo JSON de outcome sin effects.':protocol),contents:structuredClone(contents),tools:synthesis?[]:[...exposure.exposure.schemas]};
     if(!synthesis){
       // Same accounting as the REST adapter: binary data is not prompt text.
       const maxBudget = ctx.config.TOOL_CALLING_MODE === 'full_96' ? product.llmMaxFullRequestChars : product.llmMaxRequestChars;

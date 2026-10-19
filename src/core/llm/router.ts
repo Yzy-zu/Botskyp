@@ -13,6 +13,7 @@ import type {
   RouteCandidate,
   TurnFallbackLog,
 } from './types.js';
+import { TurnLlmBudget } from './types.js';
 import { getModelCapability } from './capability-matrix.js';
 import { tokenPreflight } from './preflight.js';
 import { CredentialPool, ProviderAttemptError } from './credential-pool.js';
@@ -29,18 +30,58 @@ export type RouterOptions = {
   parentSignal?: AbortSignal | undefined;
 };
 
+export function parseRouteCandidate(entry: string): { provider: ProviderId; model?: string } | undefined {
+  const trimmed = entry.trim();
+  if (!trimmed) return undefined;
+
+  let providerStr: string;
+  let modelStr: string | undefined;
+
+  if (trimmed.includes('|')) {
+    const idx = trimmed.indexOf('|');
+    providerStr = trimmed.slice(0, idx).trim().toLowerCase();
+    modelStr = trimmed.slice(idx + 1).trim();
+  } else if (/^(gemini|groq|openrouter)[:/]/i.test(trimmed)) {
+    const match = trimmed.match(/^(gemini|groq|openrouter)[:/](.+)$/i);
+    if (match) {
+      providerStr = match[1]!.toLowerCase();
+      modelStr = match[2]!.trim();
+    } else {
+      return undefined;
+    }
+  } else {
+    providerStr = trimmed.toLowerCase();
+    modelStr = undefined;
+  }
+
+  if (!['gemini', 'groq', 'openrouter'].includes(providerStr)) return undefined;
+  return {
+    provider: providerStr as ProviderId,
+    ...(modelStr ? { model: modelStr } : {}),
+  };
+}
+
 export class MultiProviderRouter implements Llm {
   readonly counters = { calls: 0, inputTokens: 0, outputTokens: 0 };
   private readonly config: Config;
-  private readonly db?: Db | undefined;
+  private db?: Db | undefined;
   private readonly actor: string;
   private readonly now: () => number;
   private readonly http: typeof fetch;
   private readonly parentSignal?: AbortSignal | undefined;
 
+  setDb(db: Db): void {
+    this.db = db;
+  }
+
+  hasDb(): boolean {
+    return Boolean(this.db);
+  }
+
   private readonly pools = new Map<ProviderId, CredentialPool>();
   private readonly adapters = new Map<ProviderId, LlmProviderAdapter>();
   private readonly healthMap = new Map<string, CandidateHealthState>();
+  private readonly turnBudgets = new Map<string, TurnLlmBudget>();
   private stickyCandidate: RouteCandidate | undefined;
 
   constructor(config: Config, options: RouterOptions = {}) {
@@ -116,6 +157,37 @@ export class MultiProviderRouter implements Llm {
     return this.adapters.get(provider);
   }
 
+  getOrCreateBudget(turnId?: string): TurnLlmBudget {
+    const maxAttempts = this.config.LLM_MAX_PROVIDER_ATTEMPTS ?? 3;
+    if (turnId) {
+      let b = this.turnBudgets.get(turnId);
+      if (!b) {
+        b = new TurnLlmBudget(maxAttempts, turnId);
+        this.turnBudgets.set(turnId, b);
+      }
+      return b;
+    }
+    return new TurnLlmBudget(maxAttempts);
+  }
+
+  reset(): void {
+    for (const pool of this.pools.values()) {
+      pool.reset();
+    }
+    this.healthMap.clear();
+    this.stickyCandidate = undefined;
+    this.turnBudgets.clear();
+  }
+
+  async search(query: string, turnId?: string): Promise<string> {
+    const pool = this.pools.get('gemini');
+    const adapter = this.adapters.get('gemini') as GeminiProvider | undefined;
+    if (!pool || !adapter) throw new LlmUnavailable('disabled');
+    return pool.run(async (apiKey) => {
+      return adapter.search(query, apiKey, turnId, this.parentSignal);
+    }, this.parentSignal);
+  }
+
   getConfiguredCandidates(): RouteCandidate[] {
     const rawRoute = this.config.LLM_ROUTE?.trim();
     const candidates: RouteCandidate[] = [];
@@ -124,29 +196,28 @@ export class MultiProviderRouter implements Llm {
       const entries = rawRoute.split(',').map(s => s.trim()).filter(Boolean);
       let priority = 10;
       for (const entry of entries) {
-        const [providerStr, modelStr] = entry.split(':').map(s => s.trim());
-        const provider = providerStr as ProviderId;
-        if (!['gemini', 'groq', 'openrouter'].includes(provider)) continue;
+        const parsed = parseRouteCandidate(entry);
+        if (!parsed) continue;
 
-        let model = modelStr;
+        let model = parsed.model;
         if (!model || model === 'preferred') {
-          if (provider === 'gemini') {
+          if (parsed.provider === 'gemini') {
             model = this.config.GEMINI_MODELS?.[0] || this.config.GEMINI_MODEL;
-          } else if (provider === 'groq') {
+          } else if (parsed.provider === 'groq') {
             model = this.config.GROQ_MODELS?.[0] || 'llama-3.3-70b-versatile';
-          } else if (provider === 'openrouter') {
+          } else if (parsed.provider === 'openrouter') {
             model = this.config.OPENROUTER_MODELS?.[0] || 'meta-llama/llama-3.3-70b-instruct';
           }
         }
 
-        const isEnabled = provider === 'gemini'
+        const isEnabled = parsed.provider === 'gemini'
           ? Boolean(this.config.GEMINI_FREE_TIER_CONFIRMED && this.pools.get('gemini')?.keyCount)
-          : provider === 'groq'
+          : parsed.provider === 'groq'
             ? Boolean(this.config.GROQ_ENABLED && this.pools.get('groq')?.keyCount)
             : Boolean(this.config.OPENROUTER_ENABLED && this.pools.get('openrouter')?.keyCount);
 
         candidates.push({
-          provider,
+          provider: parsed.provider,
           model: model!,
           priority,
           enabled: isEnabled,
@@ -201,6 +272,7 @@ export class MultiProviderRouter implements Llm {
     return candidates;
   }
 
+
   private getCandidateHealth(provider: ProviderId, credentialId: string, model: string): CandidateHealthState {
     const key = `${provider}:${credentialId}:${model}`;
     let state = this.healthMap.get(key);
@@ -243,64 +315,63 @@ export class MultiProviderRouter implements Llm {
   }
 
   async generate(input: LlmInput): Promise<LlmReply> {
-    const maxAttempts = this.config.LLM_MAX_PROVIDER_ATTEMPTS ?? 3;
-    const isAgentic = Boolean(input.tools && input.tools.length > 0);
+    const budget = input.turnBudget ?? this.getOrCreateBudget(input.turnId);
+    budget.generationIndex++;
 
     const fallbackLog: TurnFallbackLog = {
-      turnId: input.turnId,
-      attempts: [],
+      turnId: budget.turnId,
+      attempts: budget.fallbackAttempts,
       success: false,
     };
 
     let configuredCandidates = this.getConfiguredCandidates();
 
     // Stickiness: If we succeeded on a candidate earlier in this turn, try it first
-    if (this.stickyCandidate) {
-      const sticky = this.stickyCandidate;
+    const activeSticky = input.turnBudget?.stickyCandidate ?? this.stickyCandidate;
+    if (activeSticky) {
       configuredCandidates = [
-        sticky,
-        ...configuredCandidates.filter(c => !(c.provider === sticky.provider && c.model === sticky.model)),
+        activeSticky,
+        ...configuredCandidates.filter(c => !(c.provider === activeSticky.provider && c.model === activeSticky.model)),
       ];
     }
 
-    let networkAttempts = 0;
-    let lastError: unknown;
-    let sawRateLimit = false;
-    let sawAuthFailure = false;
-    let sawCompatibleCandidate = false;
+    const actor = input.actor ?? this.actor ?? 'anonymous';
 
     for (const candidate of configuredCandidates) {
-      if (networkAttempts >= maxAttempts) break;
+      if (!budget.canAttempt()) break;
       if (!candidate.enabled) continue;
+
+      // Cross-provider continuation check (Section 13):
+      // If the turn already executed tool calls using OpenRouter or Groq, never switch to Gemini mid-turn!
+      if (budget.initialOpenAiFormat && candidate.provider === 'gemini') {
+        continue;
+      }
 
       const pool = this.pools.get(candidate.provider);
       const adapter = this.adapters.get(candidate.provider);
       if (!pool || !adapter) continue;
 
-      // Check model capability
-      const cap = getModelCapability(candidate.provider, candidate.model);
-      if (isAgentic && (!cap.supportsTools || !cap.agentCompatible)) {
-        fallbackLog.attempts.push({
-          ordinal: networkAttempts + 1,
+      // Section 5: Router MUST enforce candidate.adapter.canHandle(input, candidate.model) before network!
+      if (!adapter.canHandle(input, candidate.model)) {
+        budget.fallbackAttempts.push({
+          ordinal: budget.actualNetworkAttempts + 1,
           provider: candidate.provider,
           credentialId: 'n/a',
           model: candidate.model,
           result: 'preflight_skipped',
-          skipReason: 'INCOMPATIBLE_CAPABILITY',
+          skipReason: 'CANNOT_HANDLE',
         });
         continue;
       }
-      if (!isAgentic && !cap.chatCompatible) {
-        continue;
-      }
 
-      sawCompatibleCandidate = true;
+      budget.sawCompatibleCandidate = true;
 
       // Token Preflight: Check context window and limits before network call
+      const cap = getModelCapability(candidate.provider, candidate.model);
       const preflight = tokenPreflight(cap, input);
       if (!preflight.ok) {
-        fallbackLog.attempts.push({
-          ordinal: networkAttempts + 1,
+        budget.fallbackAttempts.push({
+          ordinal: budget.actualNetworkAttempts + 1,
           provider: candidate.provider,
           credentialId: 'n/a',
           model: candidate.model,
@@ -312,7 +383,7 @@ export class MultiProviderRouter implements Llm {
 
       // Check available credentials in the pool
       for (const credState of pool.states) {
-        if (networkAttempts >= maxAttempts) break;
+        if (!budget.canAttempt()) break;
 
         const health = this.isCandidateOperational(candidate, credState.id);
         if (health !== 'healthy') {
@@ -320,19 +391,21 @@ export class MultiProviderRouter implements Llm {
         }
 
         const candHealth = this.getCandidateHealth(candidate.provider, credState.id, candidate.model);
-        networkAttempts++;
-        const attemptOrdinal = networkAttempts;
+
+        // HARD INVARIANT: Network attempt is incremented BEFORE every actual HTTP request (Section 3 & 14)
+        const attemptOrdinal = budget.recordAttempt();
         const started = this.now();
 
         observer.emit(() => ({
           eventType: 'LLM_ATTEMPT_STARTED',
           stage: `${candidate.provider}.router`,
           payload: {
-            ordinal: attemptOrdinal,
+            turnId: budget.turnId,
+            generationIndex: budget.generationIndex,
+            attemptGlobal: attemptOrdinal,
             provider: candidate.provider,
             credentialId: credState.id,
             model: candidate.model,
-            turnId: input.turnId,
           },
         }));
 
@@ -340,7 +413,7 @@ export class MultiProviderRouter implements Llm {
         if (this.db) {
           usageId = await reserveCall(
             this.db,
-            this.actor,
+            actor,
             candidate.model,
             'router',
             preflight.estimatedTokens,
@@ -379,7 +452,14 @@ export class MultiProviderRouter implements Llm {
           }
 
           this.stickyCandidate = candidate;
-          fallbackLog.attempts.push({
+          if (input.turnBudget) {
+            input.turnBudget.stickyCandidate = candidate;
+          }
+          if (candidate.provider !== 'gemini' && reply.calls && reply.calls.length > 0) {
+            budget.initialOpenAiFormat = true;
+          }
+
+          budget.fallbackAttempts.push({
             ordinal: attemptOrdinal,
             provider: candidate.provider,
             credentialId: credState.id,
@@ -394,13 +474,16 @@ export class MultiProviderRouter implements Llm {
           observer.emit(() => ({
             eventType: 'ROUTER_METRICS',
             stage: 'router.fallback',
-            ...(input.turnId ? { turnId: input.turnId } : {}),
-            payload: fallbackLog,
+            ...(budget.turnId ? { turnId: budget.turnId } : {}),
+            payload: {
+              ...fallbackLog,
+              actualNetworkAttempts: budget.actualNetworkAttempts,
+            },
           }));
 
           return reply;
         } catch (error) {
-          lastError = error;
+          budget.lastError = error;
           const latencyMs = Math.max(0, this.now() - started);
           candHealth.lastFailureAt = this.now();
           candHealth.lastLatencyMs = latencyMs;
@@ -416,14 +499,15 @@ export class MultiProviderRouter implements Llm {
           }
 
           if (failureKind === 'quota' || httpStatus === 429) {
-            sawRateLimit = true;
+            budget.sawRateLimit = true;
             candHealth.consecutive429++;
             const backoff = Math.min(product.llmCooldownMs * 2 ** Math.min(candHealth.consecutive429 - 1, 10), product.llmMaxCooldownMs);
             candHealth.cooldownUntil = Math.max(candHealth.cooldownUntil, this.now() + backoff);
             candHealth.status = 'cooldown';
-          } else if (failureKind === 'auth' || httpStatus === 401 || httpStatus === 403) {
-            sawAuthFailure = true;
+          } else if (failureKind === 'auth' || httpStatus === 401) {
+            budget.sawAuthFailure = true;
             candHealth.status = 'disabled';
+            pool.disable(credState.id);
           } else {
             candHealth.consecutiveErrors++;
             candHealth.cooldownUntil = Math.max(candHealth.cooldownUntil, this.now() + 10_000);
@@ -436,7 +520,7 @@ export class MultiProviderRouter implements Llm {
             ).catch(() => undefined);
           }
 
-          fallbackLog.attempts.push({
+          budget.fallbackAttempts.push({
             ordinal: attemptOrdinal,
             provider: candidate.provider,
             credentialId: credState.id,
@@ -455,8 +539,11 @@ export class MultiProviderRouter implements Llm {
           if (this.stickyCandidate && this.stickyCandidate.provider === candidate.provider && this.stickyCandidate.model === candidate.model) {
             this.stickyCandidate = undefined;
           }
+          if (input.turnBudget?.stickyCandidate && input.turnBudget.stickyCandidate.provider === candidate.provider && input.turnBudget.stickyCandidate.model === candidate.model) {
+            input.turnBudget.stickyCandidate = undefined;
+          }
 
-          // Non-retryable errors per Section 11:
+          // Non-retryable errors per Section 4:
           if (failureKind === 'blocked') {
             throw error;
           }
@@ -467,7 +554,7 @@ export class MultiProviderRouter implements Llm {
             throw error;
           }
 
-          // Otherwise continue to next viable candidate!
+          // Otherwise continue to next viable candidate/credential within budget!
         }
       }
     }
@@ -476,21 +563,50 @@ export class MultiProviderRouter implements Llm {
     observer.emit(() => ({
       eventType: 'ROUTER_METRICS',
       stage: 'router.fallback',
-      ...(input.turnId ? { turnId: input.turnId } : {}),
-      payload: fallbackLog,
+      ...(budget.turnId ? { turnId: budget.turnId } : {}),
+      payload: {
+        ...fallbackLog,
+        actualNetworkAttempts: budget.actualNetworkAttempts,
+      },
     }));
 
-    if (!sawCompatibleCandidate) {
+    if (!budget.sawCompatibleCandidate) {
       throw new LlmUnavailable('invalid'); // NO_COMPATIBLE_PROVIDER
     }
-    if (sawRateLimit) {
+    if (budget.sawRateLimit) {
       throw new LlmUnavailable('quota'); // ALL_PROVIDERS_RATE_LIMITED
     }
-    if (sawAuthFailure) {
+    if (budget.sawAuthFailure) {
       throw new LlmUnavailable('disabled'); // AUTH_CONFIGURATION_ERROR
     }
 
-    if (lastError instanceof LlmUnavailable) throw lastError;
+    if (budget.lastError instanceof LlmUnavailable) throw budget.lastError;
     throw new LlmUnavailable('provider'); // ALL_PROVIDERS_UNAVAILABLE
   }
 }
+
+let sharedRouterInstance: MultiProviderRouter | undefined;
+let sharedRouterConfig: Config | undefined;
+
+export function getSharedMultiProviderRouter(config: Config, options?: RouterOptions): MultiProviderRouter {
+  if (!sharedRouterInstance || sharedRouterConfig !== config) {
+    sharedRouterInstance = new MultiProviderRouter(config, options);
+    sharedRouterConfig = config;
+  } else if (options?.db && !sharedRouterInstance.hasDb()) {
+    sharedRouterInstance.setDb(options.db);
+  }
+  return sharedRouterInstance;
+}
+
+export function setSharedMultiProviderRouter(router: MultiProviderRouter | undefined): void {
+  sharedRouterInstance = router;
+}
+
+export function resetSharedMultiProviderRouter(): void {
+  if (sharedRouterInstance) {
+    sharedRouterInstance.reset();
+  }
+  sharedRouterInstance = undefined;
+  sharedRouterConfig = undefined;
+}
+

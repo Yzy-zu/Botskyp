@@ -12,7 +12,7 @@ import { observeRouterShadow, observeContextShadowV2 } from './router-shadow.js'
 import { type ToolCtx,type ToolResult } from './tools.js';
 import { activeSession,argumentHash,closeSession,sessionAccepts } from './sessions.js';
 import { commandText,parseDate,shortcut } from './shortcuts.js';
-import { Gemini,LlmUnavailable,type Llm } from './llm.js';
+import { createLlmBackend,LlmUnavailable,type Llm } from './llm.js';
 import { moduleEnabled } from './permissions.js';
 import { compose } from './composer.js';
 import { visionSource } from '../wa/vision-source.js';
@@ -113,7 +113,7 @@ export async function route(ctx:ToolCtx,llm?:Llm):Promise<string|undefined>{
   try{
     const inline=images.length?[{inlineData:await currentImage(ctx.config,source.kind==='image'?source.msg:ctx.msg)}]:[];
     appendTurn(contents,'user',[{text:JSON.stringify(userData)},...inline]);
-    const model=llm ?? new Gemini(ctx.db,ctx.config,ctx.actor.id);
+    const model=llm ?? createLlmBackend(ctx.db,ctx.config,ctx.actor.id);
     const output=await model.generate({system:system+searchInstruction,contents,tools:registry.declarations(ctx).filter(t=>(!contextualSearch || t.name==='web_search') && (!schoolFile || t.name==='school_task_create'))});
     if(output.calls.length){
       if(output.calls.length>product.llmMaxCalls)return 'La solicitud tiene demasiadas acciones. Divídela.';

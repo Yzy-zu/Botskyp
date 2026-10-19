@@ -7,9 +7,10 @@ import { geminiContentSchema, geminiToolContext, type GeminiFunctionCall, type P
 import { LlmUnavailable,reserveCall } from './quota.js';
 import { GeminiAttemptError, geminiKeyPool, retryAfterMs } from './gemini-key-pool.js';
 export { LlmUnavailable } from './quota.js';
+import type { TurnLlmBudget } from './llm/types.js';
 export type Image={mimeType:string;data:string};
 export type Declaration={name:string;description:string;parametersJsonSchema:Record<string,unknown>};
-export type LlmInput={turnId?:string;system:string;contents:unknown[];tools:Declaration[];images?:Image[];responseJsonSchema?:Record<string,unknown>;requireFunctionCall?:boolean;validateFunctionCalls?:boolean};
+export type LlmInput={turnId?:string;turnBudget?:TurnLlmBudget;actor?:string;system:string;contents:unknown[];tools:Declaration[];images?:Image[];responseJsonSchema?:Record<string,unknown>;requireFunctionCall?:boolean;validateFunctionCalls?:boolean};
 export type LlmReply={text:string;calls:GeminiFunctionCall[];content:unknown;provider?:string|undefined;model?:string|undefined;providerState?:unknown;providerContext?:ProviderToolContext|undefined;usage?:{inputTokens:number;outputTokens:number}|undefined};
 export type CallBudget={used:number};
 export interface Llm { readonly counters?:Readonly<{calls:number;inputTokens:number;outputTokens:number}>;generate(input:LlmInput):Promise<LlmReply> }
@@ -137,8 +138,18 @@ export class Gemini implements Llm {
   }
 }
 
-import { MultiProviderRouter } from './llm/index.js';
-export { MultiProviderRouter, GeminiProvider, GroqProvider, OpenRouterProvider } from './llm/index.js';
+import { MultiProviderRouter, getSharedMultiProviderRouter, GeminiProvider } from './llm/index.js';
+GeminiProvider.legacyGeminiClass = Gemini;
+export {
+  MultiProviderRouter,
+  GeminiProvider,
+  GroqProvider,
+  OpenRouterProvider,
+  getSharedMultiProviderRouter,
+  setSharedMultiProviderRouter,
+  resetSharedMultiProviderRouter,
+  TurnLlmBudget,
+} from './llm/index.js';
 export { CredentialPool } from './llm/credential-pool.js';
 export { getModelCapability, setModelCapabilityOverride, clearModelCapabilityOverrides } from './llm/capability-matrix.js';
 export { tokenPreflight, estimateRequestTokens } from './llm/preflight.js';
@@ -150,8 +161,8 @@ export function createLlmBackend(
   _budget?: CallBudget,
   http?: typeof fetch,
   signal?: AbortSignal,
-): Llm {
-  return new MultiProviderRouter(config, {
+): MultiProviderRouter {
+  return getSharedMultiProviderRouter(config, {
     ...(db !== undefined ? { db } : {}),
     actor,
     ...(http !== undefined ? { http } : {}),

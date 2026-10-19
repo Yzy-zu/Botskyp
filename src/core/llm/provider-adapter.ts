@@ -7,6 +7,7 @@ import type {
   NormalizedToolCall,
 } from './types.js';
 import type { CredentialState } from './credential-pool.js';
+import { ProviderAttemptError } from './credential-pool.js';
 import { geminiContentSchema, type GeminiContent } from '../provider-tool-context.js';
 
 export interface LlmProviderAdapter {
@@ -45,6 +46,29 @@ export type OpenAiMessage =
   | { role: 'assistant'; content: string | null; tool_calls?: OpenAiToolCall[] }
   | { role: 'tool'; tool_call_id: string; content: string };
 
+export function hasVisionInput(input: LlmInput): boolean {
+  if (input.images && input.images.length > 0) return true;
+  if (!Array.isArray(input.contents)) return false;
+  for (const item of input.contents as Array<Record<string, unknown>>) {
+    if (!item || typeof item !== 'object') continue;
+    if (Array.isArray(item.parts)) {
+      for (const part of item.parts as Array<Record<string, unknown>>) {
+        if (part && typeof part === 'object' && (part.inlineData || part.image_url || part.data)) {
+          return true;
+        }
+      }
+    }
+    if (Array.isArray(item.content)) {
+      for (const c of item.content as Array<Record<string, unknown>>) {
+        if (c && typeof c === 'object' && (c.type === 'image_url' || c.image_url)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 /**
  * Translates arbitrary LlmInput contents into OpenAI chat messages format.
  * Strips any Gemini-specific properties (e.g. thoughtSignature, inlineData)
@@ -78,7 +102,7 @@ export function llmInputToOpenAiMessages(input: LlmInput, supportsVision = false
           .map(p => p.functionCall as { id?: string; name: string; args?: unknown });
 
         const tool_calls: OpenAiToolCall[] = functionCalls.map((fc, idx) => {
-          const id = fc.id || `call_${idx}_${Date.now()}`;
+          const id = fc.id || `gemini_turn_call_${idx}`;
           return {
             id,
             type: 'function',
@@ -108,15 +132,23 @@ export function llmInputToOpenAiMessages(input: LlmInput, supportsVision = false
 
         if (functionResponses.length > 0) {
           // Add tool messages corresponding to each function response
-          for (const fr of functionResponses) {
+          for (let idx = 0; idx < functionResponses.length; idx++) {
+            const fr = functionResponses[idx]!;
             let matchedId = fr.id;
             if (!matchedId) {
-              const matchedCall = pendingToolCalls.find(tc => tc.name === fr.name);
-              matchedId = matchedCall?.id || 'call_default';
+              if (pendingToolCalls[idx]) {
+                matchedId = pendingToolCalls[idx]!.id;
+              } else {
+                const foundIdx = pendingToolCalls.findIndex(tc => tc.name === fr.name);
+                if (foundIdx !== -1) {
+                  matchedId = pendingToolCalls[foundIdx]!.id;
+                  pendingToolCalls.splice(foundIdx, 1);
+                }
+              }
             }
             messages.push({
               role: 'tool',
-              tool_call_id: matchedId,
+              tool_call_id: matchedId || `gemini_turn_call_${idx}`,
               content: typeof fr.response === 'string' ? fr.response : JSON.stringify(fr.response ?? {}),
             });
           }
@@ -127,7 +159,10 @@ export function llmInputToOpenAiMessages(input: LlmInput, supportsVision = false
         const imageParts = parts.filter(p => p.inlineData && typeof p.inlineData === 'object');
 
         if (textParts.length > 0 || imageParts.length > 0) {
-          if (supportsVision && imageParts.length > 0) {
+          if (imageParts.length > 0) {
+            if (!supportsVision) {
+              throw new ProviderAttemptError('incompatible', 400, undefined, 'VISION_UNSUPPORTED');
+            }
             const contentItems: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
             if (textParts.length > 0) {
               contentItems.push({ type: 'text', text: textParts.join('') });
@@ -178,3 +213,4 @@ export function openAiToolsFromDeclarations(tools: LlmInput['tools']): Array<{
 export function isGeminiContent(content: unknown): content is GeminiContent {
   return geminiContentSchema.safeParse(content).success;
 }
+

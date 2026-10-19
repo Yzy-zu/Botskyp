@@ -41,13 +41,14 @@ const moduleDomains: Record<string, CapabilityDomain> = {
   core: 'core', notes: 'productivity', reminders: 'productivity', memory: 'productivity',
   web: 'web', xp: 'economy', polls: 'polls', school: 'school', games: 'games', media: 'media',
   library: 'library', moderation: 'moderation', minecraft: 'minecraft', drive: 'drive', messaging: 'messaging',
+  video: 'media',
 };
 // Risks describe effects, never authorization. PermissionKey is copied unchanged from v1.
 const economic = new Set<string>(['xp.daily','xp.happy','packs.buy','cooperacha.open','cooperacha.contribute','cooperacha.cancel','games.blackjack','games.roulette','games.join','games.play','games.cancel','games.airdrop','games.claim']);
-const external = new Set<string>(['web.search','drive.search','drive.download','drive.upload','media.search','media.process','media.collect','school.task_attachment']);
+const external = new Set<string>(['web.search','drive.search','drive.download','drive.upload','media.search','media.process','media.collect','school.task_attachment','video.search','video.info','video.download']);
 const privileged = new Set<string>(['control.emergency','control.reactivate','control.maintenance_on','control.maintenance_off','control.modules','library.sync','library.rain','moderation.change','moderation.config','drive.configure','school.subject_save','school.schedule_propose','school.schedule_import','school.schedule_commit','school.summary_configure','school.destination','messaging.send','bulk.broadcast','bulk.nuclear','bulk.cancel','bulk.retry','bulk.resume']);
 const preview = new Set<string>(['school.schedule_propose','school.schedule_commit','messaging.send','bulk.broadcast','bulk.nuclear','bulk.confirm']);
-const jobs = new Set<string>(['library.sync','drive.search','drive.download','drive.upload','media.process','media.collect','packs.buy','school.task_attachment','messaging.send','bulk.broadcast','bulk.nuclear','bulk.retry','bulk.resume']);
+const jobs = new Set<string>(['library.sync','drive.search','drive.download','drive.upload','media.process','media.collect','packs.buy','school.task_attachment','messaging.send','bulk.broadcast','bulk.nuclear','bulk.retry','bulk.resume','video.download']);
 export const backendOnlyFields = [
   'actorId','chatId','jid','senderId','ownerId','targetGroupId','id','importId','hash','previewHash',
   'confirmationHash','path','filePath','role','roles','dueAt','timezone','sourceMessageId',
@@ -57,6 +58,9 @@ const descriptions: Partial<Record<BusinessToolName, string>> = {
   'notes.list': 'Consultar notas del chat. Para listar todas omite query; úsalo solo si el usuario pidió buscar un tema concreto, nunca la palabra genérica notas.',
   'media.process': 'Procesar las fuentes ya disponibles: images_pdf genera un PDF con TODAS las imágenes elegidas en artifactRefs; pdf_merge une los PDF elegidos. No necesita abrir una colección. Crear o procesar archivos SOLO si una operación del schema produce exactamente la salida solicitada. Si el formato o conversión pedido no existe, explica la limitación SIN ejecutar una lectura/extracción u otra conversión alternativa; solo puedes ofrecerla. Para crear un código QR llama esta función con operation=qr_create y text con el contenido exacto, sin artifactRef. Para generar un audio o nota de voz con operation=speak: si el usuario pide decir o grabar algo sobre un tema, motivo o intención, redacta naturalmente el contenido a pronunciar en text con la personalidad de Botsky y llama la función directamente; solo pide aclaración si no hay ningún tema o contenido indicado. Para leer QR usa qr_read y el archivo. Para sticker usa sticker. No presentes archivos como creados antes del resultado del worker.',
   'media.collect': 'GESTIÓN DE SESIÓN: start espera archivos futuros, no genera un PDF; finish procesa una colección ya abierta. Si ya están todas las fuentes en CURRENT y el usuario pide el PDF ahora, usa media.process con artifactRefs; esta tool es para reunir más archivos en una colección. Reunir fotos en un PDF (images_pdf) o unir varios PDF (pdf_merge). action=start inicia o conserva la colección. Si hay una colección abierta y el usuario dice con esas hazlo, ya están todas, listo o cualquier petición equivalente de finalizar, usa action=finish con la operación de activeSession.collection; nunca vuelvas a start para finalizar. Los archivos los resuelve el programa. No afirmes entrega antes del resultado del worker.',
+  'video.search': 'Buscar videos en internet (Dailymotion, web, etc.). Devuelve lista numerada de resultados con videoRef para descargar o consultar.',
+  'video.info': 'Consultar información detallada y metadatos de un video de la búsqueda activa mediante su videoRef.',
+  'video.download': 'Descargar un video o audio de la búsqueda activa mediante su videoRef. Se procesa en cola de forma asíncrona.',
   'notes.edit': 'Editar o corregir una nota existente del chat por su noteRef en REFERENCE_DATA.notes.',
   'memory.remember': 'Guardar memoria personal solo por petición explícita: guarda en tu memoria, acuérdate de que o recuerda que. Una petición de aviso a una hora futura corresponde a reminders.create. Nunca crear una nota compartida para esa petición.',
   'memory.forget': 'Borrar una memoria personal por referencia o contenido, o todas (all), con confirmación.',

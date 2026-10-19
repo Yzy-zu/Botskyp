@@ -80,6 +80,9 @@ export const modelArgsSchemas = {
   'media.search': object({ query: text.max(product.searchQueryChars), type: z.enum(['audio','video']) }),
   'media.collect': object({ operation: z.enum(['images_pdf', 'pdf_merge']), action:z.enum(['start','finish']).optional().describe('start abre una sesión para recibir MÁS archivos después; todavía NO genera PDF. finish cierra la sesión existente y genera su PDF. Para fuentes completas disponibles usa media.process con artifactRefs.') }),
   'media.status': empty,
+  'video.search': object({ query: text.max(product.searchQueryChars), source: z.enum(['auto','web','dailymotion','adult','pornhub','xnxx']).optional(), limit: integer(10).optional() }),
+  'video.info': object({ videoRef: ref('videoRef') }),
+  'video.download': object({ videoRef: ref('videoRef'), mode: z.enum(['video','audio']).optional(), quality: z.enum(['best','720p','480p','360p']).optional() }),
   'minecraft.status': empty,
   'minecraft.players': empty,
   'minecraft.resources': empty,
@@ -127,7 +130,7 @@ export const modelArgsSchemas = {
   'control.reactivate': empty,
   'control.maintenance_on': empty,
   'control.maintenance_off': empty,
-  'control.modules': object({ module: z.enum(['polls','media','messaging','drive','library','conversation','notes','reminders','memory','web','vision','minecraft','school','xp','games','moderation']).optional(), enabled: bool.optional() }),
+  'control.modules': object({ module: z.enum(['polls','media','video','messaging','drive','library','conversation','notes','reminders','memory','web','vision','minecraft','school','xp','games','moderation']).optional(), enabled: bool.optional() }),
   'diag.cuota': empty,
   'diag.errores': empty,
 } as const satisfies Record<string, z.ZodType>;

@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { moduleEnabled } from './permissions.js';
 import { geminiKeyPool } from './gemini-key-pool.js';
 import { defineTool,ok,type Tool } from './tools.js';
-export const modules=['polls','media','messaging','drive','library','conversation','notes','reminders','memory','web','vision','minecraft','school','xp','games','moderation'] as const;
+export const modules=['polls','media','video','messaging','drive','library','conversation','notes','reminders','memory','web','vision','minecraft','school','xp','games','moderation'] as const;
 const base={capability:{produces:'estado'},module:'core',permission:'config.global',scope:'both',modelCallable:false,risk:'write'} as const;
 function flagTool(name:string,description:string,example:string,key:string,value:boolean):Tool{
   return defineTool({...base,name,description,examples:[example],args:z.strictObject({}),async run(ctx){

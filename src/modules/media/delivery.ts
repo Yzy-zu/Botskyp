@@ -17,7 +17,10 @@ export async function mediaDelivery(db:Db,config:Config,row:{id:string;chat_id:s
       AND a.expires_at>clock_timestamp() AND j.status='done' AND j.owner_id=a.owner_id AND j.chat_id=a.chat_id
       AND EXISTS(SELECT 1 FROM outbox o WHERE o.id=$5 AND o.payload->>'attachmentId'=a.id::text AND o.payload->>'jobId'=j.id::text)`,[p.data.attachmentId,row.chat_id,p.data.actorId,p.data.jobId,row.id])).rows[0];
     if(!a || digest(a.data)!==a.sha256)return undefined;
-    try{validateBytes(a.data,a.mime);if(safeName(p.data.fileName.replace(/^botsky-/,'').replace(/\.[^.]+$/,''),extension(a.mime))!==p.data.fileName)return undefined;}
+    try{
+      const limit=p.data.mediaKind==='video'?Math.max(product.mediaInputBytes,product.videoWhatsAppMaxBytes):product.mediaInputBytes;
+      validateBytes(a.data,a.mime,limit);if(safeName(p.data.fileName.replace(/^botsky-/,'').replace(/\.[^.]+$/,''),extension(a.mime))!==p.data.fileName)return undefined;
+    }
     catch{return undefined;}
     return {kind:p.data.mediaKind,mime:a.mime,base64:a.data.toString('base64'),fileName:p.data.fileName};
   });

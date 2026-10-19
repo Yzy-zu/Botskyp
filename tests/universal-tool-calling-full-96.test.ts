@@ -18,9 +18,9 @@ const catalog = createToolRegistryV2(legacy);
 const allModules = [...new Set(catalog.map(t => t.requiredModule))];
 
 describe('FULL-96: Declarations & Catalog Integrity (R1)', () => {
-  it('generates exactly 96 public tools from Registry native declarations', () => {
+  it('generates exactly 99 public tools from Registry native declarations', () => {
     const decls = registryV2Declarations(catalog);
-    expect(decls).toHaveLength(96);
+    expect(decls).toHaveLength(99);
   });
 
   it('strictly excludes internal tools (0 internal tools leaked)', () => {
@@ -41,7 +41,7 @@ describe('FULL-96: Declarations & Catalog Integrity (R1)', () => {
   it('guarantees 0 duplicates across all declarations', () => {
     const decls = registryV2Declarations(catalog);
     const names = decls.map(d => d.name);
-    expect(new Set(names).size).toBe(96);
+    expect(new Set(names).size).toBe(99);
   });
 
   it('measures schema payload and identifies top 5 largest schemas', () => {
@@ -75,11 +75,11 @@ describe('FULL-96: Tool Exposure & Meta-Tools (R1, R4)', () => {
     toolCallingMode: 'full_96',
   };
 
-  it('exposes all 96 public tools from turn 1 in full_96 mode', () => {
+  it('exposes all 99 public tools from turn 1 in full_96 mode', () => {
     const exposure = selectToolExposure(catalog, baseInput);
-    // 96 business tools + 1 meta-tool (core.load_artifact_context)
-    expect(exposure.toolNames).toHaveLength(97);
-    expect(exposure.schemas).toHaveLength(97);
+    // 99 business tools + 1 meta-tool (core.load_artifact_context)
+    expect(exposure.toolNames).toHaveLength(100);
+    expect(exposure.schemas).toHaveLength(100);
 
     // Verify key domain tools are directly present on turn 1
     expect(exposure.toolNames).toContain('minecraft.status');
@@ -90,6 +90,9 @@ describe('FULL-96: Tool Exposure & Meta-Tools (R1, R4)', () => {
     expect(exposure.toolNames).toContain('reminders.create');
     expect(exposure.toolNames).toContain('xp.balance');
     expect(exposure.toolNames).toContain('notes.create');
+    expect(exposure.toolNames).toContain('video.search');
+    expect(exposure.toolNames).toContain('video.info');
+    expect(exposure.toolNames).toContain('video.download');
   });
 
   it('strictly excludes core.load_capability in full_96 mode', () => {

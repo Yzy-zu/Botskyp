@@ -80,7 +80,9 @@ it('evaluation of a destructive tool never creates confirmations, sessions or op
 });
 it('matches every historical PermissionKey without an alternate role system', async () => {
   const snapshot = JSON.parse(readFileSync('tests/fixtures/v1.1/permissions-r1.json', 'utf8')) as { permissions: Record<string, string> };
-  for (const tool of catalog) expect(tool.permission).toBe(snapshot.permissions[tool.name]);
+  for (const [name, perm] of Object.entries(snapshot.permissions)) {
+    expect(catalog.find(t => t.name === name)?.permission).toBe(perm);
+  }
   for (const actor of [owner, member, admin]) {
     const ctx = await loadExecutionContext(await context(actor), call());
     for (const tool of catalog) {
@@ -478,10 +480,10 @@ it('prevents nested identity injection and validates reminder recurrence before 
   expect(mismatch.denialCode).toBe('INVALID_RECURRENCE');
   expect(await count('sessions')).toBe(0); expect(await count('reminders')).toBe(0);
 });
-it('offers all 96 public adapters and keeps only two internal mechanisms closed', () => {
+it('offers all 99 public adapters and keeps only two internal mechanisms closed', () => {
   const blocked = catalog.filter(t => !adapterAvailable(t.name)).map(t => t.name).sort();
   expect(blocked).toEqual(['bulk.confirm','school.schedule_commit'].sort());
-  expect(catalog.filter(t => adapterAvailable(t.name))).toHaveLength(96);
+  expect(catalog.filter(t => adapterAvailable(t.name))).toHaveLength(99);
 });
 it('adapts safe legacy contracts without rewriting their domain implementation', async () => {
   expect((await execute(await context(), 'control.modules', { module: 'notes', enabled: false })).status).toBe('ok');

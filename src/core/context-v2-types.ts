@@ -34,6 +34,7 @@ export type SafeConversationSnapshotV2 = {
   destinations?: {ref:SafeRef;label:string;type:'group'|'private'}[];
   driveEntries?: {ref:SafeRef;name:string;mime:string}[];
   operations?: {ref:SafeRef;kind:string;status:string}[];
+  videoSearchResults?: { query: string; source: string; items: { ref: string; title: string; duration?: number; provider: string }[] };
   members: { ref: SafeRef; displayName: string }[];
   personalMemoryAvailable: boolean;
   personalMemories: { ref: SafeRef; text: string }[];

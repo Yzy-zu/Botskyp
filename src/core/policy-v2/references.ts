@@ -31,6 +31,23 @@ export async function liveResource(ctx: ExecutionContextV2, kind: RefKind, id: s
       LEFT JOIN media_attachments m ON m.id=a.media_attachment_id LEFT JOIN school_attachments s ON s.id=a.school_attachment_id
       WHERE a.chat_id=$1 AND a.id::text=$2 AND a.actor_id=$3 AND a.expires_at>clock_timestamp()
       AND ((m.data IS NOT NULL AND m.expires_at>clock_timestamp()) OR (s.data IS NOT NULL AND s.expires_at>clock_timestamp()))`, [chat, id, actor])).rows[0];
+    case 'videoRef': {
+      const rows = (await c.query<{ results: unknown }>(
+        'SELECT results FROM video_search_sessions WHERE chat_id=$1 AND actor_id=$2 AND expires_at>clock_timestamp() ORDER BY created_at DESC',
+        [chat, actor]
+      )).rows;
+      for (const row of rows) {
+        if (!Array.isArray(row.results)) continue;
+        const item = (row.results as { id?: string; videoRef?: string; webpageUrl?: string; url?: string }[]).find(
+          r => r && (r.videoRef === id || r.id === id)
+        );
+        if (item) {
+          const state = item.webpageUrl ?? item.url;
+          return state !== undefined ? { owner_id: actor, state } : { owner_id: actor };
+        }
+      }
+      return undefined;
+    }
   }
 }
 export type ResolvedReferences = {

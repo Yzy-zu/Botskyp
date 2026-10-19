@@ -1,4 +1,5 @@
 import { schoolDestination } from '../modules/school/automation.js';
+import { getLatestVideoSearchSession } from '../modules/video/session.js';
 import { DateTime } from 'luxon';
 import { product } from '../../config/product.js';
 import { modules } from './control-tools.js';
@@ -104,6 +105,10 @@ export async function buildTurnContextV2(ctx: ToolCtx, domains: readonly string[
   for(const d of destinations)add('destinationRef',d.id,d.label,true);
   for(const d of driveEntries)add('driveRef',d.id,d.name,true);
   for(const o of operations)add('opRef',o.id,o.kind,true);
+  const videoSession = await getLatestVideoSearchSession(c, chatId, actorId);
+  if (videoSession) {
+    for (const item of videoSession.results) add('videoRef', item.id, item.title, true);
+  }
   // Group reads only availability, never personal bodies. Private reads require eligibility and relevance.
   const personalMemoryAvailable = Boolean((await c.query('SELECT 1 FROM user_memories WHERE user_id=$1 LIMIT 1', [actorId])).rowCount);
   const memories = !chat.isGroup && enabledModules.includes('memory') && await privateEligible(c, actor)
@@ -165,6 +170,18 @@ export async function buildTurnContextV2(ctx: ToolCtx, domains: readonly string[
     destinations:destinations.map(d=>({ref:ref('destinationRef',d.id),label:contextData(d.label),type:d.is_group?'group':'private'})),
     driveEntries:driveEntries.map(d=>({ref:ref('driveRef',d.id),name:contextData(d.name),mime:d.mime})),
     operations:operations.map(o=>({ref:ref('opRef',o.id),kind:o.kind,status:o.status})),
+    ...(videoSession && videoSession.results.length > 0 ? {
+      videoSearchResults: {
+        query: contextData(videoSession.query),
+        source: contextData(videoSession.source),
+        items: videoSession.results.map(item => ({
+          ref: ref('videoRef', item.id),
+          title: contextData(item.title),
+          ...(item.duration !== undefined ? { duration: item.duration } : {}),
+          provider: contextData(item.provider),
+        })),
+      },
+    } : {}),
     personalMemoryAvailable, personalMemories: memories.map(m => ({ ref: ref('memoryRef', m.id), text: contextData(m.body) })),
     recentResults: results.map((r, i) => ({ ref: i === 0 ? 'R_LAST' : `R_${i + 1}` as const, kind: r.result_kind, excerpt: contextData(r.text).slice(0, product.contextV2ResultChars), ageSec: Math.max(0, Math.floor((now.getTime() - r.created_at.getTime()) / 1000)) })),
     recentEvents: events.map(e => ({ kind: 'resolved_event', summary: summaries[e.tool_name] ?? 'Una operación anterior terminó.', ageSec: Math.max(0, Math.floor((now.getTime() - e.created_at.getTime()) / 1000)) })),

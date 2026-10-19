@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 
-export const refKinds = ['memberRef', 'artifactRef', 'noteRef', 'reminderRef', 'memoryRef', 'pollRef', 'taskRef', 'subjectRef', 'driveRef', 'destinationRef', 'opRef'] as const;
+export const refKinds = ['memberRef', 'artifactRef', 'noteRef', 'reminderRef', 'memoryRef', 'pollRef', 'taskRef', 'subjectRef', 'driveRef', 'destinationRef', 'opRef', 'videoRef'] as const;
 export type RefKind = typeof refKinds[number];
 export type SafeRef = 'SELF' | `${RefKind}_${string}`;
 export type RefScope = { chatId: string; actorId: string };
@@ -17,7 +17,7 @@ const resourceSchema = z.strictObject({
 export type RefResource = z.infer<typeof resourceSchema>;
 export type RefResolution = { status: 'ok'; id: string; kind: RefKind | 'SELF' }
   | { status: 'not_found' | 'needs_clarification' };
-const personalKinds = new Set<RefKind>(['artifactRef', 'reminderRef', 'memoryRef', 'driveRef', 'destinationRef', 'opRef']);
+const personalKinds = new Set<RefKind>(['artifactRef', 'reminderRef', 'memoryRef', 'driveRef', 'destinationRef', 'opRef', 'videoRef']);
 function visible(resource: RefResource, scope: RefScope): boolean {
   return resource.chatId === scope.chatId &&
     (resource.access.visibility === 'personal' ? resource.access.ownerId === scope.actorId : !personalKinds.has(resource.kind));

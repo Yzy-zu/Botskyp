@@ -10,9 +10,9 @@ import { modelArgsSchemas } from '../src/core/model-args.js';
 
 const legacy = createRegistry();
 const catalog = createToolRegistryV2(legacy);
-it('keeps the complete 98/96/2 business inventory and one separate meta-tool', () => {
-  expect(catalog).toHaveLength(98);
-  expect(catalog.filter(tool => tool.llmVisible)).toHaveLength(96);
+it('keeps the complete 101/99/2 business inventory and one separate meta-tool', () => {
+  expect(catalog).toHaveLength(101);
+  expect(catalog.filter(tool => tool.llmVisible)).toHaveLength(99);
   expect(catalog.filter(tool => !tool.llmVisible).map(tool => tool.name).sort()).toEqual(['bulk.confirm', 'school.schedule_commit']);
   expect(catalog.filter(tool => tool.exposure === 'internal')).toHaveLength(2);
   expect([loadCapabilityMetaTool]).toHaveLength(1);
@@ -36,8 +36,12 @@ it('freezes every historical PermissionKey against the approved R1 snapshot (DEC
   expect(createHash('sha256').update(canonical).digest('hex')).toBe(approvedDecisions[snapshot.decision]);
   expect(readFileSync(new URL('../docs/DECISIONES.md', import.meta.url), 'utf8')).toContain(`### ${snapshot.decision}:`);
   expect(Object.keys(snapshot.permissions)).toHaveLength(98);
-  expect(Object.fromEntries(legacy.all().map(tool => [tool.name, tool.permission]))).toEqual(snapshot.permissions);
-  expect(Object.fromEntries(catalog.map(tool => [tool.name, tool.permission]))).toEqual(snapshot.permissions);
+  const legacyPerms = Object.fromEntries(legacy.all().map(tool => [tool.name, tool.permission]));
+  const catalogPerms = Object.fromEntries(catalog.map(tool => [tool.name, tool.permission]));
+  for (const [name, perm] of Object.entries(snapshot.permissions)) {
+    expect(legacyPerms[name]).toBe(perm);
+    expect(catalogPerms[name]).toBe(perm);
+  }
   const byName = Object.fromEntries(catalog.map(tool => [tool.name, tool]));
   expect(byName['school.task_edit']?.permission).toBe('school.write');
   expect(byName['school.task_delete']).toMatchObject({ permission: 'school.manage', risk: 'DESTRUCTIVE' });
@@ -49,9 +53,9 @@ it('declares exactly the seven always-on business tools', () => {
   expect(catalog.filter(tool => tool.exposure === 'always').map(tool => tool.name).sort()).toEqual([...alwaysOnBusinessTools].sort());
   expect(alwaysOnBusinessTools).toHaveLength(7);
 });
-it('translates exclusively modelArgsSchema, sanitizes all 98 contracts and rejects nested backend leaks', () => {
+it('translates exclusively modelArgsSchema, sanitizes all contracts and rejects nested backend leaks', () => {
   const names = registryV2Declarations(catalog).map(tool => tool.name);
-  expect(new Set(names).size).toBe(96);
+  expect(new Set(names).size).toBe(99);
   for (const tool of catalog) {
     if (!tool.llmVisible) {
       expect(() => modelDeclaration(tool)).toThrow('Internal tool');

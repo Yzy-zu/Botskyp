@@ -17,8 +17,8 @@ export const extensions:Record<string,string>={
   'application/vnd.openxmlformats-officedocument.presentationml.presentation':'pptx',
 };
 export function extension(mime:string):string{const ext=extensions[mime];if(!ext)throw new Error('unsupported_mime');return ext;}
-export function validateBytes(bytes:Buffer,mime:string):void{
-  const ext=extension(mime);if(!bytes.length || bytes.length>product.mediaInputBytes)throw new Error('size_limit');
+export function validateBytes(bytes:Buffer,mime:string,maxBytes:number=product.mediaInputBytes):void{
+  const ext=extension(mime);if(!bytes.length || bytes.length>maxBytes)throw new Error('size_limit');
   const prefix=bytes.subarray(0,16);const ascii=prefix.toString('latin1');
   const valid:Record<string,boolean>={png:prefix.subarray(0,8).equals(Buffer.from('89504e470d0a1a0a','hex')),jpg:prefix[0]===255 && prefix[1]===216 && prefix[2]===255,
     webp:ascii.startsWith('RIFF') && ascii.slice(8,12)==='WEBP',gif:ascii.startsWith('GIF87a') || ascii.startsWith('GIF89a'),

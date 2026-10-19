@@ -10,6 +10,7 @@ import { product } from '../config/product.js';
 import { recoverMedia,retainMedia,claimMedia,processMedia } from './modules/media/worker.js';
 import { reportMediaDeliveries } from './modules/media/delivery.js';
 import { cleanOrphanTemporaries } from './modules/media/process.js';
+import { recoverVideoJobs,claimVideoJob,processVideoJob,cleanOrphanVideoTemporaries } from './modules/video/worker.js';
 const config=readConfig();
 const db=createDb(config.DATABASE_URL);
 const stopObserver=startObserver(config,'worker');
@@ -18,8 +19,8 @@ const lock=await db.connect();
 const held=await lock.query<{locked:boolean}>("SELECT pg_try_advisory_lock(hashtext('botsky-worker')) AS locked");
 if (!held.rows[0]?.locked) throw new Error('Another worker is active');
 lock.on('error',()=>process.exit(1));
-await recoverMedia(db,config);await recoverLibrarySync(db);await recoverDrive(db);
-await cleanOrphanTemporaries();
+await recoverMedia(db,config);await recoverLibrarySync(db);await recoverDrive(db);await recoverVideoJobs(db,config);
+await cleanOrphanTemporaries();await cleanOrphanVideoTemporaries();
 let stop=false;
 process.on('SIGTERM',()=>{stop=true;});
 process.on('SIGINT',()=>{stop=true;});
@@ -31,6 +32,7 @@ while (!stop) {
     if(await syncLibrary(db,config))continue;
     await retainMedia(db);await reportMediaDeliveries(db,config);
     const drive=await claimDrive(db);if(drive){await processDrive(db,config,drive);continue;}
+    const video=await claimVideoJob(db);if(video){await processVideoJob(db,config,video);continue;}
     const job=await claimMedia(db);
     if(job)await processMedia(db,config,job);
     else await delay(product.tickMs);

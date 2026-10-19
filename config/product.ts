@@ -215,4 +215,11 @@ export const product = {
   retryBaseMs: 5_000,
   workerConcurrency: 1,
   maxBodyBytes: 2_000_000,
+  videoMaxSearchResults: 5,
+  videoMaxDownloadBytes: 50_000_000,
+  videoWhatsAppMaxBytes: 16_000_000,
+  videoMaxDurationSeconds: 1800,
+  videoDownloadTimeoutMs: 120_000,
+  videoTranscodeTimeoutMs: 120_000,
+  videoSessionMinutes: 15,
 } as const;

@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { readConfig } from '../../src/config.js';
@@ -63,11 +63,30 @@ export class QaRunner {
     this.qaChatId = options.qaChatId ?? process.env.QA_CHAT_ID ?? this.config.LAB_CHAT_ID;
     this.qaActorId = options.qaActorId ?? process.env.QA_ACTOR_ID ?? (this.config.OWNER_JIDS?.[0] ?? '5214435810175@s.whatsapp.net');
     this.defaultMode = options.mode ?? (process.env.QA_MODE as QaMode) ?? 'SAFE';
-    this.outputDir = options.outputDir ?? join(process.cwd(), 'qa', 'e2e', 'reports');
 
-    if (!existsSync(this.outputDir)) {
-      mkdirSync(this.outputDir, { recursive: true });
+    const defaultReportsDir = join(process.cwd(), 'qa', 'e2e', 'reports');
+    let outDir = options.outputDir ?? process.env.QA_OUTPUT_DIR;
+    if (!outDir) {
+      try {
+        if (!existsSync(defaultReportsDir)) {
+          mkdirSync(defaultReportsDir, { recursive: true });
+        }
+        const testFile = join(defaultReportsDir, `.write-test-${Date.now()}`);
+        writeFileSync(testFile, 'ok');
+        unlinkSync(testFile);
+        outDir = defaultReportsDir;
+      } catch {
+        outDir = '/tmp/qa-reports';
+        if (!existsSync(outDir)) {
+          mkdirSync(outDir, { recursive: true });
+        }
+      }
+    } else {
+      if (!existsSync(outDir)) {
+        mkdirSync(outDir, { recursive: true });
+      }
     }
+    this.outputDir = outDir;
   }
 
   async close(): Promise<void> {
@@ -327,8 +346,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const mode = (getArg('--mode') as QaMode) ?? 'SAFE';
   const resume = args.includes('--resume');
   const dryRun = args.includes('--dry-run');
+  const outputDir = getArg('--output') ?? getArg('--output-dir');
 
-  const runner = new QaRunner({ mode, resume, dryRun });
+  const runner = new QaRunner({ mode, resume, dryRun, outputDir });
 
   console.log('=== BOTSKY E2E BLACK-BOX QA RUNNER ===');
   console.log(`Target: http://127.0.0.1:3000/webhook`);

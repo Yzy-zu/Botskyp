@@ -14,6 +14,9 @@ WORKDIR /app
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --chown=node:node package.json ./
+COPY --chown=node:node tsconfig*.json ./
+COPY --chown=node:node src ./src
+COPY --chown=node:node config ./config
 COPY --chown=node:node qa ./qa
 RUN mkdir -p /var/lib/botsky-observer/spool && chown -R node:node /var/lib/botsky-observer && chmod 700 /var/lib/botsky-observer/spool
 USER node
@@ -37,6 +40,9 @@ WORKDIR /app
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --chown=node:node package.json ./
+COPY --chown=node:node tsconfig*.json ./
+COPY --chown=node:node src ./src
+COPY --chown=node:node config ./config
 COPY --chown=node:node scripts/media /app/scripts/media
 COPY --chown=node:node qa ./qa
 RUN mkdir -p /var/lib/botsky-observer/spool && chown -R node:node /var/lib/botsky-observer && chmod 700 /var/lib/botsky-observer/spool

@@ -492,7 +492,12 @@ export async function runLlmSetup(options: SetupOptions = {}): Promise<SetupRepo
   if (!options.skipRecreate && existsSync(resolve(process.cwd(), 'docker-compose.yml'))) {
     console.log(`\nRecreating containers (docker compose up -d --force-recreate app worker)...`);
     try {
-      execSync('docker compose up -d --force-recreate app worker', { stdio: 'inherit' });
+      let commitEnv = '';
+      try {
+        const commit = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
+        commitEnv = `BOTSKY_GIT_COMMIT=${commit} `;
+      } catch { /* ignore */ }
+      execSync(`${commitEnv}docker compose up -d --force-recreate app worker`, { stdio: 'inherit' });
       // Wait for health
       console.log(`Waiting for app to report healthy...`);
       execSync('sleep 5');

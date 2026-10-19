@@ -24,6 +24,7 @@ temp/
 coverage/
 .turbo/
 var/*.tmp*
+var/*.json
 
 
 # Backups y dumps

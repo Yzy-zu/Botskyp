@@ -25,9 +25,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-venv python3-pil python3-pypdf python3-defusedxml python3-qrcode \
     ffmpeg libreoffice-writer libreoffice-calc libreoffice-impress fonts-dejavu-core \
     tesseract-ocr tesseract-ocr-spa tesseract-ocr-eng poppler-utils zbar-tools libseccomp2 curl \
-    && python3 -m venv /opt/piper && /opt/piper/bin/pip install --no-cache-dir piper-tts==1.8.0 \
+    && python3 -m venv /opt/piper && /opt/piper/bin/pip install --no-cache-dir piper-tts==1.8.0 "yt-dlp[default,curl-cffi]==2026.8.19" \
+    && ln -sf /opt/piper/bin/yt-dlp /usr/local/bin/yt-dlp \
     && mkdir -p /opt/voices && /opt/piper/bin/python -m piper.download_voices --data-dir /opt/voices es_MX-ald-medium \
-    && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && chmod a+rx /usr/local/bin/yt-dlp \
     && rm -rf /var/lib/apt/lists/*
 FROM media-deps AS worker
 RUN apt-get update && apt-get install -y --no-install-recommends rclone && rm -rf /var/lib/apt/lists/*

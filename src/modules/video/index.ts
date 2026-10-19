@@ -82,6 +82,9 @@ export const videoTools: Tool[] = [
       if (!results.length) {
         return fail('No se encontraron videos para tu búsqueda.');
       }
+      const sessionTtl = (args.source === 'adult' || args.source === 'pornhub' || args.source === 'xnxx')
+        ? 10
+        : product.videoSessionMinutes;
       await saveVideoSearchSession(
         ctx.c,
         ctx.chat.id,
@@ -89,7 +92,7 @@ export const videoTools: Tool[] = [
         args.query,
         args.source ?? 'auto',
         results,
-        product.videoSessionMinutes
+        sessionTtl
       );
       const presentation = results
         .map(
@@ -166,6 +169,9 @@ export const videoTools: Tool[] = [
       );
       if (!video) {
         return fail('Video no encontrado o la sesión de búsqueda ha expirado.');
+      }
+      if (video.downloadable === false) {
+        return fail('Este video no está disponible para descarga directa.');
       }
       if (video.duration && video.duration > product.videoMaxDurationSeconds) {
         return fail(

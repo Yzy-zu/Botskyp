@@ -11,6 +11,7 @@ import { recoverMedia,retainMedia,claimMedia,processMedia } from './modules/medi
 import { reportMediaDeliveries } from './modules/media/delivery.js';
 import { cleanOrphanTemporaries } from './modules/media/process.js';
 import { recoverVideoJobs,claimVideoJob,processVideoJob,cleanOrphanVideoTemporaries } from './modules/video/worker.js';
+import { cleanupExpiredVideoSessions } from './modules/video/session.js';
 const config=readConfig();
 const db=createDb(config.DATABASE_URL);
 const stopObserver=startObserver(config,'worker');
@@ -30,7 +31,7 @@ while (!stop) {
   try{
     await scheduleSync(db,config);
     if(await syncLibrary(db,config))continue;
-    await retainMedia(db);await reportMediaDeliveries(db,config);
+    await retainMedia(db);await cleanupExpiredVideoSessions(db);await reportMediaDeliveries(db,config);
     const drive=await claimDrive(db);if(drive){await processDrive(db,config,drive);continue;}
     const video=await claimVideoJob(db);if(video){await processVideoJob(db,config,video);continue;}
     const job=await claimMedia(db);

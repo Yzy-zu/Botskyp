@@ -117,3 +117,9 @@ export async function findVideoByRef(
   }
   return undefined;
 }
+
+export async function cleanupExpiredVideoSessions(db: {
+  query: (sql: string, params?: unknown[]) => Promise<unknown>;
+}): Promise<void> {
+  await db.query('DELETE FROM video_search_sessions WHERE expires_at <= clock_timestamp()');
+}

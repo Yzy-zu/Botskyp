@@ -28,7 +28,8 @@ Diff inspeccionado desde `2c137f70298735a68e37f3e836f7e331c45a3f40`:
   mismo job. Un job fallido se clasifica JOB_FAILED aunque entregue su error.
 - Smokes usan `.env`, descubrimiento de red Compose, IDs únicos y recibos;
   exigen worker done y entrega sent. El seed incluye extension y está probado
-  contra la DB real de tests. Limpian notas por marcador único, recordatorios
+  contra la DB real de tests. Usan marcador único sin formato UUID (el contexto
+  redacta IDs técnicos), limpian notas por recibo/turno/tiempo, recordatorios
   por receipt ID y expiran entradas/salidas media conservando sus recibos. Sin credenciales literales ni rotación.
 - Respaldo verificado antes de limpiar dos notas y un recordatorio anteriores,
   identificados por mensaje PROD_SMOKE, actor/chat, contenido y timestamps.

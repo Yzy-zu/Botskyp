@@ -18,7 +18,7 @@ const url=new URL(config.DATABASE_URL);url.hostname=address;
 const db=createDb(url.toString());
 const owner=config.OWNER_JIDS[0]!;
 const chat=config.LAB_CHAT_ID;
-const runId=randomUUID();
+const runId=`prueba-${Date.now().toString(36)}-${randomUUID().slice(0,8)}`;
 const sourceIds:string[]=[];
 const results:QaTurnResult[]=[];
 
@@ -53,7 +53,10 @@ async function cleanup(){
     if(receipt.tool_name==='reminders.create')await db.query('DELETE FROM reminders WHERE id=$1 AND chat_id=$2 AND owner_id=$3 AND outbox_id IS NULL',[id,chat,owner]);
 
   }
-  await db.query('DELETE FROM notes WHERE chat_id=$1 AND author_id=$2 AND position($3 in body)>0',[chat,owner,runId]);
+  await db.query(`DELETE FROM notes n USING tool_executions e,message_turns t
+    WHERE e.turn_id=t.id AND t.source_message_id=ANY($1::text[]) AND e.tool_name='notes.create' AND e.status='ok'
+    AND n.chat_id=$2 AND n.author_id=$3 AND n.chat_id=e.chat_id AND n.author_id=e.actor_id
+    AND n.body=e.input_args->>'body' AND n.created_at>=t.created_at AND n.created_at<=e.finished_at`,[sourceIds,chat,owner]);
   const sessionIds=results.flatMap(r=>r.relevantSession?.id?[r.relevantSession.id]:[]);
   await db.query("UPDATE sessions_v2 SET status='cancelled' WHERE id=ANY($1::uuid[]) AND chat_id=$2 AND actor_id=$3 AND status='active'",[sessionIds,chat,owner]);
   // Expire only this run's retained inputs/outputs; preserve job/outbox delivery evidence.

@@ -273,3 +273,12 @@ que el tiempo procede del turno actual/su aclaración, con ejemplo explícito si
 time, y se separaron los schemas de periodo relativo y día con reloj. Un probe
 Gemini sobre el mismo contexto real ya omitió time correctamente. Los smokes se
 repiten después de deploy y qualification nuevos; sin parser textual de backend.
+
+## 20-10-2026 — Script de activación Legacy, transacción revertida
+
+El primer intento omitió audit_log.chat_id (NOT NULL). PostgreSQL revirtió toda
+la transacción; no se activaron chats parcialmente ni se afectó la salud del runtime.
+Corrección: registrar auditoría por cada grupo con su chat_id. Repetir el script
+tras commit/push/deploy; sin borrar datos ni tocar Evolution.
+Corrección validada: script terminó sin error, cinco grupos enabled y tres privados
+autorizados. Smoke en Lab: xp.balance ejecutado por LLM y respuesta con recibo sent.

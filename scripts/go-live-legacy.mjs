@@ -28,6 +28,7 @@ try{
         ON CONFLICT(id) DO UPDATE SET enabled=true,is_group=true,
         settings=chats.settings || jsonb_build_object('modules',coalesce(chats.settings->'modules','{}'::jsonb)||$3::jsonb)`,
       [id,{modules:moduleSettings},JSON.stringify(moduleSettings)]);
+      await c.query("INSERT INTO audit_log(actor_id,chat_id,action) VALUES($1,$2,'go_live.legacy_allowlists')",[owner,id]);
     }
     for(const number of normalUsers){
       const id=number+'@s.whatsapp.net';
@@ -36,7 +37,6 @@ try{
       await c.query(`INSERT INTO chats(id,is_group,enabled) VALUES($1,false,true)
         ON CONFLICT(id) DO UPDATE SET enabled=true`,[id]);
     }
-    await c.query("INSERT INTO audit_log(actor_id,action) VALUES($1,'go_live.legacy_allowlists')",[owner]);
   });
   const groups=[];
   for(const id of groupIds){

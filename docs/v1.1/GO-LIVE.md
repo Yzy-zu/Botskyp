@@ -36,3 +36,6 @@ runtime por ellas. Se ejecuta después la selección específica de activación/
 
 Checks finales previos a deploy: typecheck/lint PASS; 63 pruebas específicas de
 permisos/privados/membresía y 20 de activación PASS (83 total). Runtime sin cambios.
+Verificación real posterior: script aplicado; 5/5 enabled, 4/5 con roster confirmado;
+3/3 NORMAL elegibles por privado y LIDs verificados. Smoke solo Lab: xp.balance/ok
+con call_origin=llm y outbox sent confirmado por Evolution. Ningún ping a grupos reales.

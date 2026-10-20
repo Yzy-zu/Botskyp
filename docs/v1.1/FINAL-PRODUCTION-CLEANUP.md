@@ -27,8 +27,9 @@ Diff inspeccionado desde `2c137f70298735a68e37f3e836f7e331c45a3f40`:
 - Scoring QA: progreso sustituido no invalida resultado terminal enviado del
   mismo job. Un job fallido se clasifica JOB_FAILED aunque entregue su error.
 - Smokes usan `.env`, descubrimiento de red Compose, IDs únicos y recibos;
-  exigen worker done y entrega sent. Limpian notas por marcador único y
-  recordatorios por receipt ID. Sin credenciales literales ni rotación.
+  exigen worker done y entrega sent. El seed incluye extension y está probado
+  contra la DB real de tests. Limpian notas por marcador único, recordatorios
+  por receipt ID y expiran entradas/salidas media conservando sus recibos. Sin credenciales literales ni rotación.
 - Respaldo verificado antes de limpiar dos notas y un recordatorio anteriores,
   identificados por mensaje PROD_SMOKE, actor/chat, contenido y timestamps.
 - Games: NO_ACTIVE_GAME se limita a status/cancel y al error de ausencia;
@@ -43,3 +44,5 @@ worker (PNG→sticker, OGG→MP3, PDF→pdf_compress), y smokes A–F tras quali
 No se ejecuta campaña nightly. Manifest runtime ignorado por Git; lo escribe
 `npm run llm:qualify` atómicamente después del deploy y se reinicia app para cargarlo.
 Push/deploy solo en `feat/universal-tool-calling`, sin merge. Observer=false.
+
+Recheck del helper de fixtures y scorer: 45/45 pruebas dirigidas PASS.

@@ -56,8 +56,11 @@ async function cleanup(){
   await db.query('DELETE FROM notes WHERE chat_id=$1 AND author_id=$2 AND position($3 in body)>0',[chat,owner,runId]);
   const sessionIds=results.flatMap(r=>r.relevantSession?.id?[r.relevantSession.id]:[]);
   await db.query("UPDATE sessions_v2 SET status='cancelled' WHERE id=ANY($1::uuid[]) AND chat_id=$2 AND actor_id=$3 AND status='active'",[sessionIds,chat,owner]);
-  // Media outputs retain the normal delivery retention; remove only the seeded originals.
-  await db.query('DELETE FROM media_attachments WHERE source_message_id=ANY($1::text[]) AND is_original',[sourceIds]);
+  // Expire only this run's retained inputs/outputs; preserve job/outbox delivery evidence.
+  await db.query(`UPDATE chat_artifacts SET expires_at=clock_timestamp() WHERE chat_id=$2 AND actor_id=$3
+    AND (source_message_id=ANY($1::text[]) OR job_id IN (SELECT id FROM jobs WHERE source_message_id=ANY($1::text[])))`,[sourceIds,chat,owner]);
+  await db.query(`UPDATE media_attachments SET expires_at=clock_timestamp() WHERE chat_id=$2 AND owner_id=$3
+    AND (source_message_id=ANY($1::text[]) OR job_id IN (SELECT id FROM jobs WHERE source_message_id=ANY($1::text[])))`,[sourceIds,chat,owner]);
 }
 async function main(){
   assert.equal(config.OBSERVER_ENABLED,false,'Observer must remain false');

@@ -1,3 +1,4 @@
+import {seedMediaFixture} from '../qa/e2e/result-collector.js';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
@@ -219,6 +220,13 @@ describe('AGY — BOTSKY PRODUCTION UNBLOCK TARGETED REGRESSION', () => {
       expect(entry?.descriptionForModel).toContain('mantenimiento');
       expect(entry?.permission).toBe('config.global');
     });
+  });
+
+  it('seeds a real QA fixture with the complete worker database contract', async () => {
+    const id=await seedMediaFixture(db,chat,owner,randomUUID(),'qa/e2e/fixtures/sample.png');
+    const row=(await db.query<{extension:string;mime:string;data:Buffer}>('SELECT extension,mime,data FROM media_attachments WHERE id=$1',[id])).rows[0];
+    expect(row?.extension).toBe('png');expect(row?.mime).toBe('image/png');
+    expect(row?.data).toEqual(readFileSync('qa/e2e/fixtures/sample.png'));
   });
 
   // 5. Production gate removal

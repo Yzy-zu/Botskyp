@@ -1,5 +1,6 @@
 import type { Db } from '../../src/db/client.js';
 import { loadFixtureBuffer } from './evolution-payload.js';
+import { extension } from '../../src/modules/media/catalog.js';
 import { digest } from '../../src/modules/media/storage.js';
 import { QA_OWNER_JID, QA_MEMBER_JID } from '../../src/core/permissions.js';
 import type {
@@ -71,12 +72,12 @@ export async function seedMediaFixture(
   const row = (
     await db.query<{ id: string }>(
       `INSERT INTO media_attachments (
-        chat_id, owner_id, source_message_id, mime, size, sha256, is_original, data, artifact_index, expires_at
+        chat_id, owner_id, source_message_id, mime, extension, size, sha256, is_original, data, artifact_index, expires_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8, clock_timestamp() + interval '2 days')
+      VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, clock_timestamp() + interval '2 days')
       ON CONFLICT DO NOTHING
       RETURNING id`,
-      [chatId, actorId, providerMessageId, mime, buffer.length, sha, buffer, artifactIndex]
+      [chatId, actorId, providerMessageId, mime, extension(mime), buffer.length, sha, buffer, artifactIndex]
     )
   ).rows[0];
 

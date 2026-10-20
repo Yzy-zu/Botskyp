@@ -1570,3 +1570,12 @@ independiente ante rollback. El CLI owner-local combina spool+DB; sin interfaz
 HTTP/WhatsApp de consulta ni servicios adicionales. Si ambos sinks fallan, perder
 evidencia es preferible a detener negocio. Cobertura y límites en
 [FASE-OBSERVER](fases/FASE-OBSERVER.md). Deploy enabled expresamente autorizado.
+
+## DEC-071 — Cierre dirigido de production-unblock (20-10-2026)
+
+Por instrucción del dueño, limpieza sobre `feat/universal-tool-calling`, sin merge.
+Full catalog estable compartido entre runtime y qualification: 99 tools públicas
+más tres meta-tools; la sesión real sigue autorizando confirmación/cancelación.
+Solo qualification canónica puede regenerar el manifest operativo; no actualizar
+hashes a mano. Policy recibe tiempo canonical y nunca interpreta lenguaje humano.
+Detalles, smokes y limpieza acotada: [cierre dirigido](v1.1/FINAL-PRODUCTION-CLEANUP.md).

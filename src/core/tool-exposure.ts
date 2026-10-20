@@ -2,9 +2,10 @@ import { z } from 'zod';
 import { product } from '../../config/product.js';
 import type { Actor } from './permissions.js';
 import { capabilityDomains, capabilityDomainSchema, type CapabilityDomain } from './capability-domain.js';
-import { alwaysOnBusinessTools, modelDeclaration, type ToolMetadataV2 } from './tool-registry-v2.js';
+import { alwaysOnBusinessTools, modelDeclaration, fullCatalogDeclarations, sessionConfirmMetaTool, sessionCancelMetaTool, type ToolMetadataV2 } from './tool-registry-v2.js';
 import type { Declaration } from './llm.js';
-import { loadArtifactContextMetaTool, loadArtifactContextSchema } from './artifact-context-v2.js';
+import { loadArtifactContextMetaTool, loadArtifactContextSchema } from './tool-registry-v2.js';
+export { sessionConfirmMetaTool, sessionCancelMetaTool } from './tool-registry-v2.js';
 import { adapterAvailable } from './policy-v2/arguments.js';
 
 export const MAX_TOOLS_PER_TURN = product.maxToolsPerTurn;
@@ -70,20 +71,9 @@ export const loadCapabilityMetaTool = Object.freeze({
   descriptionForModel: 'Cargar funciones de un dominio disponible cuyas funciones aún no están expuestas. Usa literalmente domain del schema. Incluye toolName con el nombre EXACTO del Manifest de la función que necesitas para priorizarla dentro del presupuesto. Una expansión máxima; sin ejecutar acciones. Visibilidad nunca concede permiso.',
   modelArgsSchema: loadCapabilityArgsSchema,
 });
-const emptySessionArgsSchema = z.strictObject({});
-export const sessionConfirmMetaTool = Object.freeze({
-  name: 'core.session_confirm', domain: 'core', llmVisible: true, exposure: 'always',
-  descriptionForModel: 'Confirmar la operación pendiente en REFERENCE_DATA.activeSession cuando kind=confirm y el usuario acepta o confirma realizarla tal cual (sí, simón, arre, dale, va, de una, hazlo, etc.). OBLIGATORIO: Llama esta función en lugar de volver a invocar la herramienta pendiente. Sin argumentos. Si el usuario pide modificar datos, NO confirmes: llama la herramienta con los nuevos datos.',
-  modelArgsSchema: emptySessionArgsSchema,
-});
-export const sessionCancelMetaTool = Object.freeze({
-  name: 'core.session_cancel', domain: 'core', llmVisible: true, exposure: 'always',
-  descriptionForModel: 'Cancelar o descartar la operación o sesión pendiente en REFERENCE_DATA.activeSession cuando el usuario rechaza, cancela o desiste (no, nel, ni madres, mejor no, olvídalo, cancélalo, ya estuvo, etc.). OBLIGATORIO: Llama esta función inmediatamente en lugar de responder texto libre cuando el usuario desiste de una confirmación o clarificación pendiente. Sin argumentos.',
-  modelArgsSchema: emptySessionArgsSchema,
-});
 function metaDeclarations(input: ToolExposureInput): { names: string[]; declarations: Declaration[] } {
   const isFull96 = (input.toolCallingMode ?? input.mode) === 'full_96';
-  const emptySchema = z.toJSONSchema(emptySessionArgsSchema); delete emptySchema.$schema;
+  const emptySchema = z.toJSONSchema(sessionConfirmMetaTool.modelArgsSchema); delete emptySchema.$schema;
   const artifactSchema = z.toJSONSchema(loadArtifactContextSchema); delete artifactSchema.$schema;
   const names: string[] = [];
   const declarations: Declaration[] = [];
@@ -94,11 +84,11 @@ function metaDeclarations(input: ToolExposureInput): { names: string[]; declarat
   }
   names.push(loadArtifactContextMetaTool.name);
   declarations.push({ name: 'core_load_artifact_context', description: loadArtifactContextMetaTool.description, parametersJsonSchema: artifactSchema });
-  if (input.activeSession?.kind === 'confirm') {
+  if (isFull96 || input.activeSession?.kind === 'confirm') {
     names.push(sessionConfirmMetaTool.name);
     declarations.push({ name: 'core_session_confirm', description: sessionConfirmMetaTool.descriptionForModel, parametersJsonSchema: emptySchema });
   }
-  if (input.activeSession?.kind) {
+  if (isFull96 || input.activeSession?.kind) {
     names.push(sessionCancelMetaTool.name);
     declarations.push({ name: 'core_session_cancel', description: sessionCancelMetaTool.descriptionForModel, parametersJsonSchema: emptySchema });
   }
@@ -106,7 +96,8 @@ function metaDeclarations(input: ToolExposureInput): { names: string[]; declarat
 }
 function snapshot(catalog: readonly ToolMetadataV2[], tools: readonly ToolMetadataV2[], relevant: readonly CapabilityDomain[], input: ToolExposureInput): ToolExposure {
   const meta = metaDeclarations(input);
-  const schemas = [...tools.map(modelDeclaration), ...meta.declarations];
+  const schemas = (input.toolCallingMode ?? input.mode) === 'full_96'
+    ? fullCatalogDeclarations(catalog) : [...tools.map(modelDeclaration), ...meta.declarations];
   const availableDomains = capabilityDomains.filter(domain => domainTools(catalog, domain, input).length > 0);
   const capabilityDirectory = Object.fromEntries(availableDomains.map(domain => [domain,
     `${domain[0]!.toUpperCase()}${domain.slice(1)}: ${domainTools(catalog,domain,input).map(tool=>tool.capability?.summary ?? tool.descriptionForModel).join(' ')}`,
@@ -172,6 +163,8 @@ export class ToolExposureTurn {
   get exposure(): ToolExposure { return this.current; }
   /** Fit the actual provider envelope too, retaining meta-tools for discovery and sessions. */
   fitSchemaBudget(maxChars: number): void {
+    // Full mode is qualified as one catalog; the caller rejects an oversized request.
+    if ((this.input.toolCallingMode ?? this.input.mode) === 'full_96') return;
     const tools = this.catalog.filter(tool => this.current.toolNames.includes(tool.name))
       .sort((a,b)=>this.current.toolNames.indexOf(a.name)-this.current.toolNames.indexOf(b.name));
     while (JSON.stringify(this.current.schemas).length > maxChars && tools.length) {

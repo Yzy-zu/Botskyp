@@ -6,5 +6,5 @@
     "esModuleInterop": true, "skipLibCheck": true, "outDir": "dist", "rootDir": ".",
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "config/**/*.ts", "tests/**/*.ts", "*.ts"]
+  "include": ["src/**/*.ts", "config/**/*.ts", "tests/**/*.ts", "scripts/production-smokes.ts", "*.ts"]
 }

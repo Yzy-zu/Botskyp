@@ -8,7 +8,9 @@ export async function openTimeClarificationV2(ctx: ExecutionContextV2, name: str
   if (!name.startsWith('reminders.') || !/^(?:AMBIGUOUS_HOUR|MISSING_DATE)$/u.test(code) || !args || typeof args !== 'object') return;
   const input = args as Record<string, unknown>, time = semanticTimeSchema.safeParse(input.time);
   if (!time.success || time.data.kind === 'relative') return;
-  const value = time.data, base = DateTime.fromJSDate(ctx.now, { zone: 'America/Mexico_City' });
+  const value = time.data;
+  if (value.hour === undefined) return;
+  const base = DateTime.fromJSDate(ctx.now, { zone: 'America/Mexico_City' });
   let hour24 = value.hour;
   if (value.meridiem && value.meridiem !== '24h' && hour24 >= 1 && hour24 <= 12) {
     hour24 = hour24 % 12 + (['pm', 'afternoon', 'night'].includes(value.meridiem) ? 12 : 0);

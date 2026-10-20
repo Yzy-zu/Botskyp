@@ -1,5 +1,5 @@
 export const product = {
-  contextV2Chars: 16_000,
+  contextV2Chars: 18_000,
   contextV2Artifacts: 5,
   contextV2Entities: 5,
   contextV2Events: 4,

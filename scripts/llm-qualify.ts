@@ -13,8 +13,9 @@ function extractError(err: unknown): string {
   return String(err);
 }
 
+import { modelArgsSchemas } from '../src/core/model-args.js';
 import { createRegistry } from '../src/core/registry.js';
-import { createToolRegistryV2, registryV2Declarations } from '../src/core/tool-registry-v2.js';
+import { createToolRegistryV2, fullCatalogDeclarations } from '../src/core/tool-registry-v2.js';
 import { GeminiProvider } from '../src/core/llm/gemini-adapter.js';
 import { GroqProvider } from '../src/core/llm/groq-adapter.js';
 import { OpenRouterProvider } from '../src/core/llm/openrouter-adapter.js';
@@ -42,7 +43,7 @@ export async function qualifyModel(
   adapter: LlmProviderAdapter,
   model: string,
   apiKey: string | undefined,
-  fullCatalogTools: ReturnType<typeof registryV2Declarations>,
+  fullCatalogTools: ReturnType<typeof fullCatalogDeclarations>,
   isPrimaryCandidate: boolean,
 ): Promise<QualificationResult> {
   const result: QualificationResult = {
@@ -100,7 +101,9 @@ export async function qualifyModel(
     const toolRes = await adapter.generate(toolReq, model, apiKey, 'qualify-key');
     latencies.push(performance.now() - t0);
     toolResContent = toolRes.content;
-    if (toolRes.calls && toolRes.calls.length > 0) {
+    if (toolRes.calls?.length === 1 && toolRes.calls[0]?.name === 'minecraft_status'
+      && fullCatalogTools.some(t => t.name === 'minecraft_status')
+      && modelArgsSchemas['minecraft.status'].safeParse(toolRes.calls[0].args ?? {}).success) {
       const call = toolRes.calls[0]!;
       toolCallId = call.id;
       toolCallName = call.name;
@@ -120,12 +123,10 @@ export async function qualifyModel(
     };
     const argsRes = await adapter.generate(argsReq, model, apiKey, 'qualify-key');
     latencies.push(performance.now() - t0);
-    if (argsRes.calls && argsRes.calls.length > 0) {
-      const call = argsRes.calls[0]!;
-      const argsStr = JSON.stringify(call.args ?? {});
-      if (argsStr.includes('dailymotion') || argsStr.includes('minecraft') || Object.keys((call.args as Record<string, unknown>) ?? {}).length > 0) {
-        result.argsToolOk = true;
-      }
+    if (argsRes.calls?.length === 1 && argsRes.calls[0]?.name === 'video_search'
+      && fullCatalogTools.some(t => t.name === 'video_search')) {
+      const parsed=modelArgsSchemas['video.search'].safeParse(argsRes.calls[0].args);
+      result.argsToolOk=parsed.success && parsed.data.source === 'dailymotion' && parsed.data.query.toLowerCase().includes('minecraft');
     }
   } catch (err) {
     result.notes += `[Args tool: ${extractError(err)}] `;
@@ -181,7 +182,7 @@ export async function qualifyModel(
 export async function runQualification(): Promise<QualificationResult[]> {
   const config = readConfig(process.env);
   const catalog = createToolRegistryV2(createRegistry());
-  const fullCatalogTools = registryV2Declarations(catalog);
+  const fullCatalogTools = fullCatalogDeclarations(catalog);
 
   console.log(`\n===============================================================`);
   console.log(`BOTSKY MULTI-PROVIDER LLM QUALIFICATION (Tools: ${fullCatalogTools.length})`);
@@ -202,7 +203,7 @@ export async function runQualification(): Promise<QualificationResult[]> {
   // Groq Provider
   const groqKey = config.GROQ_API_KEYS?.[0] || process.env.GROQ_API_KEY;
   const groqAdapter = new GroqProvider(config.GROQ_MODELS);
-  for (const model of config.GROQ_MODELS) {
+  for (const model of config.GROQ_ENABLED ? config.GROQ_MODELS : []) {
     console.log(`Evaluating [groq] ${model}...`);
     const r = await qualifyModel(groqAdapter, model, groqKey, fullCatalogTools, false);
     results.push(r);
@@ -211,7 +212,7 @@ export async function runQualification(): Promise<QualificationResult[]> {
   // OpenRouter Provider
   const openRouterKey = config.OPENROUTER_API_KEYS?.[0] || process.env.OPENROUTER_API_KEY;
   const openRouterAdapter = new OpenRouterProvider(config.OPENROUTER_MODELS, config.OPENROUTER_ALLOW_FREE_MODELS);
-  for (const model of config.OPENROUTER_MODELS) {
+  for (const model of config.OPENROUTER_ENABLED ? config.OPENROUTER_MODELS : []) {
     console.log(`Evaluating [openrouter] ${model}...`);
     const r = await qualifyModel(openRouterAdapter, model, openRouterKey, fullCatalogTools, false);
     results.push(r);

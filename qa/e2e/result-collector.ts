@@ -47,6 +47,13 @@ export function classifyProviderFailure(text: string | null | undefined, errorLi
   return null;
 }
 
+/** Progress is advisory once the same job's terminal output was delivered. */
+export function deliveryOutbox<T extends {kind:string;status:string;payload:Record<string,unknown>}>(rows: T[]): T[] {
+  return rows.filter(row => row.kind !== 'media_progress' || !rows.some(terminal =>
+    ['media_result','media_text','media_error'].includes(terminal.kind) && terminal.status === 'sent'
+    && row.payload.jobId !== undefined && terminal.payload.jobId === row.payload.jobId));
+}
+
 /**
  * Seeds a media fixture directly into media_attachments cache so the production worker
  * and artifact registration find it immediately without calling external Evolution API.
@@ -251,7 +258,7 @@ export async function collectTurnResult(
 
     if (inboxStatus === 'done') {
       const hasPendingJobs = jobs.some(j => j.status === 'queued' || j.status === 'running');
-      const hasPendingOutbox = outbox.some(o => o.status === 'queued' || o.status === 'sending');
+      const hasPendingOutbox = deliveryOutbox(outbox).some(o => o.status === 'queued' || o.status === 'sending');
       const hasJobTools = toolCalls.some(t =>
         ['media.process', 'media.collect', 'video.download', 'drive.upload', 'drive.download'].includes(t.toolName)
       );
@@ -379,7 +386,12 @@ export async function collectTurnResult(
   );
 
   const providerFail = classifyProviderFailure(finalText, errors);
-  if (providerFail) {
+  if (jobs.some(j => j.status === 'failed' || j.status === 'dead')) {
+    status = 'FAIL';
+    terminalState = 'JOB_FAILED';
+    failureClass = 'JOB_FAILED';
+    errors.push('One or more async jobs failed');
+  } else if (providerFail) {
     status = providerFail;
     terminalState = providerFail;
     failureClass = providerFail;
@@ -394,15 +406,9 @@ export async function collectTurnResult(
     errors.push('Operation did not reach a terminal state within timeout');
   } else if (jobs.length > 0) {
     const allJobsDone = jobs.every(j => j.status === 'done');
-    const anyJobFailed = jobs.some(j => j.status === 'failed' || j.status === 'dead');
-    const allOutboxSent = outbox.length > 0 && outbox.every(o => o.status === 'sent');
+    const allOutboxSent = deliveryOutbox(outbox).length > 0 && deliveryOutbox(outbox).every(o => o.status === 'sent');
     if (allJobsDone && allOutboxSent) {
       terminalState = isSuppressed ? 'QA_SUPPRESSED' : 'DELIVERED';
-    } else if (anyJobFailed) {
-      status = 'FAIL';
-      terminalState = 'JOB_FAILED';
-      failureClass = 'JOB_FAILED';
-      errors.push('One or more async jobs failed');
     } else if (!allJobsDone || !allOutboxSent) {
       status = 'FAIL';
       terminalState = 'JOB_INCOMPLETE';
@@ -410,8 +416,8 @@ export async function collectTurnResult(
       errors.push('Jobs or outbox delivery not terminal');
     }
   } else if (outbox.length > 0) {
-    const allSent = outbox.every(o => o.status === 'sent');
-    const anyFailed = outbox.some(o => o.status === 'failed' || o.status === 'dead');
+    const allSent = deliveryOutbox(outbox).every(o => o.status === 'sent');
+    const anyFailed = deliveryOutbox(outbox).some(o => o.status === 'failed' || o.status === 'dead');
     if (allSent) {
       terminalState = isSuppressed ? 'QA_SUPPRESSED' : 'OUTBOX_SENT';
     } else if (anyFailed) {

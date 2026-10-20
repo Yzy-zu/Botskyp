@@ -20,7 +20,7 @@ const task = { taskRef: ref('taskRef') };
 const subject = z.union([ref('subjectRef'), short]).describe('Materia por referencia o nombre; el backend resuelve ambigüedades.');
 const reminder = {
   body: text.optional().describe('Texto literal del recordatorio'),
-  time: semanticTimeSchema.optional().describe('Momento del recordatorio. OBLIGATORIO: Si el usuario NO indicó fecha, hora ni periodo (ej. "recuérdame comprar pan"), OMITE este campo por completo; NUNCA inventes mañana, 9:00 ni ninguna fecha/hora por defecto. Para tiempos relativos ("en 3 días", "dentro de 3 días", "en 15 minutos") usa kind="relative" con amount y unit ("day"|"hour"|"minute"); si además dio hora (ej. "en 2 días a las 10 am") incluye hour y meridiem dentro de relative. Para mañana usa kind="tomorrow" con hour. Para hora sin día usa kind="clock".'),
+  time: semanticTimeSchema.optional().describe('Omitir si el usuario no indicó cuándo. Nunca inventar fecha ni hora. Relativos: kind=relative, amount y unit; hour solo si se indicó.'),
   recurrence: recurrenceSchema.optional(),
 };
 const destinations = z.array(ref('destinationRef')).min(1).max(product.bulkMaxTargets);

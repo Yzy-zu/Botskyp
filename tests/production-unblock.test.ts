@@ -158,7 +158,7 @@ describe('AGY — BOTSKY PRODUCTION UNBLOCK TARGETED REGRESSION', () => {
   // 2. Missing-time reminder (REM-AMBIG fix)
   describe('2. Missing-Time Reminder (REM-AMBIG)', () => {
     it('user "recuérdame comprar pan QA" without time returns needs_clarification and creates 0 reminders', async () => {
-      const ctx = await context(member, 'recuérdame comprar pan QA');
+      const ctx = await context(member, 'unrelated text without temporal hints');
       await c.query('BEGIN');
       const decision = await evaluateToolV2(ctx, 'reminders.create', { body: 'comprar pan QA' }, call());
       expect(decision?.status).toBe('needs_clarification');
@@ -170,9 +170,18 @@ describe('AGY — BOTSKY PRODUCTION UNBLOCK TARGETED REGRESSION', () => {
       expect(result.code).toBe('MISSING_TIME');
 
       // Verify ZERO reminders were created in the database (never default to tomorrow or 09:00)
-      const count = (await db.query<{ n: number }>('SELECT count(*)::int n FROM reminders')).rows[0]!.n;
+      const count = (await c.query<{ n: number }>('SELECT count(*)::int n FROM reminders')).rows[0]!.n;
       expect(count).toBe(0);
     });
+  });
+
+  it('canonicalizes the historical day alias before Policy schema validation', async () => {
+    const ctx = await context(owner, 'irrelevant raw text');
+    await c.query('BEGIN');
+    const decision = await evaluateToolV2(ctx, 'reminders.create', {body:'structured alias',time:{kind:'day',amount:3}}, call());
+    expect(decision?.status).toBe('allow');
+    expect(decision?.resolvedArgs.time).toBeUndefined();
+    expect(Date.parse(String(decision?.resolvedArgs.dueAt))-ctx.now.getTime()).toBe(3*86400000);
   });
 
   // 3. Maintenance ON selection and execution
@@ -202,37 +211,9 @@ describe('AGY — BOTSKY PRODUCTION UNBLOCK TARGETED REGRESSION', () => {
     });
   });
 
-  // 4. Media root cause validation
-  describe('4. Media Root Cause Diagnosis (QA_FIXTURE_INVALID)', () => {
-    it('QA sample fixtures on disk are now valid, healthy binary files', () => {
-      const pdfBytes = readFileSync('qa/e2e/fixtures/sample.pdf');
-      const oggBytes = readFileSync('qa/e2e/fixtures/sample.ogg');
-      const pngBytes = readFileSync('qa/e2e/fixtures/sample.png');
-
-      // PDF: must start with %PDF- and end with %%EOF
-      expect(pdfBytes.toString('utf8', 0, 5)).toBe('%PDF-');
-      expect(pdfBytes.toString('utf8')).toContain('%%EOF');
-
-      // Ogg: must start with OggS magic
-      expect(oggBytes.toString('utf8', 0, 4)).toBe('OggS');
-
-      // PNG: must have PNG header
-      expect(pngBytes[0]).toBe(0x89);
-      expect(pngBytes.toString('utf8', 1, 4)).toBe('PNG');
-
-      // Root cause confirmation: former fixtures had truncated bytes causing worker process_failed
-      const rootCause = 'QA_FIXTURE_INVALID';
-      expect(rootCause).toBe('QA_FIXTURE_INVALID');
-    });
-  });
-
   // 5. Production gate removal
   describe('5. Production Gate Removal Verification', () => {
     it('guarantees QA_ONLY_GATES_IN_PRODUCTION=0 and TEMP_PREPROD_GATES_IN_PRODUCTION=0', () => {
-      const QA_ONLY_GATES_IN_PRODUCTION = 0;
-      const TEMP_PREPROD_GATES_IN_PRODUCTION = 0;
-      expect(QA_ONLY_GATES_IN_PRODUCTION).toBe(0);
-      expect(TEMP_PREPROD_GATES_IN_PRODUCTION).toBe(0);
 
       // Verify that no public tools in the catalog have hiddenReason or temporary suppression
       const publicTools = catalog.filter(t => t.exposure !== 'internal');
@@ -264,6 +245,7 @@ describe('AGY — BOTSKY PRODUCTION UNBLOCK TARGETED REGRESSION', () => {
       const result = await executeToolV2(ctx, 'control.maintenance_on', {}, call());
       expect(result.status).toBe('denied');
       expect(result.code).toBe('DENIED_PERMISSION');
+      expect((await c.query("SELECT 1 FROM system_flags WHERE key='maintenance' AND value='true'::jsonb")).rowCount).toBe(0);
     });
   });
 
@@ -322,7 +304,10 @@ describe('AGY — BOTSKY PRODUCTION UNBLOCK TARGETED REGRESSION', () => {
 
       expect(summary.publicToolsTotal).toBe(99);
       expect(summary.temporarilyGated).toBe(0);
-      expect(summary.available).toBeGreaterThan(0);
+      expect(summary.staticEligible).toBeGreaterThan(0);
+      expect(summary.configured).toBeLessThan(summary.publicToolsTotal);
+      expect(summary.currentlyExecutable).toBeNull();
+      expect(summary.preconditionDependent).toContain('drive.upload');
       expect(summary.permissionConstrained.ownerOnly).toContain('control.emergency');
       expect(summary.permissionConstrained.ownerOnly).toContain('control.maintenance_on');
       expect(summary.permissionConstrained.ownerOnly).toContain('control.maintenance_off');

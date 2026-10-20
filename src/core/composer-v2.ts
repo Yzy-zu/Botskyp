@@ -33,6 +33,7 @@ export function localPresenterV2(result: ToolResult): string {
   if(result.status==='needs_clarification'){
     if(/AMBIGUOUS_HOUR/u.test(code))return '¿De la mañana o de la noche?';
     if(code==='MISSING_BODY')return '¿Qué quieres que te recuerde?';
+    if(code==='MISSING_HOUR')return '¿A qué hora quieres que te lo recuerde?';
     if(code==='MISSING_TIME')return '¿Cuándo quieres que te lo recuerde?';
     if(code==='MISSING_DATE')return '¿Para hoy o mañana?';
     const fields=Array.isArray(data.missingSlots)?data.missingSlots.map(s=>String(record(s).field)):[];

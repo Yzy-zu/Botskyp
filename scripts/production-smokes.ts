@@ -1,325 +1,101 @@
-import { createDb } from '../src/db/client.js';
-import { readFileSync, existsSync } from 'node:fs';
-import { buildEvolutionPayload, generateProviderMessageId } from '../qa/e2e/evolution-payload.js';
-import { seedMediaFixture } from '../qa/e2e/result-collector.js';
+import {execFileSync} from 'node:child_process';
+import {randomUUID} from 'node:crypto';
+import assert from 'node:assert/strict';
+import {readConfig} from '../src/config.js';
+import {createDb} from '../src/db/client.js';
+import {buildEvolutionPayload,generateProviderMessageId} from '../qa/e2e/evolution-payload.js';
+import {collectTurnResult,seedMediaFixture} from '../qa/e2e/result-collector.js';
+import type {QaTurnResult} from '../qa/e2e/types.js';
 
-const CHAT_ID = '120363431233265050@g.us';
-const ACTOR_ID = '5214435810175@s.whatsapp.net';
-const WEBHOOK_SECRET = '0b35e8f280559dc99ccd822debcc097edb9ce2f8da06e164b95ce6b9e472e633';
-const WEBHOOK_URL = 'http://127.0.0.1:3000/webhook';
-const DB_URL = 'postgresql://botsky:68d4cb854987eb20ea48273e83d3aa168ee8ff3fdb982fb4@172.19.0.2:5432/botsky';
+process.loadEnvFile('.env');
+const config=readConfig(process.env);
+// Resolve the existing Compose service; no fixed container address or copied credentials.
+const container=execFileSync('docker',['compose','-p','botsky','ps','-q','postgres'],{encoding:'utf8'}).trim();
+const networks=JSON.parse(execFileSync('docker',['inspect','--format','{{json .NetworkSettings.Networks}}',container],{encoding:'utf8'})) as Record<string,{IPAddress:string}>;
+const address=networks.botsky_internal?.IPAddress;
+assert(address,'Botsky PostgreSQL network unavailable');
+const url=new URL(config.DATABASE_URL);url.hostname=address;
+const db=createDb(url.toString());
+const owner=config.OWNER_JIDS[0]!;
+const chat=config.LAB_CHAT_ID;
+const runId=randomUUID();
+const sourceIds:string[]=[];
+const results:QaTurnResult[]=[];
 
-const db = createDb(DB_URL);
-
-interface SmokeResult {
-  smokeNumber: number;
-  name: string;
-  input: string;
-  passed: boolean;
-  toolCalled?: string;
-  toolStatus?: string;
-  details: string;
+async function send(text:string,actor=owner,fixture?:string):Promise<QaTurnResult>{
+  const id=generateProviderMessageId('PROD_SMOKE');sourceIds.push(id);
+  if(fixture)await seedMediaFixture(db,chat,actor,id,fixture);
+  const payload=buildEvolutionPayload({instance:config.INSTANCE,providerMessageId:id,chatId:chat,actorId:actor,
+    text,mentions:config.BOT_JIDS, ...(fixture?{attachments:[{kind:'image' as const,fixturePath:fixture}]}:{})});
+  const response=await fetch(`http://127.0.0.1:${process.env.BIND_PORT ?? '3000'}/webhook`,{
+    method:'POST',headers:{'content-type':'application/json','x-webhook-secret':config.WEBHOOK_SECRET},body:JSON.stringify(payload)});
+  assert(response.ok,`Webhook HTTP ${response.status}`);
+  const result=await collectTurnResult(db,results.length,id,chat,actor,text,response.status,{},undefined,{timeoutMs:90000});
+  results.push(result);
+  assert.equal(result.status,'PASS',`${text}: ${result.failureClass}; ${result.errors.join(', ')}`);
+  assert(!result.toolCalls.some(t=>t.policyCode==='QA_SUPPRESSED' || t.executionStatus==='qa_suppressed'
+    || (t.result as {code?:string}).code==='QA_SUPPRESSED'),'Normal traffic was QA suppressed');
+  return result;
 }
+function tool(result:QaTurnResult,name:string,status='ok'){
+  const call=result.toolCalls.find(t=>t.toolName===name);
+  assert(call,`Missing tool ${name}`);assert.equal(call.executionStatus,status);return call;
+}
+async function flag(){return (await db.query<{value:boolean}>("SELECT value FROM system_flags WHERE key='maintenance'")).rows[0]?.value===true;}
+async function reminderCount(){return (await db.query<{n:number}>('SELECT count(*)::int n FROM reminders WHERE chat_id=$1 AND owner_id=$2',[chat,owner])).rows[0]!.n;}
+async function cleanup(){
+  // Only receipt IDs from our unique source messages authorize removal of test business data.
+  const receipts=(await db.query<{tool_name:string;result_json:{data?:{reminderId?:string}}}>(
+    `SELECT e.tool_name,e.result_json FROM tool_executions e JOIN message_turns t ON t.id=e.turn_id
+     WHERE t.source_message_id=ANY($1::text[]) AND e.status='ok' AND e.chat_id=$2 AND e.actor_id=$3`,[sourceIds,chat,owner])).rows;
+  for(const receipt of receipts){
+    const id=receipt.result_json?.data?.reminderId;if(!id)continue;
+    if(receipt.tool_name==='reminders.create')await db.query('DELETE FROM reminders WHERE id=$1 AND chat_id=$2 AND owner_id=$3 AND outbox_id IS NULL',[id,chat,owner]);
 
-async function sendTurn(text: string, attachmentFixture?: string): Promise<{
-  providerMessageId: string;
-  turnId: string;
-  tools: { name: string; status: string; code: string; result: unknown }[];
-  outbox: { text?: string; status: string }[];
-}> {
-  const providerMessageId = generateProviderMessageId('PROD_SMOKE');
-  const startTime = new Date();
-
-  let attachments: { fixturePath: string; mime: string }[] | undefined;
-  if (attachmentFixture && existsSync(attachmentFixture)) {
-    const buffer = readFileSync(attachmentFixture);
-    const ext = attachmentFixture.split('.').pop() ?? 'bin';
-    const mime = ext === 'pdf' ? 'application/pdf' : 'image/png';
-    const sha = (await import('node:crypto')).createHash('sha256').update(buffer).digest('hex');
-    await db.query(
-      `INSERT INTO media_attachments (
-        chat_id, owner_id, source_message_id, mime, extension, size, sha256, is_original, data, artifact_index, expires_at
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, 0, clock_timestamp() + interval '2 days')
-      ON CONFLICT DO NOTHING`,
-      [CHAT_ID, ACTOR_ID, providerMessageId, mime, ext, buffer.length, sha, buffer]
-    );
-    const kind = ext === 'pdf' ? 'document' : 'image';
-    attachments = [{ fixturePath: attachmentFixture, mime, kind: kind as 'document' | 'image' }];
   }
+  await db.query('DELETE FROM notes WHERE chat_id=$1 AND author_id=$2 AND position($3 in body)>0',[chat,owner,runId]);
+  const sessionIds=results.flatMap(r=>r.relevantSession?.id?[r.relevantSession.id]:[]);
+  await db.query("UPDATE sessions_v2 SET status='cancelled' WHERE id=ANY($1::uuid[]) AND chat_id=$2 AND actor_id=$3 AND status='active'",[sessionIds,chat,owner]);
+  // Media outputs retain the normal delivery retention; remove only the seeded originals.
+  await db.query('DELETE FROM media_attachments WHERE source_message_id=ANY($1::text[]) AND is_original',[sourceIds]);
+}
+async function main(){
+  assert.equal(config.OBSERVER_ENABLED,false,'Observer must remain false');
+  assert.equal(await flag(),false,'Maintenance already active; refusing smoke');
+  assert(!(await db.query("SELECT 1 FROM sessions_v2 WHERE chat_id=$1 AND actor_id=$2 AND status='active' AND expires_at>now()",[chat,owner])).rowCount,'Owner has an active session; preserve it');
+  const member=process.env.PRODUCTION_SMOKE_MEMBER ?? (await db.query<{user_id:string}>(
+    'SELECT user_id FROM group_memberships WHERE chat_id=$1 AND NOT is_admin AND user_id<>ALL($2::text[]) ORDER BY user_id LIMIT 1',[chat,[...config.OWNER_JIDS,...config.BOT_JIDS]])).rows[0]?.user_id;
 
-  // Pure normal production payload (NO qaMode, NO QA suppression gates)
-  const payload = buildEvolutionPayload({
-    instance: 'botsky',
-    providerMessageId,
-    chatId: CHAT_ID,
-    actorId: ACTOR_ID,
-    isGroup: true,
-    text,
-    mentions: ['5214437367565@s.whatsapp.net'],
-    attachments,
-  });
-
-  const res = await fetch(WEBHOOK_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-webhook-secret': WEBHOOK_SECRET,
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!res.ok) {
-    throw new Error(`Webhook failed: ${res.status} ${await res.text()}`);
-  }
-
-  // Poll for turn completion
-  const deadline = Date.now() + 35000;
-  let turnId = '';
-  while (Date.now() < deadline) {
-    const inboxRow = (await db.query<{ id: string; turn_id: string; status: string }>(
-      "SELECT id, turn_id, status FROM inbox WHERE payload->>'id' = $1",
-      [providerMessageId]
-    )).rows[0];
-
-    if (inboxRow) {
-      turnId = inboxRow.turn_id;
-      if (inboxRow.status === 'done' || inboxRow.status === 'processed') {
-        break;
-      }
+  try{
+    const ping=await send('botsky ping');assert.match(ping.finalText ?? '',/pong/i);console.log('A PASS');
+    const before=await reminderCount();
+    const missing=await send('recuérdame comprar pan');
+    tool(missing,'reminders.create','needs_clarification');
+    assert(missing.toolCalls.some(t=>(t.result as {code?:string}).code==='MISSING_TIME'));
+    assert.equal(await reminderCount(),before);console.log('B PASS zero reminders');
+    const base=Date.now();const reminder=await send('recuérdame comprar pan dentro de tres días');
+    const created=tool(reminder,'reminders.create');const receipt=created.result as {data:{reminderId:string}};
+    const row=(await db.query<{due_at:Date;body:string}>('SELECT due_at,body FROM reminders WHERE id=$1 AND chat_id=$2 AND owner_id=$3',[receipt.data.reminderId,chat,owner])).rows[0];
+    assert(row);assert.equal(row.body,'comprar pan');assert(Math.abs(row.due_at.getTime()-base-3*86400000)<120000);console.log('C PASS correct three days');
+    const on=await send('pon botsky en mantenimiento');tool(on,'control.maintenance_on');assert(await flag());
+    const origin=(await db.query<{call_origin:string}>("SELECT call_origin FROM tool_executions WHERE turn_id=$1 AND tool_name='control.maintenance_on'",[on.turnId])).rows[0];
+    assert.equal(origin?.call_origin,'llm');
+    const off=await send('desactiva el mantenimiento de botsky');tool(off,'control.maintenance_off');assert.equal(await flag(),false);console.log('D PASS LLM -> Policy -> maintenance true/false');
+    const media=await send('haz un sticker de esta imagen',owner,'qa/e2e/fixtures/sample.png');
+    tool(media,'media.process','queued');assert(media.jobs.some(j=>j.kind==='media' && j.status==='done'));
+    assert(media.outbox.some(o=>o.kind==='media_result' && o.status==='sent'));console.log('E PASS worker done + media_result sent');
+    const note=await send(`guarda una nota producción activa ${runId}`);tool(note,'notes.create');
+    assert((await db.query('SELECT 1 FROM notes WHERE chat_id=$1 AND author_id=$2 AND position($3 in body)>0',[chat,owner,runId])).rowCount);console.log('F PASS notes.create persisted');
+    if(!member){console.log('A-F PASS; G: covered by automated member Policy regression (owner waived live member smoke)');return;}
+    const denied=await send('pon botsky en mantenimiento',member);tool(denied,'control.maintenance_on','denied');
+    assert(denied.toolCalls.some(t=>(t.result as {code?:string}).code==='DENIED_PERMISSION'));assert.equal(await flag(),false);console.log('G PASS real member denied, zero effect');
+    console.log('QA_GATES_IN_PRODUCTION=0; ALL 7 SMOKES PASS');
+  }finally{
+    if(await flag()){
+      // Recovery is limited to the flag this run owns; keep the bot operational after failed assertions.
+      await db.query("UPDATE system_flags SET value='false'::jsonb WHERE key='maintenance'");
     }
-    await new Promise(r => setTimeout(r, 600));
+    await cleanup();console.log('SMOKE_ARTIFACTS_CLEANED=YES');
   }
-
-  if (!turnId) {
-    throw new Error(`Turn not found for message ${providerMessageId}`);
-  }
-
-  // Wait extra 1s for outbox commit
-  await new Promise(r => setTimeout(r, 1000));
-
-  const toolRows = (await db.query<{ tool_name: string; status: string; policy_code: string; result_json: unknown }>(
-    'SELECT tool_name, status, policy_code, result_json FROM tool_executions WHERE turn_id = $1 ORDER BY id',
-    [turnId]
-  )).rows;
-
-  const outboxRows = (await db.query<{ payload: { text?: string }; status: string }>(
-    `SELECT payload, status FROM outbox
-     WHERE payload->>'sourceId' = $1 OR dedupe_key LIKE '%' || $1 || '%'
-     ORDER BY id`,
-    [providerMessageId]
-  )).rows;
-
-  return {
-    providerMessageId,
-    turnId,
-    tools: toolRows.map(r => ({
-      name: r.tool_name,
-      status: r.status,
-      code: r.policy_code,
-      result: r.result_json,
-    })),
-    outbox: outboxRows.map(r => ({
-      text: r.payload?.text,
-      status: r.status,
-    })),
-  };
 }
-
-async function runAllSmokes(): Promise<void> {
-  console.log('=== STARTING DIRECTED REAL PRODUCTION SMOKES IN BOTSKY LAB ===');
-  console.log(`Chat ID: ${CHAT_ID}`);
-  console.log(`Actor ID: ${ACTOR_ID} (Owner)\n`);
-
-  const results: SmokeResult[] = [];
-
-  // SMOKE 1: "botsky ping" -> core.ping
-  try {
-    console.log('Smoke 1: "botsky ping"...');
-    const res = await sendTurn('botsky ping');
-    const pingTool = res.tools.find(t => t.name === 'core.ping');
-    const passed = Boolean(pingTool && pingTool.status === 'ok');
-    results.push({
-      smokeNumber: 1,
-      name: 'core.ping natural invocation',
-      input: 'botsky ping',
-      passed,
-      toolCalled: pingTool?.name,
-      toolStatus: pingTool?.status,
-      details: passed ? 'Invoked core.ping and returned pong successfully.' : 'Failed to call core.ping.',
-    });
-    console.log(`  -> Smoke 1: ${passed ? 'PASS' : 'FAIL'} (tool: ${pingTool?.name ?? 'none'})\n`);
-  } catch (err) {
-    console.error('Smoke 1 error:', err);
-    results.push({ smokeNumber: 1, name: 'core.ping', input: 'botsky ping', passed: false, details: String(err) });
-  }
-
-  // SMOKE 2: "recuérdame comprar pan" -> asks for date/time, NO reminder created
-  try {
-    console.log('Smoke 2: "recuérdame comprar pan"...');
-    const preCount = (await db.query<{ n: number }>("SELECT count(*)::int n FROM reminders WHERE body ILIKE '%comprar pan%'")).rows[0]!.n;
-    const res = await sendTurn('recuérdame comprar pan');
-    const postCount = (await db.query<{ n: number }>("SELECT count(*)::int n FROM reminders WHERE body ILIKE '%comprar pan%'")).rows[0]!.n;
-
-    const reminderTool = res.tools.find(t => t.name === 'reminders.create');
-    const noReminderCreated = postCount === preCount;
-    const askedClarification = reminderTool
-      ? (reminderTool.status === 'needs_clarification' || reminderTool.code === 'MISSING_TIME')
-      : true; // Direct reply asking for date/time
-    const passed = noReminderCreated && askedClarification;
-
-    results.push({
-      smokeNumber: 2,
-      name: 'Missing-time reminder does not invent tomorrow 09:00',
-      input: 'recuérdame comprar pan',
-      passed,
-      toolCalled: reminderTool?.name ?? 'direct_dialogue',
-      toolStatus: reminderTool?.status ?? 'needs_clarification',
-      details: passed ? `Asked for clarification; reminders created = 0 (before: ${preCount}, after: ${postCount}).` : 'Created reminder without date/time!',
-    });
-    console.log(`  -> Smoke 2: ${passed ? 'PASS' : 'FAIL'} (reminders created: ${postCount - preCount})\n`);
-  } catch (err) {
-    console.error('Smoke 2 error:', err);
-    results.push({ smokeNumber: 2, name: 'Missing-time reminder', input: 'recuérdame comprar pan', passed: false, details: String(err) });
-  }
-
-  // SMOKE 3: "recuérdame comprar pan dentro de tres días" -> creates reminder
-  try {
-    console.log('Smoke 3: "recuérdame comprar pan dentro de tres días"...');
-    const preCount = (await db.query<{ n: number }>('SELECT count(*)::int n FROM reminders')).rows[0]!.n;
-    const res = await sendTurn('recuérdame comprar pan dentro de tres días');
-    const postReminders = (await db.query<{ id: string; body: string; due_at: Date; status: string }>(
-      "SELECT id, body, due_at, status FROM reminders WHERE body ILIKE '%pan%' ORDER BY id DESC LIMIT 1"
-    )).rows;
-    const postCount = (await db.query<{ n: number }>('SELECT count(*)::int n FROM reminders')).rows[0]!.n;
-
-    const reminderTool = res.tools.find(t => t.name === 'reminders.create');
-    const created = postCount > preCount || (postReminders.length > 0 && postReminders[0]?.status === 'pending');
-    const passed = Boolean((created || (reminderTool && reminderTool.status === 'ok')) && (!reminderTool || reminderTool.code !== 'QA_SUPPRESSED'));
-
-    results.push({
-      smokeNumber: 3,
-      name: 'SemanticTime relative creation ("dentro de tres días")',
-      input: 'recuérdame comprar pan dentro de tres días',
-      passed,
-      toolCalled: reminderTool?.name,
-      toolStatus: reminderTool?.status,
-      details: passed
-        ? `Reminder created successfully with dueAt: ${postReminders[0]?.due_at.toISOString()}`
-        : 'Failed to create reminder for relative time.',
-    });
-    console.log(`  -> Smoke 3: ${passed ? 'PASS' : 'FAIL'} (due_at: ${postReminders[0]?.due_at?.toISOString() ?? 'none'})\n`);
-  } catch (err) {
-    console.error('Smoke 3 error:', err);
-    results.push({ smokeNumber: 3, name: 'SemanticTime relative creation', input: 'recuérdame comprar pan dentro de tres días', passed: false, details: String(err) });
-  }
-
-  // SMOKE 4: Owner "pon botsky en mantenimiento" -> maintenance_on, then restore
-  try {
-    console.log('Smoke 4: Owner "pon botsky en mantenimiento" and restore...');
-    const resOn = await sendTurn('pon botsky en mantenimiento');
-    const flagOn = (await db.query<{ value: boolean }>("SELECT value FROM system_flags WHERE key='maintenance'")).rows[0]?.value;
-
-    console.log(`  maintenance flag after maintenance_on: ${flagOn}`);
-
-    // Restore back to normal
-    const resOff = await sendTurn('desactiva el mantenimiento de botsky');
-    const flagOff = (await db.query<{ value: boolean }>("SELECT value FROM system_flags WHERE key='maintenance'")).rows[0]?.value;
-
-    console.log(`  maintenance flag after maintenance_off: ${flagOff}`);
-
-    const onTool = resOn.tools.find(t => t.name === 'control.maintenance_on');
-    const offTool = resOff.tools.find(t => t.name === 'control.maintenance_off');
-
-    const passed = Boolean(flagOn === true && flagOff === false);
-
-    results.push({
-      smokeNumber: 4,
-      name: 'control.maintenance_on selection and safe restore',
-      input: 'pon botsky en mantenimiento -> desactiva el mantenimiento de botsky',
-      passed,
-      toolCalled: onTool?.name,
-      toolStatus: onTool?.status,
-      details: passed ? 'Maintenance mode enabled by owner and successfully restored to normal.' : 'Maintenance mode failed to activate/deactivate.',
-    });
-    console.log(`  -> Smoke 4: ${passed ? 'PASS' : 'FAIL'}\n`);
-  } catch (err) {
-    console.error('Smoke 4 error:', err);
-    results.push({ smokeNumber: 4, name: 'Maintenance ON/OFF', input: 'pon botsky en mantenimiento', passed: false, details: String(err) });
-  }
-
-  // SMOKE 5: Media operation with valid fixture -> terminal delivery
-  try {
-    console.log('Smoke 5: Media operation with valid fixture (sample.png -> sticker)...');
-    const resMedia = await sendTurn('haz un sticker de esta imagen', 'qa/e2e/fixtures/sample.png');
-
-    // Check media job in DB
-    const jobs = (await db.query<{ id: string; kind: string; status: string; result: unknown }>(
-      "SELECT id, kind, status, result FROM jobs WHERE kind='media' ORDER BY id DESC LIMIT 1"
-    )).rows;
-
-    const mediaJob = jobs[0];
-    const mediaTool = resMedia.tools.find(t => t.name === 'media.process');
-    const jobOk = mediaJob && (mediaJob.status === 'done' || mediaJob.status === 'queued');
-    const passed = Boolean((mediaTool && (mediaTool.status === 'ok' || mediaTool.status === 'queued')) || jobOk);
-
-    results.push({
-      smokeNumber: 5,
-      name: 'Media operation with real valid file',
-      input: 'haz un sticker de esta imagen (with sample.png)',
-      passed,
-      toolCalled: mediaTool?.name,
-      toolStatus: mediaTool?.status,
-      details: passed
-        ? `Media job executed cleanly without fixture corruption (job status: ${mediaJob?.status ?? 'queued'}).`
-        : 'Media operation failed.',
-    });
-    console.log(`  -> Smoke 5: ${passed ? 'PASS' : 'FAIL'} (job: ${mediaJob?.status ?? 'none'})\n`);
-  } catch (err) {
-    console.error('Smoke 5 error:', err);
-    results.push({ smokeNumber: 5, name: 'Media operation', input: 'media sticker', passed: false, details: String(err) });
-  }
-
-  // SMOKE 6: Capability previously gated by QA/preprod -> normal runtime demonstration
-  try {
-    console.log('Smoke 6: Capability previously gated by QA/preprod ("guarda una nota producción activa")...');
-    const preCount = (await db.query<{ n: number }>("SELECT count(*)::int n FROM notes WHERE body ILIKE '%producción activa%'")).rows[0]!.n;
-    const res = await sendTurn('guarda una nota producción activa');
-    const postCount = (await db.query<{ n: number }>("SELECT count(*)::int n FROM notes WHERE body ILIKE '%producción activa%'")).rows[0]!.n;
-
-    const noteTool = res.tools.find(t => t.name === 'notes.create');
-    const created = postCount > preCount;
-    // Must NOT be QA_SUPPRESSED
-    const notSuppressed = noteTool?.code !== 'QA_SUPPRESSED';
-    const passed = Boolean((created || (noteTool && noteTool.status === 'ok')) && notSuppressed);
-
-    results.push({
-      smokeNumber: 6,
-      name: 'Normal runtime capability (0 QA suppression gates in production)',
-      input: 'guarda una nota producción activa',
-      passed,
-      toolCalled: noteTool?.name,
-      toolStatus: noteTool?.status,
-      details: passed ? 'Note created in normal runtime with zero QA suppression.' : 'Failed or suppressed.',
-    });
-    console.log(`  -> Smoke 6: ${passed ? 'PASS' : 'FAIL'} (notes created: ${postCount - preCount})\n`);
-  } catch (err) {
-    console.error('Smoke 6 error:', err);
-    results.push({ smokeNumber: 6, name: 'Normal capability without QA gates', input: 'guarda una nota', passed: false, details: String(err) });
-  }
-
-  console.log('=== SMOKE RESULTS SUMMARY ===');
-  for (const r of results) {
-    console.log(`Smoke ${r.smokeNumber}: [${r.passed ? 'PASS' : 'FAIL'}] ${r.name} - ${r.details}`);
-  }
-
-  const allPassed = results.every(r => r.passed);
-  console.log(`\nOVERALL SMOKES: ${allPassed ? 'ALL PASS' : 'SOME FAILED'}`);
-
-  await db.end();
-}
-
-runAllSmokes().catch(err => {
-  console.error('Fatal smoke error:', err);
-  process.exit(1);
-});
+main().catch(error=>{console.error(error instanceof Error?error.message:'Smoke failed');process.exitCode=1;}).finally(()=>db.end());

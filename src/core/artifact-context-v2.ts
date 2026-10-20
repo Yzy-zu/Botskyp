@@ -1,7 +1,5 @@
 import { observer } from '../observer/index.js';
-import { z } from 'zod';
 import { product } from '../../config/product.js';
-import { safeRefSchema } from './model-args.js';
 import { resolveArtifactForOperation } from './artifact-resolution-v2.js';
 import { loadExecutionContext } from './policy-v2/context.js';
 import { moduleEnabled, privateEligible } from './permissions.js';
@@ -9,12 +7,8 @@ import type { ToolCtx } from './tools.js';
 import type { SafeRefs } from './safe-refs.js';
 import type { Image } from './llm.js';
 
-export const loadArtifactContextSchema=z.strictObject({artifactRef:z.union([safeRefSchema('artifactRef'),z.literal('A_REPLY')])});
-export const loadArtifactContextMetaTool={
-  name:'core.load_artifact_context',
-  description:'Ver una imagen retenida seleccionada por su SafeRef EXACTA de ARTIFACT_STATE.CURRENT/RECENT/A_LAST. Solo lectura; carga únicamente esa imagen para esta vuelta. Las imágenes antiguas nunca se adjuntan automáticamente. No transforma ni envía archivos.',
-  modelArgsSchema:loadArtifactContextSchema,
-};
+import { loadArtifactContextSchema } from './tool-registry-v2.js';
+export { loadArtifactContextSchema, loadArtifactContextMetaTool } from './tool-registry-v2.js';
 /** Rebuild authenticated scope, validate the delivered opaque ref and recheck live bytes/TTL. */
 async function loadArtifactContextImplV2(ctx:ToolCtx,safeRefMap:SafeRefs,args:unknown):Promise<{status:string;image?:Image;artifactRef?:string}>{
   const parsed=loadArtifactContextSchema.safeParse(args);

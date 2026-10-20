@@ -1,3 +1,4 @@
+import { normalizeSemanticInput } from '../../modules/reminders/semantic-time.js';
 import { product } from '../../../config/product.js';
 import { DateTime } from 'luxon';
 import { permitted, moduleEnabled, privateEligible } from '../permissions.js';
@@ -20,7 +21,7 @@ export async function evaluateToolPolicy(ctx: ExecutionContextV2, tool: ToolMeta
   let missingSlots:NonNullable<PolicyDecision['missingSlots']>=[];
   let args: Record<string, unknown> = {}, refs: PolicyDecision['resolvedSafeRefs'] = [], ownership: PolicyDecision['ownership'] = [];
   const decision = (status: EvaluationStatus, code: string | null = null): PolicyDecision => ({
-    status, ...(status==='needs_clarification'?{missingSlots:missingSlots.length?missingSlots:[{field:code==='MISSING_BODY'?'body':code==='MISSING_TIME'?'time':code==='MISSING_DATE'?'date':code==='AMBIGUOUS_HOUR'?'meridiem':code==='AUTHENTIC_MENTION_REQUIRED'?'memberRef':code==='POLL_OPTION_AMBIGUOUS'?'option':'artifactRef',kind:'required'}]}:{}), resolvedArgs: args, denialCode: code, argsHash: policyArgsHash(ctx, tool.name, args, resourceState), resourceState, ownership, resolvedSafeRefs: refs, gates,
+    status, ...(status==='needs_clarification'?{missingSlots:missingSlots.length?missingSlots:[{field:code==='MISSING_BODY'?'body':code==='MISSING_TIME'?'time':code==='MISSING_DATE'?'date':code==='MISSING_HOUR'?'hour':code==='AMBIGUOUS_HOUR'?'meridiem':code==='AUTHENTIC_MENTION_REQUIRED'?'memberRef':code==='POLL_OPTION_AMBIGUOUS'?'option':'artifactRef',kind:'required'}]}:{}), resolvedArgs: args, denialCode: code, argsHash: policyArgsHash(ctx, tool.name, args, resourceState), resourceState, ownership, resolvedSafeRefs: refs, gates,
     confirmationSummary: status !== 'needs_confirmation' ? null : tool.name === 'bulk.nuclear'
       ? `${args.count} mensajes en el grupo actual, sin menciones ni expulsiones; mínimo ${product.nuclearGapMs / 1000} s entre envíos. Contenido exacto: ${String(args.text)}`
       : `${tool.name}: ${JSON.stringify(args)}`,
@@ -47,7 +48,9 @@ export async function evaluateToolPolicy(ctx: ExecutionContextV2, tool: ToolMeta
   if (confirmedResolvedArgs) {
     args = { ...confirmedResolvedArgs };
   } else {
-    const parsed = tool.modelArgsSchema.safeParse(modelArgs);
+    const structured = modelArgs && typeof modelArgs === 'object' && 'time' in modelArgs
+      ? { ...modelArgs, time: normalizeSemanticInput(modelArgs.time) } : modelArgs;
+    const parsed = tool.modelArgsSchema.safeParse(structured);
     if (!parsed.success){
       const raw=modelArgs && typeof modelArgs==='object'?modelArgs as Record<string,unknown>:{};
       const missing=parsed.error.issues.filter(issue=>issue.code==='invalid_type' && issue.path.length===1 && raw[String(issue.path[0])]===undefined);

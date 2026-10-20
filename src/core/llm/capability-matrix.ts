@@ -232,9 +232,12 @@ export function loadQualificationManifest(
     for (const item of parsed) {
       if (item && typeof item === 'object' && item.provider && item.model) {
         const isSupportedVersion = item.qualificationVersion === CURRENT_QUALIFICATION_VERSION;
-        const isSchemaMatch = Boolean(expectedHash && item.toolSchemaHash && item.toolSchemaHash === expectedHash);
+        const expectedCount = currentCatalogInfo
+          ? ('hash' in currentCatalogInfo ? currentCatalogInfo.toolCount : currentCatalogInfo.length)
+          : getCurrentToolSchemaHash().toolCount;
+        const isSchemaMatch = item.toolCount === expectedCount && Boolean(expectedHash && item.toolSchemaHash && item.toolSchemaHash === expectedHash);
 
-        const isFullSmoke = isSupportedVersion && isSchemaMatch && item.status === 'FULL_CATALOG_SMOKE_COMPATIBLE' && item.agentCompatible === true;
+        const isFullSmoke = isSupportedVersion && isSchemaMatch && item.status === 'FULL_CATALOG_SMOKE_COMPATIBLE' && item.agentCompatible === true && item.fullCatalogCompatible === true;
 
         setModelCapabilityOverride(item.provider, item.model, {
           agentCompatible: isFullSmoke,

@@ -284,7 +284,7 @@ describe('LLM Setup & Onboarding UX', () => {
                 finishReason: 'STOP',
                 content: {
                   role: 'model',
-                  parts: [{ functionCall: { name: 'video_search', args: { query: 'minecraft' } } }],
+                  parts: [{ functionCall: { name: 'video_search', args: { query: 'minecraft', source:'dailymotion' } } }],
                 },
               }],
             });
@@ -318,7 +318,7 @@ describe('LLM Setup & Onboarding UX', () => {
                 finish_reason: 'tool_calls',
                 message: {
                   role: 'assistant',
-                  tool_calls: [{ id: 'call_2', type: 'function', function: { name: 'video_search', arguments: '{"query":"minecraft"}' } }],
+                  tool_calls: [{ id: 'call_2', type: 'function', function: { name: 'video_search', arguments: '{"query":"minecraft","source":"dailymotion"}' } }],
                 },
               }],
             });

@@ -13,6 +13,7 @@ import {
   saveQualificationManifest,
   getModelCapability,
   clearModelCapabilityOverrides,
+  setModelCapabilityOverride,
   type QualifiedManifestEntry,
   type ToolDeclarationForHashing,
 } from '../src/core/llm/capability-matrix.js';
@@ -208,21 +209,21 @@ describe('FINAL MULTIPROVIDER CONFIG/LIFECYCLE HOTFIX', () => {
       expect(capB.fullCatalogCompatible).toBe(false);
     });
 
-    it('rejects unsupported qualificationVersion at runtime', () => {
+    it.each(['version','count','fullCatalog'])('rejects mismatched qualification %s at runtime', mismatch => {
       const manifestPath = resolve(testDir, 'version-test.json');
       const hashA = computeToolSchemaHash(catalogA);
 
       const entries: QualifiedManifestEntry[] = [
         {
-          qualificationVersion: 'v0-deprecated',
+          qualificationVersion: mismatch === 'version' ? 'v0-deprecated' : CURRENT_QUALIFICATION_VERSION,
           provider: 'groq',
           model: 'llama-3.3-70b-versatile',
-          toolCount: catalogA.length,
+          toolCount: catalogA.length + (mismatch === 'count' ? 1 : 0),
           toolSchemaHash: hashA,
           qualifiedAt: new Date().toISOString(),
           status: 'FULL_CATALOG_SMOKE_COMPATIBLE',
           agentCompatible: true,
-          fullCatalogCompatible: true,
+          fullCatalogCompatible: mismatch !== 'fullCatalog',
           chatCompatible: true,
         },
       ];
@@ -303,6 +304,7 @@ describe('FINAL MULTIPROVIDER CONFIG/LIFECYCLE HOTFIX', () => {
     });
 
     it('turn completes after tools -> retained budget count = 0 while preserving budget during turn', async () => {
+      setModelCapabilityOverride('gemini','gemini-3.5-flash-lite',{agentCompatible:true,fullCatalogCompatible:true});
       let callStep = 0;
       const mockHttp = vi.fn<typeof fetch>(async () => {
         callStep++;

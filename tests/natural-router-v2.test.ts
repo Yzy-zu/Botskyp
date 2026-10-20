@@ -78,7 +78,7 @@ it.each(naturalR5)('natural provider selection: $text → $tool',async fixture=>
   let loaded=false;
   const provide=(input:LlmInput):LlmReply=>{
     const name=fixture.tool.replaceAll('.','_');
-    if(!input.tools.some(t=>t.name===name) && !loaded){loaded=true;return reply([{name:'core_load_capability',args:{domain:createToolRegistryV2(createRegistry()).find(t=>t.name===fixture.tool)!.domain}}]);}
+    if(!input.tools.some(t=>t.name===name) && !loaded){loaded=true;return reply([{name:'core_load_capability',args:{domain:createToolRegistryV2(createRegistry()).find(t=>t.name===fixture.tool)!.domain,toolName:fixture.tool}}]);}
     expect(input.tools.map(t=>t.name)).toContain(name);
     const args={...fixture.args,...(fixture.tool==='school.schedule'?{weekday:DateTime.fromISO(envelope(input).REFERENCE_DATA.nowLocal).plus({days:1}).weekday}:{}),...('poll' in fixture?{pollRef:envelope(input).REFERENCE_DATA.poll!.pollRef}:{})};
     return reply([{id:'Provider-ID/Exact==',name,args}]);
@@ -140,7 +140,7 @@ it('owner confirmation is SessionV2 + core.session_confirm + reevaluated Policy,
     expect(input.tools.map(t=>t.name)).toContain('core_session_confirm');
     return reply([{name:'core_session_confirm',args:{}}]);
   });
-  expect((await turn('sí',llm)).text).toContain('Todavía no está confirmado');
+  expect((await turn('sí',llm)).text).toContain('ejecutando la operación');
   expect(llm.generate).toHaveBeenCalledOnce();expect(await count('minecraft_operations')).toBe(1);
   expect(minecraft.callMinecraft).not.toHaveBeenCalled();
   expect((await db.query('SELECT count(DISTINCT turn_id)::int n FROM tool_executions')).rows[0]?.n).toBe(2);
@@ -513,7 +513,7 @@ it('keeps web sources when synthesis returns prose instead of the required outco
   expect(llm.generate.mock.calls[1]?.[0].responseJsonSchema).toBeDefined();
 });
 it('changes only the hour of a reminder while keeping its existing text and date',async()=>{
-  const llm=scripted(reply([{name:'core_load_capability',args:{domain:'productivity'}}]),input=>{
+  const llm=scripted(reply([{name:'core_load_capability',args:{domain:'productivity',toolName:'reminders.edit'}}]),input=>{
     const ref=envelope(input).REFERENCE_DATA.reminders[0]!.ref;
     return reply([{name:'reminders_edit',args:{reminderRef:ref,time:{kind:'date',date:'2026-12-01',hour:21,meridiem:'pm'}}}]);
   });
@@ -584,4 +584,20 @@ it('R5 web synthesis fails over transparently and exhausted synthesis uses exist
     expect(http.mock.calls[1]?.[1]?.body).toBe(http.mock.calls[2]?.[1]?.body);
     expect((await db.query('SELECT tool_name,status FROM tool_executions WHERE turn_id=$1',[output.turnId])).rows).toEqual([{tool_name:'web.search',status:'ok'}]);
   }
+});
+
+it.each(['pon botsky en mantenimiento','activa mantenimiento','entra en mantenimiento','deja botsky en mantenimiento'])(
+  'maintenance selection comes from the model: %s', async text => {
+    const llm=scripted(reply([{name:'control_maintenance_on',args:{}}]));
+    await turn(text,llm);
+    expect(llm.generate).toHaveBeenCalled();
+    expect((await db.query("SELECT value FROM system_flags WHERE key='maintenance'")).rows[0]?.value).toBe(true);
+    expect((await db.query("SELECT call_origin FROM tool_executions WHERE tool_name='control.maintenance_on'")).rows[0]?.call_origin).toBe('llm');
+  });
+it('maintenance wording cannot execute a control action without a model call', async () => {
+  const llm=scripted(say('Necesito más información.'));
+  await turn('pon botsky en mantenimiento',llm);
+  expect(llm.generate).toHaveBeenCalled();
+  expect((await db.query("SELECT 1 FROM system_flags WHERE key='maintenance' AND value='true'::jsonb")).rowCount).toBe(0);
+  expect((await db.query("SELECT 1 FROM tool_executions WHERE tool_name='control.maintenance_on'")).rowCount).toBe(0);
 });

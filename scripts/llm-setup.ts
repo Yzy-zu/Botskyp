@@ -4,7 +4,7 @@ import { execSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { mergeAndDedupeApiKeys } from '../src/config.js';
 import { createRegistry } from '../src/core/registry.js';
-import { createToolRegistryV2, registryV2Declarations } from '../src/core/tool-registry-v2.js';
+import { createToolRegistryV2, fullCatalogDeclarations } from '../src/core/tool-registry-v2.js';
 import { GeminiProvider } from '../src/core/llm/gemini-adapter.js';
 import { GroqProvider } from '../src/core/llm/groq-adapter.js';
 import { OpenRouterProvider } from '../src/core/llm/openrouter-adapter.js';
@@ -327,7 +327,7 @@ export async function runLlmSetup(options: SetupOptions = {}): Promise<SetupRepo
   const http = options.http ?? fetch;
 
   const catalog = createToolRegistryV2(createRegistry());
-  const fullCatalogTools = registryV2Declarations(catalog);
+  const fullCatalogTools = fullCatalogDeclarations(catalog);
 
   // 1. Read existing configuration
   const { variables: existingEnv } = readExistingEnv(envPath);

@@ -4,7 +4,7 @@ import type { PermissionKey } from './permissions.js';
 import type { ToolRegistry, CapabilityMetadata } from './tools.js';
 import type { Declaration } from './llm.js';
 import type { CapabilityDomain } from './capability-domain.js';
-import { modelArgsSchemas, type BusinessToolName } from './model-args.js';
+import { modelArgsSchemas, safeRefSchema, type BusinessToolName } from './model-args.js';
 import { registerToolCatalog } from './llm/capability-matrix.js';
 
 export type ToolRisk = 'READ' | 'USER_WRITE' | 'ECONOMIC' | 'EXTERNAL' | 'PRIVILEGED' | 'DESTRUCTIVE';
@@ -65,7 +65,7 @@ const descriptions: Partial<Record<BusinessToolName, string>> = {
   'notes.edit': 'Editar o corregir una nota existente del chat por su noteRef en REFERENCE_DATA.notes.',
   'memory.remember': 'Guardar memoria personal solo por petición explícita: guarda en tu memoria, acuérdate de que o recuerda que. Una petición de aviso a una hora futura corresponde a reminders.create. Nunca crear una nota compartida para esa petición.',
   'memory.forget': 'Borrar una memoria personal por referencia o contenido, o todas (all), con confirmación.',
-  'reminders.create': 'Crear un recordatorio personal o aviso futuro. Conserva literal el contenido en body; no lo estilices. OBLIGATORIO: Si el usuario NO dio fecha, hora ni periodo para recordar (ej. "recuérdame comprar pan"), OMITE el argumento time por completo; NUNCA inventes mañana, 9:00 ni valores por defecto (el sistema solicitará la fecha/hora). Para time: en N minutos/horas/días usa kind="relative" con amount y unit ("minute"|"hour"|"day"); si además dio hora (ej. "en 2 días a las 10 am") incluye hour y meridiem en el mismo objeto relative. Para mañana usa kind="tomorrow". Para hora sin día usa kind="clock". Si hay activeSession de aclaración, conserva partialArgs y completa lo aclarado.',
+  'reminders.create': 'Crear aviso personal futuro; body literal. Sin fecha, hora ni periodo, omitir time para pedir aclaración; nunca inventar mañana, 09:00 ni valores por defecto. En N minutos/horas/días: kind=relative, amount=N, unit=minute/hour/day. Hora explícita junto a días: hour y meridiem. Conserva partialArgs de la sesión y completa lo aclarado.',
   'reminders.edit': 'Editar un recordatorio propio. Omite body si no cambia el texto. Si solo cambia la hora del mismo día, usa kind=date con la fecha de dueLocal del recordatorio, nunca supongas today. El backend conserva campos omitidos.',
   'control.maintenance_on': 'Poner a Botsky en modo de mantenimiento (pon botsky en mantenimiento, entra en mantenimiento, activa mantenimiento, deja el bot en mantenimiento). Solo owner.',
   'control.maintenance_off': 'Desactivar el modo de mantenimiento de Botsky y reanudar operaciones normales (quita mantenimiento, sal de mantenimiento, desactiva mantenimiento). Solo owner.',
@@ -117,7 +117,7 @@ export function createToolRegistryV2(legacy: ToolRegistry): readonly ToolMetadat
       scope: tool.scope,
     } satisfies ToolMetadataV2);
   }));
-  registerToolCatalog(registryV2Declarations(catalog));
+  registerToolCatalog(fullCatalogDeclarations(catalog));
   return catalog;
 }
 
@@ -153,4 +153,34 @@ export function modelDeclaration(tool: Pick<ToolMetadataV2, 'name' | 'descriptio
 
 export function registryV2Declarations(catalog: readonly ToolMetadataV2[]): Declaration[] {
   return catalog.filter(tool => tool.llmVisible && tool.exposure !== 'internal').map(modelDeclaration);
+}
+
+const emptySessionArgsSchema = z.strictObject({});
+export const sessionConfirmMetaTool = Object.freeze({
+  name: 'core.session_confirm', domain: 'core', llmVisible: true, exposure: 'always',
+  descriptionForModel: 'Confirmar la operación pendiente en REFERENCE_DATA.activeSession cuando kind=confirm y el usuario acepta o confirma realizarla tal cual (sí, simón, arre, dale, va, de una, hazlo, etc.). OBLIGATORIO: Llama esta función en lugar de volver a invocar la herramienta pendiente. Sin argumentos. Si el usuario pide modificar datos, NO confirmes: llama la herramienta con los nuevos datos.',
+  modelArgsSchema: emptySessionArgsSchema,
+});
+export const sessionCancelMetaTool = Object.freeze({
+  name: 'core.session_cancel', domain: 'core', llmVisible: true, exposure: 'always',
+  descriptionForModel: 'Cancelar o descartar la operación o sesión pendiente en REFERENCE_DATA.activeSession cuando el usuario rechaza, cancela o desiste (no, nel, ni madres, mejor no, olvídalo, cancélalo, ya estuvo, etc.). OBLIGATORIO: Llama esta función inmediatamente en lugar de responder texto libre cuando el usuario desiste de una confirmación o clarificación pendiente. Sin argumentos.',
+  modelArgsSchema: emptySessionArgsSchema,
+});
+
+export const loadArtifactContextSchema=z.strictObject({artifactRef:z.union([safeRefSchema('artifactRef'),z.literal('A_REPLY')])});
+export const loadArtifactContextMetaTool={
+  name:'core.load_artifact_context',
+  description:'Ver una imagen retenida seleccionada por su SafeRef EXACTA de ARTIFACT_STATE.CURRENT/RECENT/A_LAST. Solo lectura; carga únicamente esa imagen para esta vuelta. Las imágenes antiguas nunca se adjuntan automáticamente. No transforma ni envía archivos.',
+  modelArgsSchema:loadArtifactContextSchema,
+};
+
+/** Same stable full catalog for production, qualification and stale-manifest checks. */
+export function fullCatalogDeclarations(catalog: readonly ToolMetadataV2[]): Declaration[] {
+  const metas = [loadArtifactContextMetaTool,
+    {name:sessionConfirmMetaTool.name,description:sessionConfirmMetaTool.descriptionForModel,modelArgsSchema:sessionConfirmMetaTool.modelArgsSchema},
+    {name:sessionCancelMetaTool.name,description:sessionCancelMetaTool.descriptionForModel,modelArgsSchema:sessionCancelMetaTool.modelArgsSchema}];
+  return [...registryV2Declarations(catalog), ...metas.map(tool => {
+    const schema=z.toJSONSchema(tool.modelArgsSchema);delete schema.$schema;
+    return {name:tool.name.replaceAll('.','_'),description:tool.description,parametersJsonSchema:schema};
+  })];
 }

@@ -130,15 +130,20 @@ it('keeps manifest, session and CURRENT/REPLIED under context pressure instead o
 it('delivers complete knowledge to the actual router without loading all schemas or claiming a queued result was delivered',async()=>{
   await context({text:'hazlo stoker'},async ctx=>{
     await backing(ctx,{mime:'image/png',bytes:png});
+    let providerAssertion:unknown;
     const output=await routeNaturalV2(ctx,{generate:async input=>{
+      try {
       const e=JSON.parse((input.contents[0] as {parts:{text:string}[]}).parts[0]!.text) as {CAPABILITY_MANIFEST:string};
       expect(e.CAPABILITY_MANIFEST).toContain('minecraft.addons:');
       expect(e.CAPABILITY_MANIFEST).toContain('qr_read:');
       expect(input.tools.length).toBeLessThanOrEqual(20);
       expect(input.system).toContain(capabilityBehaviorV2);
       expect(JSON.stringify(input).length).toBeLessThan(product.llmMaxRequestChars);
+      } catch(error) { providerAssertion=error; throw error; }
+      if(!input.tools.some(t=>t.name==='media_process'))return {text:'',calls:[],content:{role:'model',parts:[{functionCall:{name:'core_load_capability',args:{domain:'media',toolName:'media.process'}}}]}};
       return {text:'',calls:[],content:{role:'model',parts:[{functionCall:{name:'media_process',args:{operation:'sticker',artifactRef:'A_CURRENT'}}}]}};
     }});
+    if(providerAssertion)throw providerAssertion;
     expect(output ?? '').not.toMatch(/ya.*(?:entreg|envi)/iu);
     expect((await ctx.c.query("SELECT status,payload->>'operation' operation FROM jobs WHERE kind='media'")).rows).toEqual([{status:'queued',operation:'sticker'}]);
   });

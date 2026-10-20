@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readConfig } from '../src/config.js';
 import { product } from '../config/product.js';
 import { createRegistry } from '../src/core/registry.js';
-import { createToolRegistryV2, registryV2Declarations, modelDeclaration } from '../src/core/tool-registry-v2.js';
+import { createToolRegistryV2, registryV2Declarations, fullCatalogDeclarations, modelDeclaration } from '../src/core/tool-registry-v2.js';
 import { selectToolExposure, ToolExposureTurn, type ToolExposureInput } from '../src/core/tool-exposure.js';
 import { capabilityManifestV2, currentFunctionProtocolV2, capabilityBehaviorV2ForMode, capabilityBehaviorV2 } from '../src/core/capability-manifest-v2.js';
 import { capabilityContextV2 } from '../src/core/capability-truth-v2.js';
@@ -77,9 +77,9 @@ describe('FULL-96: Tool Exposure & Meta-Tools (R1, R4)', () => {
 
   it('exposes all 99 public tools from turn 1 in full_96 mode', () => {
     const exposure = selectToolExposure(catalog, baseInput);
-    // 99 business tools + 1 meta-tool (core.load_artifact_context)
-    expect(exposure.toolNames).toHaveLength(100);
-    expect(exposure.schemas).toHaveLength(100);
+    // 99 business tools + 3 meta-tools (artifact context, session confirm/cancel)
+    expect(exposure.toolNames).toHaveLength(102);
+    expect(exposure.schemas).toHaveLength(102);
 
     // Verify key domain tools are directly present on turn 1
     expect(exposure.toolNames).toContain('minecraft.status');
@@ -95,6 +95,12 @@ describe('FULL-96: Tool Exposure & Meta-Tools (R1, R4)', () => {
     expect(exposure.toolNames).toContain('video.download');
   });
 
+  it('qualification and runtime use identical complete catalogs in every session state', () => {
+    for (const kind of [undefined,'clarify','confirm','media_collect'] as const) {
+      const exposure=selectToolExposure(catalog,{...baseInput,...(kind?{activeSession:{domain:'core' as const,kind}}:{})});
+      expect(exposure.schemas).toEqual(fullCatalogDeclarations(catalog));
+    }
+  });
   it('strictly excludes core.load_capability in full_96 mode', () => {
     const exposure = selectToolExposure(catalog, baseInput);
     expect(exposure.toolNames).not.toContain('core.load_capability');
@@ -102,12 +108,12 @@ describe('FULL-96: Tool Exposure & Meta-Tools (R1, R4)', () => {
     expect(exposure.schemas.some(s => s.name === 'core_load_capability')).toBe(false);
   });
 
-  it('exposes core.load_artifact_context and conditionally session meta-tools', () => {
-    // Normal turn: only load_artifact_context
+  it('exposes a stable full catalog including session meta-tools', () => {
+    // Full catalog stays identical; execution still validates session state.
     const normal = selectToolExposure(catalog, baseInput);
     expect(normal.toolNames).toContain('core.load_artifact_context');
-    expect(normal.toolNames).not.toContain('core.session_confirm');
-    expect(normal.toolNames).not.toContain('core.session_cancel');
+    expect(normal.toolNames).toContain('core.session_confirm');
+    expect(normal.toolNames).toContain('core.session_cancel');
 
     // Confirm session active
     const confirm = selectToolExposure(catalog, {
@@ -124,7 +130,7 @@ describe('FULL-96: Tool Exposure & Meta-Tools (R1, R4)', () => {
       ...baseInput,
       activeSession: { domain: 'productivity', kind: 'clarify', pendingTool: 'reminders.create' },
     });
-    expect(clarify.toolNames).not.toContain('core.session_confirm');
+    expect(clarify.toolNames).toContain('core.session_confirm');
     expect(clarify.toolNames).toContain('core.session_cancel');
   });
 

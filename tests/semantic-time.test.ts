@@ -54,8 +54,8 @@ it('handles relative date with explicit clock time (REM-004 fix)', () => {
 });
 it('gracefully handles kind aliases produced by LLM for relative days', () => {
   expect(local({ kind: 'day', amount: 3, unit: 'day' } as unknown as SemanticTimeInput)).toBe('2026-10-20 12:00');
-  expect(local({ kind: 'in', amount: 3, unit: 'day' } as unknown as SemanticTimeInput)).toBe('2026-10-20 12:00');
-  expect(local({ kind: 'amount', amount: 3, unit: 'day' } as unknown as SemanticTimeInput)).toBe('2026-10-20 12:00');
+  expect(resolveSemanticTime({ kind: 'in', amount: 3, unit: 'day' } as unknown as SemanticTimeInput, now).status).toBe('error');
+  expect(resolveSemanticTime({ kind: 'amount', amount: 3, unit: 'day' } as unknown as SemanticTimeInput, now).status).toBe('error');
 });
 it('rejects malformed semantics and nonexistent dates', () => {
   for (const input of [{ kind: 'date', date: '2026-02-30', hour: 20 }, { kind: 'today', hour: 24 }, { kind: 'today', hour: 15, meridiem: 'am' }, { kind: 'relative', amount: -1, unit: 'minute' }, { kind: 'tomorrow', hour: 20, timezone: 'UTC' }]) {
@@ -68,3 +68,21 @@ it('renders a human local date without UTC ISO strings', () => {
   expect(text).toContain('Ciudad de México');
   expect(text).not.toMatch(/2026-10-19T|UTC|Z$/);
 });
+
+it('covers required relative amounts and Wednesday evening', () => {
+  expect(local({kind:'relative',amount:5,unit:'minute'})).toBe('2026-10-17 12:05');
+  expect(local({kind:'relative',amount:2,unit:'hour'})).toBe('2026-10-17 14:00');
+  expect(local({kind:'weekday',weekday:3,hour:7,meridiem:'pm'})).toBe('2026-10-21 19:00');
+});
+it('rejects clock fields that would otherwise be silently ignored', () => {
+  for (const input of [
+    {kind:'relative',amount:2,unit:'hour',hour:10},
+    {kind:'relative',amount:2,unit:'day',meridiem:'pm'},
+    {kind:'relative',amount:2,unit:'minute',minute:30},
+  ]) expect(resolveSemanticTime(input as SemanticTimeInput, now).status).toBe('error');
+});
+
+it.each([{kind:'tomorrow'},{kind:'day_after_tomorrow'},{kind:'date',date:'2026-10-25'}] as const)(
+  'asks for a missing hour without inventing one: %j', time => {
+    expect(resolveSemanticTime(time,now)).toEqual({status:'needs_clarification',code:'missing_hour'});
+  });

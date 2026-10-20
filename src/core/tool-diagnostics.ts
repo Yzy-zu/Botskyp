@@ -6,7 +6,13 @@ import { adapterAvailable } from './policy-v2/arguments.js';
 
 export interface ToolDiagnosticsSummary {
   publicToolsTotal: number;
-  available: number;
+  exposed: number;
+  rolePermitted: number;
+  moduleEnabled: number;
+  configured: number;
+  staticEligible: number;
+  currentlyExecutable: null;
+  preconditionDependent: string[];
   temporarilyGated: number;
   disabledByModule: Record<string, string[]>;
   missingConfig: Record<string, string[]>;
@@ -36,7 +42,10 @@ export function diagnoseTools(
   };
   const publicTools = catalog.filter(t => t.exposure !== 'internal');
 
-  let available = 0;
+  let staticEligible = 0;
+  let rolePermitted = 0;
+  let enabled = 0;
+  let configured = 0;
   let temporarilyGated = 0;
   const disabledByModule: Record<string, string[]> = {};
   const missingConfig: Record<string, string[]> = {};
@@ -78,14 +87,25 @@ export function diagnoseTools(
     const isPermitted = permitted(actor, chat, tool.permission);
     const isAdapterOk = adapterAvailable(tool.name);
 
-    if (chat.enabled && isModuleOn && isScopeOk && isPermitted && isAdapterOk) {
-      available++;
-    }
+    if (isPermitted && isScopeOk) rolePermitted++;
+    if (moduleEnabled(chat, tool.requiredModule, config)) enabled++;
+    if ((tool.requiredModule !== 'minecraft' || config.MINECRAFT_ENABLED)
+      && (tool.requiredModule !== 'drive' || config.DRIVE_ENABLED)) configured++;
+    if (chat.enabled && isModuleOn && isScopeOk && isPermitted && isAdapterOk
+      && !(tool.name === 'memory.list' && chat.isGroup)
+      && !(tool.name.startsWith('drive.') && (chat.settings as Record<string,unknown>).drive !== true)) staticEligible++;
   }
 
   return {
     publicToolsTotal: publicTools.length,
-    available,
+    exposed: publicTools.filter(t => t.llmVisible).length,
+    rolePermitted,
+    moduleEnabled: enabled,
+    configured,
+    staticEligible,
+    // Only Policy with concrete arguments and live DB state can establish executability.
+    currentlyExecutable: null,
+    preconditionDependent: publicTools.map(t => t.name),
     temporarilyGated,
     disabledByModule,
     missingConfig,

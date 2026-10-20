@@ -178,4 +178,15 @@ describe('Video module: session and references', () => {
       expect(p.mode).toBe('video');
     }
   });
+
+  it('exposes video.search with adult providers in model description', async () => {
+    const { createRegistry } = await import('../src/core/registry.js');
+    const { createToolRegistryV2 } = await import('../src/core/tool-registry-v2.js');
+    const catalog = createToolRegistryV2(createRegistry());
+    const searchTool = catalog.find(t => t.name === 'video.search');
+    expect(searchTool).toBeDefined();
+    expect(searchTool?.descriptionForModel).toContain('adultos');
+    expect(searchTool?.descriptionForModel).toContain('Pornhub');
+    expect(searchTool?.descriptionForModel).toContain('XNXX');
+  });
 });

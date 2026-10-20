@@ -10,6 +10,9 @@ Diff inspeccionado desde `2c137f70298735a68e37f3e836f7e331c45a3f40`:
 - Tiempo relativo canonical; solo `kind=day` se normaliza antes del schema de
   Policy. Se rechazan aliases arbitrarios y campos de reloj ignorables.
   Fecha sin hora y recordatorio sin tiempo piden aclaración, sin defaults.
+  Periodos relativos no admiten campos de reloj; días con hora explícita tienen
+  su propio schema. El tiempo nunca se copia de solicitudes históricas.
+  Las aclaraciones de am/pm congelan también la fecha de días relativos.
 - Qualification y producción full usan exactamente `fullCatalogDeclarations`:
   99 tools públicas + 3 meta-tools. Confirmación/cancelación siguen validando
   la sesión real. El hash cubre también estas meta-tools y el manifest exige
@@ -34,7 +37,8 @@ Diff inspeccionado desde `2c137f70298735a68e37f3e836f7e331c45a3f40`:
   DENIED_PERMISSION y ausencia de efecto. No se solicita intervención manual.
 
 Validación: typecheck y lint PASS; 142/142 en 12 suites dirigidas y 10/10
-rechecks de routing/qualification; Policy completa sin fallos. Fixtures con runner real del
+rechecks de routing/qualification; Policy completa sin fallos. El ajuste temporal
+posterior pasó 71 regresiones y una adicional de aclaración relativa. Fixtures con runner real del
 worker (PNG→sticker, OGG→MP3, PDF→pdf_compress), y smokes A–F tras qualification.
 No se ejecuta campaña nightly. Manifest runtime ignorado por Git; lo escribe
 `npm run llm:qualify` atómicamente después del deploy y se reinicia app para cargarlo.

@@ -264,3 +264,12 @@ un `10` en una SafeRef posterior aunque `dealerVisible` vale 9. Los smoke reales
 usan reloj fijo 16:00 UTC: Scenario 3 falla igual en baseline por expires_at anterior
 al created_at real (`sessions_v2_check`), antes de llamar a Gemini; también hubo
 cuota en la tanda real. No se cambian fixtures, sesiones, Policy ni exposición.
+
+## 20-10-2026 — Recordatorio sin tiempo durante smoke dirigido
+
+El primer smoke B de `74c065a` fue rechazado (INVALID_TIME), sin crear aviso:
+Gemini copió tres días de contexto histórico y emitió minute sin hour. Se precisó
+que el tiempo procede del turno actual/su aclaración, con ejemplo explícito sin
+time, y se separaron los schemas de periodo relativo y día con reloj. Un probe
+Gemini sobre el mismo contexto real ya omitió time correctamente. Los smokes se
+repiten después de deploy y qualification nuevos; sin parser textual de backend.

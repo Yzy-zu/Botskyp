@@ -7,7 +7,7 @@ import type { ExecutionContextV2 } from './policy-v2/types.js';
 export async function openTimeClarificationV2(ctx: ExecutionContextV2, name: string, args: unknown, code: string): Promise<void> {
   if (!name.startsWith('reminders.') || !/^(?:AMBIGUOUS_HOUR|MISSING_DATE)$/u.test(code) || !args || typeof args !== 'object') return;
   const input = args as Record<string, unknown>, time = semanticTimeSchema.safeParse(input.time);
-  if (!time.success || time.data.kind === 'relative') return;
+  if (!time.success || !('hour' in time.data)) return;
   const value = time.data;
   if (value.hour === undefined) return;
   const base = DateTime.fromJSDate(ctx.now, { zone: 'America/Mexico_City' });
@@ -19,7 +19,7 @@ export async function openTimeClarificationV2(ctx: ExecutionContextV2, name: str
     ? { kind: 'clock' as const, hour: hour24, minute: value.minute, ...(value.meridiem ? { meridiem: value.meridiem } : {}) }
     : {
       kind: 'date' as const,
-      date: value.kind === 'date' ? value.date : value.kind === 'weekday' ? base.plus({ days: (value.weekday - base.weekday + 7) % 7 || 7 }).toISODate()! : base.plus({ days: value.kind === 'tomorrow' ? 1 : value.kind === 'day_after_tomorrow' ? 2 : 0 }).toISODate()!,
+      date: value.kind === 'relative' ? base.plus({days:value.amount}).toISODate()! : value.kind === 'date' ? value.date : value.kind === 'weekday' ? base.plus({ days: (value.weekday - base.weekday + 7) % 7 || 7 }).toISODate()! : base.plus({ days: value.kind === 'tomorrow' ? 1 : value.kind === 'day_after_tomorrow' ? 2 : 0 }).toISODate()!,
       hour: hour24,
       minute: value.minute,
       ...(value.meridiem ? { meridiem: value.meridiem } : {}),

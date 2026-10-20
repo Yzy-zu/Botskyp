@@ -7,16 +7,18 @@ const clock = {
   minute: z.number().int().min(0).max(59).default(0).describe('Minuto 0-59 (default 0)'),
   meridiem: z.enum(['am', 'pm', 'morning', 'afternoon', 'night', '24h']).optional().describe('am, pm, o franja horaria si se indicó'),
 };
-const relativeTime = z.strictObject({
+const relativeFields = {
   kind: z.literal('relative').describe('Forma canonical de un periodo relativo.'),
   amount: z.number().int().positive().max(525600).describe('Cantidad positiva de unidades.'),
-  unit: z.enum(['minute', 'hour', 'day']).describe('Unidad: minute, hour, day'),
-  hour: z.number().int().min(0).max(23).optional().describe('Hora explícita junto a días; omitir si no se indicó.'),
-  minute: z.number().int().min(0).max(59).optional().default(0).describe('Minuto específico (0-59, default 0)'),
-  meridiem: z.enum(['am', 'pm', 'morning', 'afternoon', 'night', '24h']).optional().describe('am, pm o franja horaria si se indicó'),
+};
+const relativeTime = z.strictObject({ ...relativeFields, unit: z.enum(['minute', 'hour', 'day']) });
+const relativeDayClock = z.strictObject({
+  ...relativeFields, unit:z.literal('day'), ...clock,
+  hour: z.number().int().min(0).max(23).describe('Hora explícita junto a los días relativos.'),
 });
 export const semanticTimeSchema = z.union([
   relativeTime,
+  relativeDayClock,
   z.strictObject({ kind: z.enum(['today', 'tomorrow', 'day_after_tomorrow', 'clock']), ...clock }),
   z.strictObject({ kind: z.literal('weekday'), weekday: z.number().int().min(1).max(7).describe('Día de la semana: 1=lunes, 7=domingo'), ...clock }),
   z.strictObject({ kind: z.literal('date'), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Fecha ISO YYYY-MM-DD'), ...clock }),
@@ -49,10 +51,7 @@ export function resolveSemanticTime(input: SemanticTimeInput, now: Date): Semant
   const value = parsed.data;
   let due: DateTime;
   if (value.kind === 'relative') {
-    // Clock fields only make sense for calendar days with an explicit hour.
-    if ((value.unit !== 'day' && (value.hour !== undefined || value.meridiem !== undefined || value.minute !== 0))
-      || (value.hour === undefined && (value.meridiem !== undefined || value.minute !== 0))) return { status: 'error', code: 'invalid_time' };
-    if (value.unit === 'day' && value.hour !== undefined) {
+    if ('hour' in value) {
       let hour = value.hour;
       if (value.meridiem && value.meridiem !== '24h') {
         const pm = ['pm', 'afternoon', 'night'].includes(value.meridiem);

@@ -175,6 +175,16 @@ describe('AGY — BOTSKY PRODUCTION UNBLOCK TARGETED REGRESSION', () => {
     });
   });
 
+  it('preserves the date when a relative day with clock needs am/pm clarification', async () => {
+    const ctx=await context(owner,'irrelevant text');
+    await c.query('BEGIN');
+    const result=await executeToolV2(ctx,'reminders.create',{body:'structured clock',time:{kind:'relative',amount:2,unit:'day',hour:8}},call());
+    expect(result.code).toBe('AMBIGUOUS_HOUR');
+    const session=(await c.query<{partial_args:{time:{kind:string;hour:number}}}>("SELECT partial_args FROM sessions_v2 WHERE actor_id=$1 AND status='active'",[owner])).rows[0];
+    expect(session?.partial_args.time).toMatchObject({kind:'date',hour:8});
+    expect((await c.query('SELECT 1 FROM reminders')).rowCount).toBe(0);
+  });
+
   it('canonicalizes the historical day alias before Policy schema validation', async () => {
     const ctx = await context(owner, 'irrelevant raw text');
     await c.query('BEGIN');

@@ -20,7 +20,7 @@ const task = { taskRef: ref('taskRef') };
 const subject = z.union([ref('subjectRef'), short]).describe('Materia por referencia o nombre; el backend resuelve ambigüedades.');
 const reminder = {
   body: text.optional().describe('Texto literal del recordatorio'),
-  time: semanticTimeSchema.optional().describe('Omitir si el usuario no indicó cuándo. Nunca inventar fecha ni hora. Relativos: kind=relative, amount y unit; hour solo si se indicó.'),
+  time: semanticTimeSchema.optional().describe('Omitir si CURRENT_USER_TURN no indicó cuándo; no copiar tiempo del historial. Nunca inventar fecha ni hora. Relativos: kind=relative, amount y unit; hour solo si se indicó.'),
   recurrence: recurrenceSchema.optional(),
 };
 const destinations = z.array(ref('destinationRef')).min(1).max(product.bulkMaxTargets);

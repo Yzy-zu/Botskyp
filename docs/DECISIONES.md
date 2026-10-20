@@ -1579,3 +1579,15 @@ más tres meta-tools; la sesión real sigue autorizando confirmación/cancelaci�
 Solo qualification canónica puede regenerar el manifest operativo; no actualizar
 hashes a mano. Policy recibe tiempo canonical y nunca interpreta lenguaje humano.
 Detalles, smokes y limpieza acotada: [cierre dirigido](v1.1/FINAL-PRODUCTION-CLEANUP.md).
+
+## DEC-072 — Go live y traducción de allowlists Legacy (20-10-2026)
+
+El dueño autoriza cinco grupos reales en `feat/universal-tool-calling`, sin merge,
+Observer=false. NORMAL/ADMIN de grupos eran acceso por unión, no roles de miembros;
+ADMIN de número se traduce a OWNER_JIDS existente. NORMAL de números se conserva
+con users.private_ok_manual. Roles group_admin siguen exclusivamente el roster real.
+TASKS autorizaba tareas por privado (auth.js:isAuthorizedTaskUploader y tareas.js).
+Al faltar el destino escolar, el dueño indica «por ahora las tareas no, alrato
+solucionamos eso pero dejalo para ponerlo». Se pospone TASKS y se deja escuela OFF
+en los cinco grupos reales; se conservan ambos IDs exactos en el script para después.
+No se añade código de permisos ni variables Legacy. Script: scripts/go-live-legacy.mjs.
